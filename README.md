@@ -14,13 +14,23 @@ actually writes — `ToLower` both strings and search — is not even correct:
 `ToLower` is not case folding (it splits the σ/ς/Σ orbit, re-encodes, and
 shifts byte offsets).
 
-This repository holds one function:
+This repository holds one problem, in two faces:
 
 ```go
 // IndexFold returns the byte index of the first occurrence of needle in
 // haystack under Unicode simple case folding, or -1.
 func IndexFold(haystack, needle string) int
+
+// Matcher searches for any of a set of patterns under the same semantics;
+// Find returns the leftmost match, ties to the lowest pattern index.
+func NewMatcher(patterns []string) *Matcher
+func (m *Matcher) Find(haystack string) (Match, bool)
 ```
+
+They are the same problem: **a pattern position is a small set of UTF-8
+encodings** (the fold orbit), exact search is the singleton case, and
+multi-needle is the union. The goal of this repository is one adaptive
+engine for that object — not two implementations sharing a package.
 
 ## Semantics
 
