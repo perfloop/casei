@@ -177,7 +177,92 @@ those from its window entirely). Secondary thin delta: a SIMD probe whose
 second-form offset is conditioned on the first form's matched width
 (Sneller chains widths serially instead). Everything else in this
 document's §1b/§2-§8 space is dated public art; new work must exceed THIS
-line, not the v1 line.
+line, not the v1 line. For the system-level open cells (multi-pattern,
+unified-engine territory), see §1d.
+
+## 1d. Multi-pattern art and the open cells (v3)
+
+The arena's end goal is one adaptive engine for elastic-degenerate byte
+patterns: each pattern position is a small set of UTF-8 encodings under
+simple folding; exact search is the singleton case, multi-needle the union.
+The complete known art for the multi-pattern side:
+
+**Classic algorithms.** Aho-Corasick (1975): linear worst case independent
+of pattern count; the reference Rust crate ships three memory layouts and
+ASCII-only caselessness, stating: "It is unlikely that support for Unicode
+case folding will be added in the future... full Unicode handling requires
+a fair bit of sophistication." Commentz-Walter (1979): BM-style shifts over
+a set trie, O(mn) worst. Wu-Manber (1994): q-gram shift tables,
+average-optimal, no worst-case bound; caseless via ASCII pre-lowering.
+SBOM/factor oracles: average-optimal, quadratic worst, no caseless story.
+Multi Rabin-Karp: the small-set fallback (aho-corasick packed layer).
+
+**SIMD multi-literal engines.** Teddy (Hyperscan lineage, in aho-corasick):
+1-3-byte nibble-mask fingerprints into <=8/16 buckets via PSHUFB, naive
+per-bucket verify; best under ~100 patterns; caseless only as pre-expanded
+alternates. FDR (Hyperscan, NSDI'19): SIMD extended shift-or over bucketed
+domains, 80 to tens of thousands of literals, end-offsets only, separate
+costly start-of-match subsystem; confirm-stage flood is the worst-case
+hole. Harry (INFOCOM 2023): column-vector successor to FDR, 2-300 strings.
+Vectorscan: community ARM/POWER fork pinned to Hyperscan 5.4 API; Intel
+took Hyperscan proprietary from 5.5 (open development over). Snort/Suricata
+MPSE: ASCII-caseless prefilter + exact re-verify, the two-stage shape in
+production IDS for two decades.
+
+**Dispatch frameworks.** Hyperscan: principled literal/FA decomposition
+feeding an engine zoo — no single theory, per its own authors' posts.
+rust/regex meta: unified composition whose author calls literal dispatch
+"a dark art" — "it is impossible to know, before a search begins, how to
+optimally choose." RE2::Set: linear, fold-correct, pattern-IDs only (no
+offsets). Nobody claims dispatch DERIVED from one theory; the two
+strongest frameworks explicitly disclaim it.
+
+**Native fold-set attempts (weakened forms, shipped twice).** ClickHouse
+MultiVolnitskyCaseInsensitiveUTF8: case-variant bigram hashing (up to 4
+variants per boundary) — self-documented as failing whenever "characters
+with lower and upper cases are represented by different number of bytes or
+code points" (fallback to a second, slower engine; average-case only).
+Quamina (Bray): CaseFolding.txt-driven byte-level automata unions — but
+anchored whole-field equality, no SIMD, acknowledged DFA blowup (4k
+patterns -> 4.4M states). icgrep/Parabix: bit-parallel transposed streams,
+natively Unicode-caseless, single compiled expression, no per-pattern
+dictionary semantics, no linearity theorem.
+
+**Academic.** No published SIMD multi-pattern algorithm carries a linear
+worst-case guarantee — the Faro-Kulekci/EPSM/MSSEF line is uniformly
+O(n/m) best, O(nm) worst; Belazzougui's worst-case-optimal Word-RAM line
+has no SIMD and no folding. Elastic-degenerate DICTIONARY matching exists
+(SEA 2018) but with per-position sets on the TEXT side (genomics) — the
+dual of this arena's object. Character-class dictionaries take user-given
+classes, never derived fold-encoding sets.
+
+**The open cells** (no shipped or published occupant; nearest miss noted):
+
+1. simple-fold x multi x SIMD-speed — nearest: ClickHouse (partial +
+   surrender).
+2. simple-fold x multi x linear worst case, with offsets and substring
+   semantics — nearest: RE2::Set (no offsets), Quamina (anchored, no
+   complexity story).
+3. simple-fold x multi x SIMD AND linear simultaneously — nothing close;
+   this cell is empty even for EXACT multi-pattern (Teddy/FDR have no
+   linearity theorem).
+4. Per-position encoding sets as the native machine representation (not
+   case-expansion) — shipped only in weakened forms (ClickHouse bigrams,
+   Quamina automata).
+5. One-theory-derived dispatch, any tier — disclaimed by every framework
+   that comes close.
+6. N=1-to-thousands continuity under one engine — Hyperscan switches
+   families (noodle/Teddy/FDR) with separate confirm logic; aho-corasick
+   switches layouts heuristically.
+
+**Where novelty cannot live** (adversarially pre-conceded): the two-stage
+SIMD-candidate+verify shape (Teddy/FDR/Snort own it); the per-position
+fold-expansion SEMANTICS (UTS #18 specifies it); the bare idea of byte-
+level fold-variant structures (ClickHouse and Quamina shipped weakened
+versions independently). Novelty must live in: the fold-set formalism as
+the native representation with engines DERIVED from it, the SIMD+linear
+combination (open even for exact multi), offset-correct simple-fold multi
+semantics at SIMD speed, and N-continuity under one theory.
 
 ## 2. Case-folding primitives (in-register, branchless)
 
@@ -406,3 +491,10 @@ These are encoded as tests in this repository:
   Claude-Navarro et al. JDA 2012, Faro-Marino-Pavone Algorithmica 2020;
   guards: Sunday CACM 1990, Hume & Sunday SPE 1991; caseless CSV: Lu et
   al. ICNS 2007; GitHub casefold (Jul 2026) github.blog engineering post
+- Multi-pattern (v3): Aho-Corasick CACM 1975 + BurntSushi aho-corasick
+  DESIGN.md/Teddy README; Hyperscan NSDI'19 + Langdale posts (2019, 2024);
+  Harry INFOCOM 2023; Vectorscan (VectorCamp); ClickHouse Volnitsky.h
+  (MultiVolnitskyCaseInsensitiveUTF8); Quamina (Bray) + Union-of-FA post
+  2024; icgrep PACT 2014; RE2::Set; Belazzougui arXiv:1011.3441;
+  multi-EDSM SEA 2018; Faro-Kulekci arXiv:1209.6449, MSSEF 2013; Snort
+  fast_pattern docs + US 7,756,885; Suricata mpm docs; UTS #18.
