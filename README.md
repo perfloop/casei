@@ -94,6 +94,36 @@ The goal is an `IndexFold` that, on this repository's benchmark suite:
    claims. Architecture-specific fast paths need a correct portable
    fallback.
 
+## Where the reference stands
+
+`BenchmarkBar` measures this repository's own reference implementation
+against the field. `x_vs_best` is its time divided by the fastest correct
+alternative present; below 1.0 means nothing that exists is faster.
+Measured on an Apple M3 Max (loaded; directional):
+
+| row | x_vs_best |
+|---|---|
+| multi/multi_N512_miss_log_64kb | 6421 |
+| multi/multi_N64_miss_log_64kb | 734 |
+| single/samechar_miss_64kb | 597 |
+| single/periodic_miss_64kb | 325 |
+| multi/multi_N8_miss_log_1mb | 97.7 |
+| single/log_miss_1mb | 90.7 |
+| single/torture_miss_64kb | 26.9 |
+| multi/multi_N8_miss_ru_1mb | 7.1 |
+| single/ru_miss_1mb | **0.85** |
+| single/kelvin_hazard_1mb | **0.31** |
+
+The reference is a deliberately naive rune-walking scan, so most rows are
+one to four orders of magnitude behind. The two rows already below 1.0 are
+not an achievement: on the UTF-8 tier the only in-arena competitor is Go's
+`regexp`, which is itself slow. They mark where the field is weakest, not
+where this code is strong.
+
+Getting every row below 1.0 requires both a better algorithm and
+data-parallel execution. The baselines winning the ASCII rows are
+hand-written NEON/AVX2 kernels consuming 16 or 32 bytes per instruction.
+
 ## Baselines
 
 | name | what it is | tiers |
