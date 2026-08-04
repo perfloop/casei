@@ -31,10 +31,44 @@ And `sherlock-casei-ru` (Russian — true UTF-8 case folding):
 
 Notably, rebar includes `rust/memchr/memmem` — the reference exact-match
 substring engine — and it is absent from every caseless benchmark: no
-dedicated caseless substring engine exists in that suite at all. The
-caseless columns are contested only by general regex engines, and **no
-dedicated case-insensitive UTF-8 substring algorithm exists anywhere** —
-beyond ASCII, every engine routes through general regex machinery.
+dedicated caseless substring engine exists in that suite at all; the
+caseless columns are contested only by general regex engines.
+
+**Correction (v2, after a three-way prior-art sweep):** dedicated engines
+DO exist, with different contracts:
+
+- **StringZilla v4.5** (Dec 2025, "Full Unicode Search at 50× ICU Speed
+  with AVX-512") ships a dedicated engine under **full** case folding
+  (ß→ss, ligatures, up to 3-codepoint expansions). Architecture: fold-safe
+  needle window (`[head][safe window][tail]`) scored by byte diversity,
+  SIMD scan of only the window, per-hit head/tail verification, per-script
+  hazard "alarms", folded-rune-stream and rolling-hash fallbacks. Full
+  folding is a DIFFERENT contract from this arena: ClickHouse explicitly
+  declined StringZilla because it "can return matches whose byte length
+  differs from the needle, which diverges from the one-code-point
+  contract". Under this arena's simple-fold (regex-compatible) semantics,
+  some StringZilla matches are wrong.
+- **ClickHouse `positionCaseInsensitiveUTF8`**: Volnitsky bigram hash with
+  case-variant enumeration, falling back to a first-char two-form SIMD
+  searcher; **hard-codes surrender** (`force_fallback = true`) whenever
+  case forms differ in encoded length; the escape hatch is O(n·m).
+- **Sneller** (Apr 2023): AVX-512 Unicode-aware ILIKE via fold-variant
+  expansion (≤4 alternates/char) with serial runtime width-chaining ("the
+  UTF-8 byte sequences of characters equal under case-folding do not need
+  to have the same byte length").
+
+**Measured quantification (StringZilla's own post, Zen 5, Leipzig 100MB
+corpora):** cased scripts — English 12.8 GB/s, Vietnamese 4.3,
+Russian/Ukrainian/Armenian **below their own 5 GB/s target**. Caseless
+scripts (folding is a near-no-op) — Hebrew 34.5, Bengali 28.2, Chinese
+20.1. Zen 5 single-core streaming bandwidth is ~40-50 GB/s, so on scripts
+that actually have case the shipped state of the art runs at ~10-30% of
+bandwidth. rebar's pcre2/jit posts 18.0 GB/s on Russian caseless
+(different machine/corpus — same-box reproduction required before any
+comparative claim). **The open target is the cased scripts.**
+
+No dedicated engine implements **simple folding** — the semantics of
+`regexp (?i)`, rust/regex, and this arena.
 
 In Go, the strongest published caseless search is
 [mhr3/veloz](https://github.com/mhr3/veloz) `ascii.IndexFold` (NEON on arm64
@@ -82,11 +116,68 @@ CaseFolding.txt, C+S mappings; implemented as `unicode.SimpleFold` in Go):
 
 What engines do today for caseless UTF-8 literals: expand the literal's
 case variants into alternations / byte classes and feed general multi-
-pattern machinery — Teddy buckets (rust/regex), FDR (Hyperscan), UTF-8
-automata (regex-automata, RE2). That is the known approach, and the §1
-Russian numbers are its cost. Also known but unfused: simdutf-class SIMD
-UTF-8 validation/classification runs at tens of GB/s — nobody has fused
-that classification with a search loop.
+pattern machinery — Teddy buckets (rust/regex; `(?i)She` becomes
+`[Ssſ][Hh][Ee]` with mixed byte lengths), FDR (Hyperscan), UTF-8 automata
+(regex-automata, RE2). That is the known approach, and the §1 Russian
+numbers are its cost. Also known but unfused: simdutf-class SIMD UTF-8
+validation/classification runs at tens of GB/s — nobody has fused that
+classification with a search loop.
+
+Anchoring and offset machinery already in shipped engines (v2 additions):
+
+- **PCRE2 JIT `scan_prefix`** (~2014): builds its SIMD fast-forward window
+  of per-offset code-unit alternatives and **truncates the window at the
+  first caseless character whose fold mate encodes to a different UTF-8
+  length** (`ord2utf(othercase) != len`) — offsets before that point are
+  fold-width invariant. It then SIMD-scans the two most selective offsets
+  in the safe window. Width-changing orbits can never BE the anchor
+  (≤2 byte-forms per offset, first 12 code units, structural priority).
+- **rust/regex inner-literal seeking**: picks a rare literal anywhere in
+  the pattern, scans for it, then resolves the match START with an
+  anchored **reverse regex scan** (with an explicit quadratic-behavior
+  guard) — offset recovery by re-scan, never by invariance.
+- **Hyperscan SOM**: start-of-match tracked at runtime with documented
+  state cost; literals carry only byte-level `nocase`.
+- **RE2**: caseless prefix acceleration is ASCII-only (`prefix_foldcase_`).
+- **V8 irregexp**: precomputes finite cross-encoding hazard sets
+  (`RangeContainsLatin1Equivalents`; Kelvin/long-s special-cased).
+- **.NET `Ordinal.EqualsIgnoreCase_Vector`**: vectorized ASCII caseless
+  kernel with all-ASCII check and Unicode-correct hand-off resuming at the
+  failing chunk (UTF-16 equality, not UTF-8 search).
+- **Scherer, Unicode mailing list, 2003**: the complete enumeration of
+  simple case mappings that cross UTF-8 length boundaries — U+0130,
+  U+0131, U+017F, U+1FBE, U+2126, U+212A, U+212B. The hazard set has been
+  public for 23 years.
+
+Literature frame (v2 additions): rare-position guards (Sunday 1990;
+Hume & Sunday 1991), deterministic sampling (Vishkin 1991), alphabet
+sampling / pivot-character scanning with position mapping back to source
+(Claude-Navarro et al. 2012; Faro-Marino-Pavone CDS 2020), the caseless
+Convert-Search-Verify pipeline and its worst-case repair (Lu et al. 2007),
+**elastic-degenerate string matching** (sets of variable-length strings
+per position vs solid text — the formal problem class; Iliopoulos-Kundu-
+Pissis 2021), **generalized degenerate strings** (WABI 2018: fixed
+per-position width ⇒ fixed total width ⇒ invariant internal offsets — the
+formal ingredient, used for comparison problems, never for anchoring,
+never over an encoding), and codeword-synchronization analysis in
+compressed matching (tagged Huffman; Klein-Shapira). The SMART exact-
+matching corpus (80+ algorithms) contains zero caseless variants.
+
+## 1c. Unclaimed territory (v2 — the only known-open ground)
+
+Three adversarial prior-art sweeps (engines, products, literature) could
+not falsify exactly one construction: **the prefix-invariance lemma** —
+select an anchor rune such that every PRECEDING pattern rune has a
+fixed-encoded-width simple-fold orbit; the anchor's byte offset from any
+match start is then provably invariant, so match start is recovered
+arithmetically, with no head verification (StringZilla verifies heads per
+hit) and no re-alignment (compressed-matching lineage), while the anchor
+itself and later runes may have width-changing orbits (PCRE2 excludes
+those from its window entirely). Secondary thin delta: a SIMD probe whose
+second-form offset is conditioned on the first form's matched width
+(Sneller chains widths serially instead). Everything else in this
+document's §1b/§2-§8 space is dated public art; new work must exceed THIS
+line, not the v1 line.
 
 ## 2. Case-folding primitives (in-register, branchless)
 
@@ -304,3 +395,14 @@ These are encoded as tests in this repository:
 - Matt Sills: reversed-polynomial Rabin-Karp
 - Unicode CaseFolding.txt + UTS#18 (case-insensitive matching semantics)
 - simdutf (Lemire et al.): SIMD UTF-8 validation/classification at GB/s
+- StringZilla v4.5 (Vardanian): ashvardanian.com/posts/search-utf8
+- PCRE2 JIT scan_prefix: src/pcre2_jit_compile.c
+- Sneller: sneller.ai/blog/accelerating-ilike-using-avx-512
+- ClickHouse: src/Common/Volnitsky.h, src/Common/StringSearcher.h
+- V8: src/regexp/special-case.h; .NET: System/Globalization/Ordinal.cs
+- Scherer 2003: unicode.org/mail-arch/unicode-ml/y2003-m07/0007.html
+- ED strings: Iliopoulos, Kundu, Pissis, Inf. & Comp. 279 (2021); GD
+  strings: Alzamel et al., WABI 2018; sampling: Vishkin SICOMP 1991,
+  Claude-Navarro et al. JDA 2012, Faro-Marino-Pavone Algorithmica 2020;
+  guards: Sunday CACM 1990, Hume & Sunday SPE 1991; caseless CSV: Lu et
+  al. ICNS 2007; GitHub casefold (Jul 2026) github.blog engineering post
