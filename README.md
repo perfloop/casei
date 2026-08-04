@@ -1,63 +1,83 @@
 # casei
 
-An open benchmark arena for **ASCII case-insensitive substring search**.
+An open benchmark arena for **UTF-8 case-insensitive substring search**.
 
-`grep -i`, SQL `ILIKE`, log-line filters, HTTP header lookups — caseless
-search is one of the most executed operations in computing, and it is far
-slower than it needs to be. On the current public record, most engines pay
-2–5× for case-insensitivity over exact matching, and the standard-library
-answers pay much more (Go's `regexp` with `(?i)` runs about 90× slower than
-its exact-match path on the same input). Exact-match search is a
-heavily-optimized, well-mapped field; its caseless sibling is not.
+`grep -i`, SQL `ILIKE`, log-line filters, header lookups — caseless search is
+one of the most executed operations in computing, and it is far slower than
+it needs to be. For ASCII, engines pay 2–5× over exact matching. Beyond
+ASCII it gets worse: **no dedicated case-insensitive UTF-8 substring
+algorithm exists anywhere.** Regex engines handle it as case-expanded
+literals through general machinery — on the public record (rebar, Dec 2025),
+Hyperscan drops from 32 GB/s exact to 7.4 GB/s on Russian caseless,
+rust/regex to 8.4, and Go's `regexp` to ~49 MB/s. The idiom everyone
+actually writes — `ToLower` both strings and search — is not even correct:
+`ToLower` is not case folding (it splits the σ/ς/Σ orbit, re-encodes, and
+shifts byte offsets).
 
 This repository holds one function:
 
 ```go
-// IndexFold returns the index of the first occurrence of needle in haystack
-// under ASCII case folding, or -1 if needle is not present.
+// IndexFold returns the byte index of the first occurrence of needle in
+// haystack under Unicode simple case folding, or -1.
 func IndexFold(haystack, needle string) int
 ```
 
-Semantics: only the 52 ASCII letters fold. Every other byte compares exactly —
-including the 0x20-adjacent punctuation pairs (`[`/`{`, `@`/`` ` ``, `]`/`}`,
-`\`/`|`, `^`/`~`) and all bytes ≥ 0x80, so UTF-8 multibyte sequences match
-byte-exactly and are never folded. `casei_test.go` and the fuzz target are
-the executable definition, including the trap cases that have bitten real
-SIMD implementations of this exact problem.
+## Semantics
+
+Unicode **simple case folding** over code points — exactly the matching of
+Go `regexp` with `(?i)` and rust/regex, pinned by differential tests:
+
+- `k` matches `K` and the Kelvin sign U+212A; `s` matches `S` and long s
+  U+017F; `σ`, `ς`, `Σ` all match; `ß` matches `ẞ` but **not** `ss` (no full
+  folding); `İ` and `ı` fold only to themselves (locale-independent).
+- Matching is per code point, so a match window's byte length can differ
+  from the needle's (`kelvin` is 6 bytes but matches an 8-byte window
+  starting with U+212A). Matches start at haystack rune boundaries.
+- Bytes outside valid UTF-8 are opaque units: they match only an opaque
+  occurrence of the identical byte, never a fragment of a valid encoding.
+- ASCII consequences: only the 52 ASCII letters fold within ASCII; the
+  0x20-adjacent punctuation pairs (`[`/`{`, `@`/`` ` ``, `]`/`}`, `\`/`|`,
+  `^`/`~`) never match.
+
+`casei_test.go` is the executable definition: trap cases that have bitten
+real SIMD implementations of this problem, a random differential against an
+independent canonical-fold reference on arbitrary bytes, a random
+differential against `regexp (?i)` on valid UTF-8, and a fuzz target
+enforcing both.
 
 ## The bar
 
 The goal is an `IndexFold` that, on this repository's benchmark suite:
 
-1. **wins every scenario** against every baseline — realistic corpora and
-   adversarial inputs alike, no cherry-picking;
-2. **at least doubles** the strongest baseline (geometric mean across the
-   suite);
-3. comes **within 10% of the exact-match ceiling** (`strings.Index` on
-   pre-lowered input) — demonstrating that case-insensitivity can be
+1. **wins every scenario** against every baseline present — realistic
+   corpora and adversarial inputs alike, no cherry-picking;
+2. **ASCII tier**: at least **2×** the strongest baseline (geometric mean)
+   and within **10% of the exact-match ceiling** — case-insensitivity
    effectively free;
+3. **UTF-8 tier**: within **2×** of the ASCII tier's throughput on matched
+   corpus shapes — full Unicode folding must not cost more than one doubling
+   over ASCII folding;
 4. keeps a **linear worst case** — the adversarial scenarios (`periodic`,
-   `samechar`, `torture`) are in the suite precisely so that throughput
-   cannot be bought with a quadratic cliff;
-5. passes every test and the fuzzer, on every architecture it claims.
-
-Pure Go and Go assembly are both in bounds. Architecture-specific fast paths
-must come with a correct portable fallback.
+   `samechar`, `torture`) exist so throughput cannot be bought with a
+   quadratic cliff;
+5. passes every test, differential, and the fuzzer, on every architecture it
+   claims. Architecture-specific fast paths need a correct portable
+   fallback.
 
 ## Baselines
 
-| name | what it is |
-|---|---|
-| `candidate` | `casei.IndexFold` — the function under optimization |
-| `tolower` | `strings.Index(lower(h), lower(n))` — the idiom everyone writes, allocations included |
-| `regexp` | precompiled `(?i)` literal — the stdlib answer |
-| `veloz` | [`mhr3/veloz`](https://github.com/mhr3/veloz) `ascii.IndexFold` — the strongest published Go SIMD caseless search (NEON on arm64, AVX2/SSE on amd64) |
-| `ceiling` | `strings.Index` on pre-lowered input — exact-match physics, the target |
+| name | what it is | tiers |
+|---|---|---|
+| `candidate` | `casei.IndexFold` — the function under optimization | both |
+| `tolower` | `strings.Index(ToLower(h), ToLower(n))` — the common idiom, allocations included; semantically wrong beyond ASCII, kept as a perf reference only | both (perf), ASCII (agreement) |
+| `regexp` | precompiled `(?i)` literal — the stdlib answer and semantic anchor | both |
+| `veloz` | [`mhr3/veloz`](https://github.com/mhr3/veloz) `ascii.IndexFold` — the strongest published Go SIMD caseless search | ASCII |
+| `ceiling` | `strings.Index` on pre-folded input — exact-match physics, the target | both |
 
 ## Running
 
 ```sh
-go test ./...                      # correctness + baseline agreement
+go test ./...                      # correctness, differentials, agreement
 go test -fuzz=FuzzIndexFold -fuzztime=30s
 go test -bench=. -benchtime=200ms  # the arena
 ```
@@ -67,6 +87,7 @@ go test -bench=. -benchtime=200ms  # the arena
 [`CONTEXT.md`](CONTEXT.md) catalogs every technique known to this problem —
 folding primitives, SIMD prefilter designs, candidate-extraction tricks on
 movemask-less ISAs, vectorized rolling hashes, adaptive stage-escalation
-budgets, rare-byte statistics — with sources and measured numbers. It is the
-line between engineering and invention here: **an approach only counts as new
-if it is not already in that document.**
+budgets, rare-byte statistics, and what regex engines do for caseless UTF-8
+today — with sources and measured numbers. It is the line between
+engineering and invention here: **an approach only counts as new if it is
+not already in that document.**

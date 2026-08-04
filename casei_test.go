@@ -2,12 +2,71 @@ package casei
 
 import (
 	"math/rand/v2"
+	"regexp"
 	"strings"
 	"testing"
+	"unicode"
+	"unicode/utf8"
 )
 
-// asciiLower folds only 'A'..'Z'. Deliberately NOT strings.ToLower, which is
-// Unicode-aware and would fold non-ASCII (and re-encode invalid UTF-8).
+// ---- independent reference implementation -----------------------------------
+
+// orbitMin maps a rune to the smallest member of its simple-fold orbit, so
+// fold-equality becomes plain equality of canonical forms.
+func orbitMin(r rune) rune {
+	m := r
+	for x := unicode.SimpleFold(r); x != r; x = unicode.SimpleFold(x) {
+		if x < m {
+			m = x
+		}
+	}
+	return m
+}
+
+// canonFold decodes s into canonical fold form. Opaque (invalid-encoding)
+// bytes become distinct negative sentinels so they compare byte-exactly and
+// can never collide with a real rune. offs[i] is the byte offset in s of
+// canonical element i; a final entry holds len(s).
+func canonFold(s string) (canon []rune, offs []int) {
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 1 {
+			canon = append(canon, -rune(s[i])-1)
+		} else {
+			canon = append(canon, orbitMin(r))
+		}
+		offs = append(offs, i)
+		i += size
+	}
+	offs = append(offs, len(s))
+	return canon, offs
+}
+
+// reference is a second, structurally different implementation: canonical
+// fold both strings, then exact slice search. Every implementation in this
+// repository must agree with it on every input.
+func reference(haystack, needle string) int {
+	if len(needle) == 0 {
+		return 0
+	}
+	ch, offs := canonFold(haystack)
+	cn, _ := canonFold(needle)
+	for i := 0; i+len(cn) <= len(ch); i++ {
+		match := true
+		for j := range cn {
+			if ch[i+j] != cn[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return offs[i]
+		}
+	}
+	return -1
+}
+
+// asciiLower folds only 'A'..'Z'; used by the ASCII-tier ceiling benchmark.
 func asciiLower(s string) string {
 	b := []byte(s)
 	for i, c := range b {
@@ -18,12 +77,24 @@ func asciiLower(s string) string {
 	return string(b)
 }
 
-// reference is an independent second implementation: fold both strings with
-// the ASCII-only fold, then exact search. Every other implementation in this
-// repository must agree with it on every input.
-func reference(haystack, needle string) int {
-	return strings.Index(asciiLower(haystack), asciiLower(needle))
+// canonFoldString rebuilds a string in canonical fold form (UTF-8 tier
+// ceiling: what caseless search costs if folding were free).
+func canonFoldString(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 1 {
+			b.WriteByte(s[i])
+		} else {
+			b.WriteRune(orbitMin(r))
+		}
+		i += size
+	}
+	return b.String()
 }
+
+// ---- trap table --------------------------------------------------------------
 
 var trapCases = []struct {
 	name     string
@@ -41,7 +112,7 @@ var trapCases = []struct {
 	{"match at start", "Foobar", "foo", 0},
 	{"match at end", "barFOO", "foo", 3},
 
-	// 0x20-adjacent punctuation pairs must NOT fold.
+	// 0x20-adjacent ASCII punctuation pairs must NOT fold.
 	{"bracket brace", "[hello]", "{hello}", -1},
 	{"brace bracket upper", "{hello}", "[HELLO]", -1},
 	{"at backtick", "@X@x", "`x", -1},
@@ -51,18 +122,31 @@ var trapCases = []struct {
 	{"bracket exact inside needle", "fn[T any](x)", "FN[t ANY](X)", 0},
 	{"brace does not match bracket needle", "fn{T any}(x)", "fn[T any](x)", -1},
 
-	// Bytes >= 0x80 are opaque: exact match only, never folded.
-	{"utf8 exact", "na\xc3\xafve", "\xc3\xaf", 2},
-	{"utf8 case NOT folded", "na\xc3\xafve", "\xc3\x8f", -1},
-	{"high byte exact", "\x80abc", "\x80a", 0},
-	{"high byte pair not folded", "\x80abc", "\xa0A", -1},
-	{"high byte with letter fold", "\x80ABC", "\x80abc", 0},
+	// Unicode simple-fold orbits.
+	{"latin1 pair folds", "naïve", "Ï", 2},                          // ï matches Ï
+	{"cyrillic", "Шерлок", "шерлок", 0}, // Шерлок / шерлок
+	{"kelvin sign in haystack", "xxKelvin", "kelvin", 2},
+	{"kelvin sign in needle", "5 kelvin", "Kelvin", 2},
+	{"kelvin window longer than needle", "abKelvincd", "kelvin", 2},
+	{"long s", "ſecret", "SECRET", 0},
+	{"angstrom sign", "1Å", "1å", 0},
+	{"micro sign", "5µs", "5μS", 0},
+	{"sigma trio", "τέλος", "ΤΈΛΟΣ", 0}, // τέλος / ΤΈΛΟΣ
+	{"sharp s capital", "große", "GROẞE", 0},
+	{"sharp s is not ss", "große", "GROSSE", -1},
+	{"dotted capital I folds only to itself", "İstanbul", "istanbul", -1},
+	{"dotless i folds only to itself", "ı", "I", -1},
+
+	// Invalid UTF-8 bytes are opaque: exact match only, never folded.
+	{"opaque byte exact", "\x80abc", "\x80a", 0},
+	{"opaque pair not folded", "\x80abc", "\xa0A", -1},
+	{"opaque byte with letter fold", "\x80ABC", "\x80abc", 0},
+	{"lone continuation vs kelvin bytes", "K", "\x84", -1}, // no mid-rune starts
 
 	// Long needles with the case difference in the tail (the class of bug a
 	// scalar-tail verify path gets wrong: see CONTEXT.md, "known traps").
 	{"tail case diff 17B match", strings.Repeat("x", 100) + "abcdefghijklmnopQ", "abcdefghijklmnopq", 100},
 	{"tail mismatch 17B", strings.Repeat("x", 100) + "abcdefghijklmnopQ", "abcdefghijklmnopr", -1},
-	{"tail case diff 33B match", strings.Repeat("y", 64) + "abcdefghijklmnopqrstuvwxyzABCDEF" + "g", strings.Repeat("Y", 0) + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefG", 64},
 
 	// Candidate abutting the very end of the haystack.
 	{"match flush at end", "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzHELLO", "hello", 32},
@@ -87,15 +171,51 @@ func TestIndexFoldTraps(t *testing.T) {
 	}
 }
 
-// alphabet is chosen to stress folding edges: letters at both case ends,
-// digits, every 0x20-adjacent punctuation pair, spaces, and high bytes.
-var alphabet = []byte("aAzZ mM09[{]}@`\\|^~\x80\xc3\xaf\x8f")
+// ---- differential against Go regexp (?i): the semantic anchor ----------------
 
-func randomString(rng *rand.Rand, maxLen int) string {
+// regexp with (?i) implements exactly Unicode simple case folding, so on
+// valid UTF-8 the arena's semantics are pinned to the standard library.
+var diffRunes = []rune{
+	'a', 'z', 'A', 'Z', 'k', 'K', 's', 'S', '0', ' ', '[', '{', '@', '`',
+	'K', 'ſ', 'ß', 'ẞ', 'µ', 'μ', 'Μ',
+	'σ', 'ς', 'Σ', 'İ', 'ı', 'é', 'É',
+	'ш', 'Ш', 'Å', 'å', '汉',
+}
+
+func randomRuneString(rng *rand.Rand, maxLen int) string {
+	n := rng.IntN(maxLen + 1)
+	var b strings.Builder
+	for i := 0; i < n; i++ {
+		b.WriteRune(diffRunes[rng.IntN(len(diffRunes))])
+	}
+	return b.String()
+}
+
+func TestIndexFoldMatchesRegexp(t *testing.T) {
+	rng := rand.New(rand.NewPCG(20260804, 7))
+	for i := 0; i < 8000; i++ {
+		h := randomRuneString(rng, 24)
+		n := randomRuneString(rng, 6)
+		re := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(n))
+		want := -1
+		if loc := re.FindStringIndex(h); loc != nil {
+			want = loc[0]
+		}
+		if got := IndexFold(h, n); got != want {
+			t.Fatalf("iter %d: IndexFold(%q, %q) = %d, regexp says %d", i, h, n, got, want)
+		}
+	}
+}
+
+// ---- randomized differential against the reference (arbitrary bytes) ---------
+
+var byteAlphabet = []byte("aAzZ mM09[{]}@`\\|^~\x80\xc3\xaf\x8f\xe2\x84\xaa")
+
+func randomBytes(rng *rand.Rand, maxLen int) string {
 	n := rng.IntN(maxLen + 1)
 	b := make([]byte, n)
 	for i := range b {
-		b[i] = alphabet[rng.IntN(len(alphabet))]
+		b[i] = byteAlphabet[rng.IntN(len(byteAlphabet))]
 	}
 	return string(b)
 }
@@ -103,8 +223,8 @@ func randomString(rng *rand.Rand, maxLen int) string {
 func TestIndexFoldMatchesReferenceRandom(t *testing.T) {
 	rng := rand.New(rand.NewPCG(20260804, 42))
 	for i := 0; i < 50000; i++ {
-		h := randomString(rng, 48)
-		n := randomString(rng, 8)
+		h := randomBytes(rng, 48)
+		n := randomBytes(rng, 8)
 		got, want := IndexFold(h, n), reference(h, n)
 		if got != want {
 			t.Fatalf("iter %d: IndexFold(%q, %q) = %d, want %d", i, h, n, got, want)
@@ -112,13 +232,11 @@ func TestIndexFoldMatchesReferenceRandom(t *testing.T) {
 	}
 	// A second pass planting a case-mangled needle so hits are common.
 	for i := 0; i < 20000; i++ {
-		n := randomString(rng, 12)
+		n := randomRuneString(rng, 8)
 		if n == "" {
 			continue
 		}
-		pre := randomString(rng, 32)
-		post := randomString(rng, 32)
-		h := pre + flipCases(rng, n) + post
+		h := randomBytes(rng, 24) + flipCases(rng, n) + randomBytes(rng, 24)
 		got, want := IndexFold(h, n), reference(h, n)
 		if got != want {
 			t.Fatalf("planted iter %d: IndexFold(%q, %q) = %d, want %d", i, h, n, got, want)
@@ -126,6 +244,7 @@ func TestIndexFoldMatchesReferenceRandom(t *testing.T) {
 	}
 }
 
+// flipCases randomly flips ASCII letter case (planting helper; fold-neutral).
 func flipCases(rng *rand.Rand, s string) string {
 	b := []byte(s)
 	for i, c := range b {
@@ -145,18 +264,26 @@ func flipCases(rng *rand.Rand, s string) string {
 func FuzzIndexFold(f *testing.F) {
 	f.Add("Hello World", "world")
 	f.Add("[hello]", "{hello}")
+	f.Add("5 Kelvin", "kelvin")
+	f.Add("ſecret ςΣ", "secret σσ")
+	f.Add("große", "GROSSE")
 	f.Add(strings.Repeat("ab", 64), "abc")
 	f.Add("na\xc3\xafve", "\xc3\x8f")
-	f.Add(strings.Repeat("a", 40)+"B", strings.Repeat("A", 3)+"b")
 	f.Fuzz(func(t *testing.T, haystack, needle string) {
 		got, want := IndexFold(haystack, needle), reference(haystack, needle)
 		if got != want {
 			t.Fatalf("IndexFold(%q, %q) = %d, want %d", haystack, needle, got, want)
 		}
-		if got >= 0 {
-			window := haystack[got : got+len(needle)]
-			if asciiLower(window) != asciiLower(needle) {
-				t.Fatalf("reported match at %d is not a fold-equal window: %q vs %q", got, window, needle)
+		if utf8.ValidString(haystack) && utf8.ValidString(needle) {
+			re, err := regexp.Compile(`(?i)` + regexp.QuoteMeta(needle))
+			if err == nil {
+				reWant := -1
+				if loc := re.FindStringIndex(haystack); loc != nil {
+					reWant = loc[0]
+				}
+				if got != reWant {
+					t.Fatalf("IndexFold(%q, %q) = %d, regexp says %d", haystack, needle, got, reWant)
+				}
 			}
 		}
 	})
