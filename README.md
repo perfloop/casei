@@ -64,23 +64,33 @@ enforcing both.
 
 The goal is an `IndexFold` that, on this repository's benchmark suite:
 
-1. **wins every scenario** against every baseline present — realistic
+0. **`x_vs_best < 1` on every row.** `BenchmarkBar` reports, per scenario,
+   the candidate's time divided by the time of the strongest *existing*
+   implementation available on the machine — including hand-written SIMD
+   engines. Above 1 means something that already exists is faster. This is
+   the scoreboard, and every other clause below is subordinate to it.
+1. **Exploit the instruction set.** The strongest baselines here are
+   NEON/AVX2 kernels; scalar code cannot reach them, and `x_vs_best` on the
+   ASCII rows is unreachable without data-parallel work. Architecture-specific
+   kernels are expected, not merely permitted — each with a correct portable
+   fallback and identical semantics under every differential.
+2. **wins every scenario** against every baseline present — realistic
    corpora and adversarial inputs alike, no cherry-picking;
-2. **ASCII tier**: at least **2×** the strongest baseline (geometric mean)
+3. **ASCII tier**: at least **2×** the strongest baseline (geometric mean)
    and within **10% of the exact-match ceiling** — case-insensitivity
    effectively free;
-3. **UTF-8 tier**: within **2×** of the ASCII tier's throughput on matched
+4. **UTF-8 tier**: within **2×** of the ASCII tier's throughput on matched
    corpus shapes — Unicode folding must not cost more than one doubling
    over ASCII folding;
    and, on cased non-Latin scripts, at least **2× StringZilla** measured on
    the same machine under this repository's semantics;
-4. **multi-needle**: beat every baseline across N=2…512 on both tiers —
+5. **multi-needle**: beat every baseline across N=2…512 on both tiers —
    the `simple-fold × multi-needle × SIMD` and `× linear-worst-case` cells
    have no shipped or published occupant (see `CONTEXT.md` §1d);
-5. keeps a **linear worst case** — the adversarial scenarios (`periodic`,
+6. keeps a **linear worst case** — the adversarial scenarios (`periodic`,
    `samechar`, `torture`) exist so throughput cannot be bought with a
    quadratic cliff;
-6. passes every test, differential, and the fuzzer, on every architecture it
+7. passes every test, differential, and the fuzzer, on every architecture it
    claims. Architecture-specific fast paths need a correct portable
    fallback.
 
@@ -108,7 +118,8 @@ Multi-needle (`matcher_bench_test.go`):
 ```sh
 go test ./...                      # correctness, differentials, agreement
 go test -fuzz=FuzzIndexFold -fuzztime=30s
-go test -bench=. -benchtime=200ms  # the arena (single- and multi-needle)
+go test -bench=. -benchtime=200ms       # the arena (single- and multi-needle)
+go test -bench=BenchmarkBar -benchtime=10ms  # the scoreboard: x_vs_best per row
 ```
 
 ## Prior art
