@@ -5,11 +5,16 @@ An open benchmark arena for **UTF-8 case-insensitive substring search**.
 `grep -i`, SQL `ILIKE`, log-line filters, header lookups — caseless search is
 one of the most executed operations in computing, and it is far slower than
 it needs to be. For ASCII, engines pay 2–5× over exact matching. Beyond
-ASCII it gets worse: **no dedicated case-insensitive UTF-8 substring
-algorithm exists anywhere.** Regex engines handle it as case-expanded
-literals through general machinery — on the public record (rebar, Dec 2025),
+ASCII it gets worse. Regex engines handle it as case-expanded literals
+through general machinery — on the public record (rebar, Dec 2025),
 Hyperscan drops from 32 GB/s exact to 7.4 GB/s on Russian caseless,
-rust/regex to 8.4, and Go's `regexp` to ~49 MB/s. The idiom everyone
+rust/regex to 8.4, and Go's `regexp` to ~49 MB/s. Dedicated engines exist
+but not for these semantics: StringZilla v4.5 implements **full** folding
+(ß→ss — a contract ClickHouse explicitly declined for substring search),
+and ClickHouse's own UTF-8 caseless searcher surrenders
+(`force_fallback = true`) whenever a character's case forms differ in
+encoded length. **No dedicated engine implements simple folding — the
+semantics of `regexp (?i)`.** The idiom everyone
 actually writes — `ToLower` both strings and search — is not even correct:
 `ToLower` is not case folding (it splits the σ/ς/Σ orbit, re-encodes, and
 shifts byte offsets).
@@ -65,12 +70,17 @@ The goal is an `IndexFold` that, on this repository's benchmark suite:
    and within **10% of the exact-match ceiling** — case-insensitivity
    effectively free;
 3. **UTF-8 tier**: within **2×** of the ASCII tier's throughput on matched
-   corpus shapes — full Unicode folding must not cost more than one doubling
+   corpus shapes — Unicode folding must not cost more than one doubling
    over ASCII folding;
-4. keeps a **linear worst case** — the adversarial scenarios (`periodic`,
+   and, on cased non-Latin scripts, at least **2× StringZilla** measured on
+   the same machine under this repository's semantics;
+4. **multi-needle**: beat every baseline across N=2…512 on both tiers —
+   the `simple-fold × multi-needle × SIMD` and `× linear-worst-case` cells
+   have no shipped or published occupant (see `CONTEXT.md` §1d);
+5. keeps a **linear worst case** — the adversarial scenarios (`periodic`,
    `samechar`, `torture`) exist so throughput cannot be bought with a
    quadratic cliff;
-5. passes every test, differential, and the fuzzer, on every architecture it
+6. passes every test, differential, and the fuzzer, on every architecture it
    claims. Architecture-specific fast paths need a correct portable
    fallback.
 
@@ -84,12 +94,21 @@ The goal is an `IndexFold` that, on this repository's benchmark suite:
 | `veloz` | [`mhr3/veloz`](https://github.com/mhr3/veloz) `ascii.IndexFold` — the strongest published Go SIMD caseless search | ASCII |
 | `ceiling` | `strings.Index` on pre-folded input — exact-match physics, the target | both |
 
+Multi-needle (`matcher_bench_test.go`):
+
+| name | what it is |
+|---|---|
+| `candidate` | `casei.Matcher` |
+| `regexpAlt` | precompiled `(?i)(?:p0\|p1\|…)` — stdlib answer, semantic anchor for leftmost-start |
+| `ac` | [aho-corasick](https://github.com/petar-dambovaliev/aho-corasick) DFA, leftmost-first, ASCII-caseless (ASCII tier only — the reference multi-pattern libraries renounce Unicode folding) |
+| `ceiling` | exact-match Aho-Corasick over pre-folded input |
+
 ## Running
 
 ```sh
 go test ./...                      # correctness, differentials, agreement
 go test -fuzz=FuzzIndexFold -fuzztime=30s
-go test -bench=. -benchtime=200ms  # the arena
+go test -bench=. -benchtime=200ms  # the arena (single- and multi-needle)
 ```
 
 ## Prior art

@@ -123,8 +123,8 @@ var trapCases = []struct {
 	{"brace does not match bracket needle", "fn{T any}(x)", "fn[T any](x)", -1},
 
 	// Unicode simple-fold orbits.
-	{"latin1 pair folds", "naïve", "Ï", 2},                          // ï matches Ï
-	{"cyrillic", "Шерлок", "шерлок", 0}, // Шерлок / шерлок
+	{"latin1 pair folds", "naïve", "Ï", 2}, // ï matches Ï
+	{"cyrillic", "Шерлок", "шерлок", 0},    // Шерлок / шерлок
 	{"kelvin sign in haystack", "xxKelvin", "kelvin", 2},
 	{"kelvin sign in needle", "5 kelvin", "Kelvin", 2},
 	{"kelvin window longer than needle", "abKelvincd", "kelvin", 2},
