@@ -186,12 +186,103 @@ repository must not add a known-art implementation merely to benchmark its
 decode cost; doing so would violate the invention and negative-result rules in
 `AGENTS.md`.
 
+## Follow-up assessment: fixed-width lossy projection with survivor verification
+
+### Status
+
+**Negative assessment for the proposed `index_fold` projection scan.**  The
+published `casefold` crate already describes this exact one-byte-per-character
+projection as a lossy case-insensitive index/hash key and explicitly prescribes
+using it as a candidate filter followed by verification against the original
+text.  Generating that same key stream online, scanning it in fixed-width SIMD
+blocks, and verifying survivors changes when the key is stored and compared;
+it does not identify a new search state or transition.
+
+### Construction assessed
+
+Let `p` be `casefold::index_fold_char` on each valid Unicode character: ASCII
+is simple-folded to an ASCII byte and every non-ASCII character becomes
+`0x80 | (simple_fold(r) & 0x7f)`.  A Go implementation would additionally
+need an opaque-unit rule for invalid UTF-8 so that a candidate cannot begin in
+the middle of a valid encoding.  That contract detail is necessary for this
+repository, but does not change the projection/filter construction.
+
+The assessed plan projects the needle once, emits `p` for haystack units in
+source order, and searches the projected sequence for the projected needle.
+A projected equality is only a survivor: it recovers its original byte start
+with either a running unit-to-byte cursor or a replay/offset map, then calls a
+true simple-fold verifier.  Fixed-stride SIMD scanning is only a batched way
+to evaluate the projected equality.  The projection has no false negatives
+for a fold-equal rendering, but its seven-bit non-ASCII payload admits false
+positives and the verifier decides the match.
+
+### Closest known constructions
+
+| Construction | Source | Relation to the assessed plan |
+| --- | --- | --- |
+| `casefold::index_fold` | GitHub [`rust-gems` `casefold` v0.1.0 `index_fold.rs`](https://github.com/github/rust-gems/blob/d08a649afb47f1ec303f30ec3d062444291b5ec3/crates/casefold/src/index_fold.rs) and [crate README](https://github.com/github/rust-gems/blob/d08a649afb47f1ec303f30ec3d062444291b5ec3/crates/casefold/README.md#single-byte-index-fold) | The implementation defines the same ASCII/high-bit projection.  Its docs call the result a fixed-width key for indexing or hashing with acceptable collisions; the README says to use it as a candidate filter with no false negatives and verify exact hits against original text. |
+| Case-insensitive n-gram indexing | The same `casefold` README, “Why one byte per character?” | A stored projected document and an online projected scan differ only in persistence and lookup scheduling.  Both compare the same projected k-character key and verify original-text candidates. |
+| SIMD candidate/confirm literal engines | `CONTEXT.md` §§1d and 3--5; Teddy/FDR/Snort sources listed in `CONTEXT.md` §10 | The two-stage SIMD-candidate-plus-verifier shape is explicitly pre-conceded known art.  Replacing a byte/nibble fingerprint with this published character projection does not create a new confirmation transition. |
+| Source-position recovery after a reduced-space search | `CONTEXT.md` §1b (alphabet sampling with position mapping; rust/regex reverse re-scan) | Carrying byte offsets beside projected units is a position map; replaying after a rare survivor is re-scan recovery.  They select the same source start for the same projected hit. |
+
+### Why the online scan is an equivalent repacking
+
+For a valid haystack decoded into units `h₀, h₁, …`, materializing
+`p(h₀)p(h₁)…` and searching that byte string produces exactly the same survivor
+unit indexes as emitting `p` in a streaming loop and comparing blocks as they
+arrive.  Keeping a byte cursor merely decorates each emitted unit with its
+source coordinate; replaying derives that coordinate later.  Neither changes
+which projected windows equal `p(needle)`.
+
+At a survivor, the proposed true-fold verifier is the only operation that
+separates a collision from a match.  Thus the complete accepted predicate is
+“projected-key equality, then the existing exact predicate,” which is the
+filter/verify pipeline the crate documents for its n-gram key.  SIMD width,
+projected-block layout, a rare-survivor replay threshold, and collision density
+can affect cost, but not the representation or accepted language.  In
+particular, offset recovery is not a new block transition: it is bookkeeping
+outside the projected comparison and verifier.
+
+This also cannot reopen either closed assessment above.  Unlike the lossless
+fold-orbit quotient and raw-byte fold automaton, this plan deliberately loses
+information before searching; its only way back to correct semantics is the
+known confirmation stage, not a new recognizer for the fold language.
+
+### Falsification search and result
+
+This negative would be falsified by a source showing that `index_fold` is not
+usable as a lossy candidate filter followed by original-text verification, or
+by a precise online state/update whose outputs cannot be reproduced from the
+projected stream, an ordinary projected-string search, a source-position map
+(or replay), and the same verifier.  A faster SIMD implementation, a lower
+collision rate on a corpus, or a different replay threshold would not falsify
+that reduction.
+
+The `casefold` source and README were read at commit
+`d08a649afb47f1ec303f30ec3d062444291b5ec3`; its `Cargo.toml` identifies the
+crate as version `0.1.0`.  They give the opposite of the first falsifier: the
+projection is documented as a collision-tolerant index/hash key, and the README
+explicitly names candidate filtering followed by exact verification.  The
+repository's existing survey independently places two-stage candidate/verify
+engines and reduced-space offset recovery in known art.  No distinct state or
+transition remained after that comparison.
+
+### Decision
+
+This is a documented negative finding, not a candidate optimization.  Per
+`AGENTS.md`, the repository must not add a Go port, SIMD scan, or collision
+benchmark merely to measure a published filter/verify construction.  The
+requested Cyrillic and hazard collision-density sweep is therefore not
+performed: it could characterize the known technique's cost, but cannot make
+it an invention.  No performance claim is made.
+
 ## Provenance
 
 This contribution adds only the novelty assessments in this file.  The
-original assessment and the raw-byte follow-up were written for this
-repository from the current `AGENTS.md`, `README.md`, `CONTEXT.md`, source and
-test files, and the cited source locations; they contain no copied
-implementation code and make no external performance claim.  If implementation
-files are added later, each non-trivial file will identify its authorship and
-source provenance here.
+original assessment, the raw-byte follow-up, and the fixed-width projection
+assessment were written for this repository from the current `AGENTS.md`,
+`README.md`, `CONTEXT.md`, source and test files, and the cited source
+locations; they contain no copied implementation code and make no external
+performance claim.  The last assessment also records the inspected upstream
+crate commit and version.  If implementation files are added later, each
+non-trivial file will identify its authorship and source provenance here.
