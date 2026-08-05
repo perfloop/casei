@@ -1,0 +1,29 @@
+name: ci
+on: [push, pull_request]
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version: '1.24'}
+      # Isolation runs first. A candidate that reaches a competitor is
+      # ineligible, so there is no point measuring it.
+      - run: ./scripts/check-baseline-isolation.sh
+      - run: gofmt -l . | (! grep .)
+      - run: go vet ./...
+      - run: go test ./...
+
+  arena:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version: '1.24'}
+      - run: go vet ./...
+        working-directory: arena
+      # The agreement tests are the gate that keeps a baseline honest: every
+      # entrant must match the arena's own oracle before its timings count.
+      - run: go test ./...
+        working-directory: arena

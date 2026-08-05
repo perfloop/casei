@@ -1,10 +1,32 @@
 # CONTEXT — the known frontier of case-insensitive substring search
 
-This document catalogs every technique known to this problem as of August
-2026, with sources and measured numbers. It exists to draw one line: **an
-approach only counts as new if it is not in this document.** Anything below
-is fair game to use, combine, and tune — but using it is engineering, not
-invention.
+This document catalogs techniques known to this problem as of August 2026,
+with sources and measured numbers. Anything below is fair game to use,
+combine, and tune — but using it is engineering, not invention.
+
+## Novelty gate
+
+**Absence from this document is not evidence of novelty.** This catalog is
+incomplete by construction: it holds what one sweep happened to find, and the
+literature on string search is eighty years deep. Treating "not in CONTEXT.md"
+as "new" is circular, and it is how a re-implementation gets published as a
+discovery.
+
+A construction is a novelty candidate only after an adversarial exclusion pass
+against the frozen field and the literature, stating:
+
+1. the claimed new state representation or transition;
+2. the closest known constructions, with sources;
+3. why the claim is not an equivalent combination, repacking, or threshold
+   variation of those constructions;
+4. what evidence — a paper, an implementation, a benchmark — would falsify the
+   claim, and the result of looking for it;
+5. provenance for every non-trivial implementation file: who or what authored
+   it, and from what.
+
+Point 3 is where these claims usually die. Point 5 is not paperwork: if the
+deliverable is that a machine invented this, then authorship has to be a
+record, not an assertion in a README.
 
 ## 1. State of the art, measured
 

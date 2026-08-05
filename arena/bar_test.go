@@ -1,4 +1,4 @@
-package casei
+package arena_test
 
 // The competitive bar, expressed as a measurable quantity.
 //
@@ -24,6 +24,8 @@ import (
 	"time"
 
 	veloz "github.com/mhr3/veloz/ascii"
+
+	"github.com/tsenart/casei"
 )
 
 // timeOp returns ns/op for one operation. It times manually rather than
@@ -54,7 +56,7 @@ func BenchmarkBar(b *testing.B) {
 	for _, s := range scenarios {
 		s := s
 		b.Run("single/"+s.name, func(b *testing.B) {
-			cand := timeOp(func() { sink = IndexFold(s.haystack, s.needle) })
+			cand := timeOp(func() { sink = casei.IndexFold(s.haystack, s.needle) })
 
 			best := timeOp(func() { sink = indexRegexp(s.haystack, s.needle) })
 			// veloz is a SIMD engine and fold-correct on pure-ASCII input.
@@ -71,7 +73,7 @@ func BenchmarkBar(b *testing.B) {
 				}
 			}
 			for i := 0; i < b.N; i++ {
-				sink = IndexFold(s.haystack, s.needle)
+				sink = casei.IndexFold(s.haystack, s.needle)
 			}
 			b.ReportMetric(cand/best, "x_vs_best")
 		})
@@ -80,7 +82,7 @@ func BenchmarkBar(b *testing.B) {
 	for _, s := range multiScenarios {
 		s := s
 		b.Run("multi/"+s.name, func(b *testing.B) {
-			m := NewMatcher(s.patterns)
+			m := casei.NewMatcher(s.patterns)
 			cand := timeOp(func() { _, matcherFound = m.Find(s.haystack) })
 
 			re := regexpAltFor(s.patterns)

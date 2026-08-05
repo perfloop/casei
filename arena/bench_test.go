@@ -1,4 +1,4 @@
-package casei
+package arena_test
 
 // The arena. Every implementation races on the same scenario matrix:
 // realistic corpora (logs, prose, code, Cyrillic text), miss-heavy
@@ -39,6 +39,8 @@ import (
 	"unicode/utf8"
 
 	veloz "github.com/mhr3/veloz/ascii"
+
+	"github.com/tsenart/casei"
 )
 
 // ---- corpora (deterministic; no testdata files) ----------------------------
@@ -235,7 +237,7 @@ var impls = []struct {
 	asciiOnly bool // skip entirely on UTF-8 tier scenarios
 	foldExact bool // implements simple folding: held to the agreement test on both tiers
 }{
-	{"candidate", IndexFold, false, true},
+	{"candidate", casei.IndexFold, false, true},
 	{"tolower", indexToLower, false, false}, // agreement on ASCII tier only: ToLower is not folding
 	{"regexp", indexRegexp, false, true},
 	{"veloz", veloz.IndexFold, true, false}, // fold-correct on pure-ASCII input only

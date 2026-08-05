@@ -1,0 +1,62 @@
+# The frozen competitive field.
+#
+# A result is only ever "fastest among this manifest, on the declared
+# platform". "Fastest in existence" is not a claim this repository can
+# support, and the bar no longer asks for it.
+#
+# semantic_status decides whether a baseline's time may enter x_vs_best:
+#
+#   exact          agrees with the arena oracle on every input, both tiers.
+#                  Counts as a competitor.
+#   exact-for-ascii  agrees on the ASCII tier only. Counts there, excluded
+#                  from UTF-8 rows.
+#   diagnostic     runs for reference but never enters x_vs_best, because its
+#                  semantics differ (full folding vs simple folding, different
+#                  match position, different tie rule).
+#   pending-adapter  a real competitor that has no semantics-preserving
+#                  adapter here yet. Any adaptation, preprocessing, or
+#                  conversion needed for equivalence is timed as part of it.
+#
+# A row whose only competitor is Go's regexp is FIELD-INCOMPLETE. It cannot be
+# reported as a competitive win. Today every UTF-8 row is in that state, which
+# is why the naive reference already scores below 1.0 there.
+
+baselines:
+  - name: regexp
+    tier: [ascii, utf8]
+    semantic_status: exact
+    what: Go stdlib regexp with (?i), scalar NFA. The floor, not the field.
+
+  - name: veloz
+    tier: [ascii]
+    semantic_status: exact-for-ascii
+    what: mhr3/veloz ascii.IndexFold, hand-written NEON/AVX2. The real ASCII bar.
+
+  - name: aho-corasick
+    tier: [ascii]
+    semantic_status: exact-for-ascii
+    what: petar-dambovaliev/aho-corasick, DFA. Multi-pattern ASCII bar.
+
+  - name: tolower
+    tier: [ascii]
+    semantic_status: diagnostic
+    what: strings.ToLower + strings.Index. Not folding; wrong beyond ASCII.
+
+  # Unoccupied. Until at least one of these lands with an adapter, no UTF-8
+  # row has a competitor and no UTF-8 result is a field win.
+  - name: stringzilla
+    tier: [utf8]
+    semantic_status: pending-adapter
+    what: StringZilla v4.5 caseless UTF-8, AVX-512/NEON. Full folding, so it
+          needs a simple-fold adapter before its time can count.
+
+  - name: pcre2-jit
+    tier: [utf8]
+    semantic_status: pending-adapter
+    what: PCRE2 JIT scan_prefix, caseless. Needs an offset/tie adapter.
+
+  - name: vectorscan
+    tier: [utf8]
+    semantic_status: pending-adapter
+    what: Vectorscan/Hyperscan caseless literal set. Reports all matches;
+          needs a leftmost/tie adapter.

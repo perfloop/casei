@@ -62,37 +62,75 @@ enforcing both.
 
 ## The bar
 
-The goal is an `IndexFold` that, on this repository's benchmark suite:
+### Baseline isolation
 
-0. **`x_vs_best < 1` on every row.** `BenchmarkBar` reports, per scenario,
-   the candidate's time divided by the time of the strongest *existing*
-   implementation available on the machine — including hand-written SIMD
-   engines. Above 1 means something that already exists is faster. This is
-   the scoreboard, and every other clause below is subordinate to it.
-1. **Exploit the instruction set.** The strongest baselines here are
-   NEON/AVX2 kernels; scalar code cannot reach them, and `x_vs_best` on the
-   ASCII rows is unreachable without data-parallel work. Architecture-specific
-   kernels are expected, not merely permitted — each with a correct portable
+Search code must not import, link, execute, embed, or delegate lookup to any
+implementation in `arena/field.yaml`. Baselines live in the `arena/` module and
+stay there; `scripts/check-baseline-isolation.sh` runs first in CI.
+
+**A candidate that calls a field competitor is ineligible, whatever its
+benchmark says.** This is not a style rule. An engine that calls `veloz` cannot
+beat `veloz` — it can only add dispatch and verification overhead on top of it —
+but `x_vs_best` reports a ratio either way, so the scoreboard cannot tell you
+that no search was invented. The module boundary can.
+
+### Engine identity
+
+`IndexFold` and `Matcher.Find` must be one package-owned compiled search plan
+and one block-transition state machine. A single needle is the `N=1` plan.
+ASCII, UTF-8, scalar, AVX2 and NEON paths may differ only as representations of
+that same transition.
+
+Prohibited as alternate engines: per-pattern `IndexFold` loops, regex
+delegation, `strings.Index` fallback lookup, an unrelated KMP or Aho-Corasick
+engine reachable at runtime, and benchmark-specific dispatch. Instrumentation
+must be able to show that single-needle and multi-needle searches enter the
+same plan.
+
+### Competitive acceptance
+
+Results are scoped to the frozen field in `arena/field.yaml` — baseline
+versions, build flags, ISA, corpus hashes, semantic status. The claim this
+repository can support is *fastest among the audited field, on the declared
+platform*. It cannot support "fastest in existence", and no longer asks for it.
+
+A baseline's time enters `x_vs_best` only if its `semantic_status` says it
+agrees with the arena oracle on that tier. Any adaptation needed to make it
+comparable is timed as part of it.
+
+**A row whose only compatible competitor is Go's `regexp` is field-incomplete
+and cannot be reported as a competitive win.** Every UTF-8 row is currently in
+that state: the naive reference in this repository already scores 0.31–0.90
+there, having beaten nothing but a scalar NFA. Occupying `stringzilla`,
+`pcre2-jit`, or `vectorscan` is what makes those rows mean something.
+
+On every mandatory row that is not ceiling-limited, the upper bound of the 95%
+confidence interval of `candidate / best-field` must be **≤ 0.67**, and the
+geometric mean across those rows **≤ 0.50**.
+
+A row is ceiling-limited when the best field implementation is within 5% of the
+exact-match ceiling. Demanding a large multiple there is asking to beat memory
+bandwidth; such a row instead requires the candidate within 5% of that ceiling,
+and is reported separately.
+
+Report raw paired samples with alternating order, not a best-of-N point
+estimate. Ratios and intervals are computed from those samples.
+
+### And it must also
+
+1. **Exploit the instruction set.** The ASCII bar is a hand-written NEON/AVX2
+   kernel. Scalar code does not reach it, and no wrapper reaches it either.
+   Architecture-specific kernels are expected — each with a correct portable
    fallback and identical semantics under every differential.
-2. **wins every scenario** against every baseline present — realistic
-   corpora and adversarial inputs alike, no cherry-picking;
-3. **ASCII tier**: at least **2×** the strongest baseline (geometric mean)
-   and within **10% of the exact-match ceiling** — case-insensitivity
-   effectively free;
-4. **UTF-8 tier**: within **2×** of the ASCII tier's throughput on matched
-   corpus shapes — Unicode folding must not cost more than one doubling
-   over ASCII folding;
-   and, on cased non-Latin scripts, at least **2× StringZilla** measured on
-   the same machine under this repository's semantics;
-5. **multi-needle**: beat every baseline across N=2…512 on both tiers —
-   the `simple-fold × multi-needle × SIMD` and `× linear-worst-case` cells
-   have no shipped or published occupant (see `CONTEXT.md` §1d);
-6. keeps a **linear worst case** — the adversarial scenarios (`periodic`,
+2. **Keep a linear worst case.** The adversarial scenarios (`periodic`,
    `samechar`, `torture`) exist so throughput cannot be bought with a
-   quadratic cliff;
-7. passes every test, differential, and the fuzzer, on every architecture it
-   claims. Architecture-specific fast paths need a correct portable
-   fallback.
+   quadratic cliff.
+3. **Pass every test, differential, and the fuzzer, on every architecture it
+   claims.** Architecture-specific fast paths need a correct portable fallback.
+4. **Be reproducible off this machine.** A field result ships with the frozen
+   manifest, corpus hashes, toolchain and CPU feature detection, and the raw
+   samples — enough for a third party to re-run it on their own hardware and
+   get the same direction and confidence bounds.
 
 ## Where the reference stands
 

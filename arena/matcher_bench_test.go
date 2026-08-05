@@ -1,4 +1,4 @@
-package casei
+package arena_test
 
 // The multi-needle arena. Pre-registered before any multi-needle claim.
 // Baselines:
@@ -20,6 +20,8 @@ import (
 	"testing"
 
 	ac "github.com/petar-dambovaliev/aho-corasick"
+
+	"github.com/tsenart/casei"
 )
 
 type multiScenario struct {
@@ -75,13 +77,13 @@ func acBuild(patterns []string, caseInsensitive bool) ac.AhoCorasick {
 	return b.Build(patterns)
 }
 
-func acFirst(a *ac.AhoCorasick, h string) (Match, bool) {
+func acFirst(a *ac.AhoCorasick, h string) (casei.Match, bool) {
 	it := a.Iter(h)
 	m := it.Next()
 	if m == nil {
-		return Match{}, false
+		return casei.Match{}, false
 	}
-	return Match{Pattern: m.Pattern(), Start: m.Start()}, true
+	return casei.Match{Pattern: m.Pattern(), Start: m.Start()}, true
 }
 
 func foldAll(patterns []string, utf8Tier bool) []string {
@@ -101,7 +103,7 @@ func foldAll(patterns []string, utf8Tier bool) []string {
 func TestMultiBaselinesAgree(t *testing.T) {
 	for _, s := range multiScenarios {
 		want, wantOK := refFind(s.haystack, s.patterns)
-		got, gotOK := NewMatcher(s.patterns).Find(s.haystack)
+		got, gotOK := casei.NewMatcher(s.patterns).Find(s.haystack)
 		if gotOK != wantOK || (gotOK && got != want) {
 			t.Errorf("%s/candidate: %+v,%v want %+v,%v", s.name, got, gotOK, want, wantOK)
 		}
@@ -129,7 +131,7 @@ func TestMultiBaselinesAgree(t *testing.T) {
 
 func BenchmarkMatcher(b *testing.B) {
 	for _, s := range multiScenarios {
-		m := NewMatcher(s.patterns)
+		m := casei.NewMatcher(s.patterns)
 		b.Run(s.name+"/candidate", func(b *testing.B) {
 			b.SetBytes(int64(len(s.haystack)))
 			b.ReportAllocs()
