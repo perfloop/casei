@@ -286,6 +286,56 @@ the native representation with engines DERIVED from it, the SIMD+linear
 combination (open even for exact multi), offset-correct simple-fold multi
 semantics at SIMD speed, and N-continuity under one theory.
 
+### 1e. GitHub `casefold` / Blackbird (Jul 2026) -- the pre-folded ceiling, shipped
+
+Neubeck & Orzell, GitHub engineering blog 2026-07-31, open-sourced as the Rust
+crate `casefold` (github/rust-gems, v0.1.0, 2026-07-09). This is the closest
+published art to anything that treats folding as a primitive rather than a cost,
+and it is six days old. It is a citation in the source list above only because
+that list predates reading it; the content is here.
+
+**What it does.** `simple_fold(String) -> String` over exactly our semantics --
+CaseFolding.txt statuses C and S, no full folds (`ss`), no Turkic. Table is a
+paged bitmap plus run-length encoding, **~1.7 KB**, roughly 10x smaller than a
+hash map of the same data.
+
+**The trick.** The fold is byte-space arithmetic, not decode-fold-encode: the
+folded character's UTF-8 bytes read as a `u32` equal the source bytes as a `u32`
+plus a per-run constant. No code point is ever materialized. Width-changing
+folds are handled in that arithmetic (U+212A KELVIN SIGN -> `k`, U+023A -> U+2C65).
+
+**The counterintuitive result.** Removing the early-exit branch is what let it
+vectorize: ASCII went 3.1 -> **>45 GiB/s** on one core, i.e. memory bandwidth.
+Non-ASCII runs ~1 GiB/s. ASCII is lowercased in place in the caller's buffer;
+a second allocation happens only on the first real fold.
+
+**What this closes.** The `ceiling` row in `arena/` is not a theoretical limit.
+Pre-folded exact search is a shipped design at memory bandwidth, so
+"fold then search exactly" is an engineering option and not a thought
+experiment. Any claim of the form "we avoid re-folding during verification" is
+competing against this, not against a hypothetical.
+
+**What it does not do.** It folds a *stream* and materializes the output, for
+index building. It is not a search: there is no pattern, no offsets, no
+leftmost/tie contract. A scan that materialized a folded haystack would pay the
+memory traffic this design exists to stream through.
+
+**`index_fold` -- the part worth staring at.** `index_fold(String) -> Vec<u8>`
+applies the same simple fold and then projects **every character to exactly one
+byte**: ASCII to its lowercased byte with the high bit clear, and every
+multibyte character to `0x80 | (cp & 0x7F)` -- the low seven bits of the *folded*
+code point with the high bit set unconditionally, so a multibyte character that
+folds to ASCII (KELVIN SIGN) still yields `0x80 | b'k'` and never a bare ASCII
+byte. GitHub built it as a primitive for case-insensitive n-gram *indexing*.
+
+Two properties fall out that matter for search and that the blog does not
+pursue, because indexing is not searching: the projection is **fixed-width**
+(m characters become exactly m bytes, so variable UTF-8 width disappears from
+the projected space), and it is **lossy** (a 7-bit collision is a false
+positive, so any hit needs verification against the real fold). A projected-space
+position also does not map to a haystack byte offset without carrying the
+mapping.
+
 ## 2. Case-folding primitives (in-register, branchless)
 
 All known ways to fold or compare ASCII case without a branch per byte:
@@ -512,7 +562,7 @@ These are encoded as tests in this repository:
   strings: Alzamel et al., WABI 2018; sampling: Vishkin SICOMP 1991,
   Claude-Navarro et al. JDA 2012, Faro-Marino-Pavone Algorithmica 2020;
   guards: Sunday CACM 1990, Hume & Sunday SPE 1991; caseless CSV: Lu et
-  al. ICNS 2007; GitHub casefold (Jul 2026) github.blog engineering post
+  al. ICNS 2007; GitHub casefold (Jul 2026), see 1e
 - Multi-pattern (v3): Aho-Corasick CACM 1975 + BurntSushi aho-corasick
   DESIGN.md/Teddy README; Hyperscan NSDI'19 + Langdale posts (2019, 2024);
   Harry INFOCOM 2023; Vectorscan (VectorCamp); ClickHouse Volnitsky.h
