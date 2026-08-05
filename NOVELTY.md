@@ -87,10 +87,111 @@ result is that the proposed orbit-class table is classified as engineering, not
 an invention.  No external browsing result is being asserted beyond the
 sources cited above.
 
+## Follow-up assessment: direct raw-byte fold transitions
+
+### Status
+
+**Negative assessment for raw UTF-8 byte accept masks with partial-width
+matcher state.**  The proposed scan can avoid constructing a Go `rune` or a
+canonical-fold token, but its states and transitions are exactly a compressed
+case-expanded UTF-8 byte automaton.  It is therefore a different operational
+placement of decoding work, not a distinct search construction.  Per
+`AGENTS.md` §§1 and 3, no implementation or performance experiment follows
+from this assessment.
+
+### Construction assessed
+
+Let `E(a)` be the set of UTF-8 byte strings for all members of the simple-fold
+orbit of a valid pattern rune `a`.  For an opaque invalid pattern byte `b`,
+let `E(b) = {b}`.  For pattern units `a₁ … aₘ`, the proposed raw-byte matcher
+accepts the concatenation language
+
+```
+E(a₁) E(a₂) … E(aₘ).
+```
+
+Its proposed representation assigns each runtime state a raw-byte accept mask
+and carries a state for a prefix of a multi-byte alternative already seen.  A
+`k` position, for example, accepts the one-byte alternatives `k` and `K` and
+the three-byte alternative `e2 84 aa` for KELVIN SIGN.  A `s` position adds
+`c5 bf` for LONG S.  A sigma position has the three two-byte alternatives
+`ce b2`, `ce b3`, and `ce a3`.  The partially consumed `e2`, `e2 84`, `c5`,
+and `ce` prefixes are the proposed extra states.
+
+The arbitrary-byte contract requires one more component.  A raw scanner must
+not let an opaque-byte pattern `84` match the middle byte of `e2 84 aa`.
+Consequently it must carry the standard finite UTF-8 lexical/boundary state,
+including invalid-sequence error behavior, or an equivalent delayed-byte
+mechanism.  Otherwise it fails the existing `lone continuation vs kelvin
+bytes` trap.  This may avoid a call to `utf8.DecodeRuneInString`, but it is
+still the UTF-8 prefix automaton embedded in the matcher state.
+
+### Constructive reduction to the known construction
+
+For every byte string in `E(a)`, draw a byte-labelled path from the state
+before pattern position `a` to the state after it.  The nodes after each
+proper prefix of a multi-byte string are precisely the partial-width states
+above.  Product that graph with the UTF-8 lexical/boundary automaton, label
+its terminals with pattern indices, and carry each active path's native byte
+start alongside the ordinary search state.  Selecting the leftmost start and
+then the lowest terminal pattern index gives exactly the repository contract,
+including opaque bytes.
+
+A per-state byte mask is merely a packed encoding of the outgoing labelled
+edges in that graph.  Expanding a mask into one edge per accepted byte
+recovers the case-expanded byte graph; packing equal edge sets into masks
+recovers the proposal.  A bitset of simultaneously active states is likewise
+the standard subset representation of that graph.  For a pattern set, union
+all pattern graphs and use the same construction; the multi-pattern state is
+still a state or subset of the same expanded byte automaton.
+
+Thus width changes add ordinary prefix paths, not a new transition relation.
+No normalized stream or `q` token has to be materialized for this equivalence:
+the omission changes storage and scheduling only.  A block implementation
+would precompute several transitions of this same graph.  It would remain an
+acceleration of the graph unless it supplies a transition not obtainable by
+mask packing and byte-edge expansion.
+
+### Closest known constructions
+
+| Construction | Source | Relation to the assessed plan |
+| --- | --- | --- |
+| Case-expanded literal and UTF-8 automata | UTS #18; RE2; rust-regex / regex-automata; `CONTEXT.md` §1b | Each member of `E(a)` is an ordinary UTF-8 alternative.  The path expansion above is their literal construction. |
+| Native byte-level fold-set structures | ClickHouse `MultiVolnitskyCaseInsensitiveUTF8` and Quamina; `CONTEXT.md` §1d | These already derive byte structures from fold alternatives.  The proposal changes neither their byte-language basis nor the meaning of an intermediate encoding-prefix state. |
+| Masked SIMD literal engines | Teddy and FDR / Hyperscan; `CONTEXT.md` §§1d and 3 | Byte or nibble masks are a compact representation of accepted outgoing alternatives; they do not create a different accepted transition relation. |
+| Canonical-fold quotient assessment above | This file; `CONTEXT.md` §1b | The earlier rejected plan materializes a quotient token.  This plan does not materialize one, but directly expands the same fold sets into UTF-8 byte paths, which is the other already-catalogued representation. |
+
+### Falsification search and result
+
+The negative would be falsified by a precise raw-byte state whose update and
+outputs cannot be obtained from the expanded byte paths plus the UTF-8
+boundary state — not merely by avoiding a `rune` allocation, packing masks
+differently, or precomputing a block transition.  In particular, it would
+need a proof that expanding every mask into byte edges fails to preserve an
+accepted match, its byte start, or its selected pattern index.
+
+Applying that test to the proposed state gives the opposite result: every
+partial multi-byte-progress state is a proper-prefix node of an `E(a)` path,
+every accept mask expands to its outgoing byte edges, and the required
+boundary state is the ordinary UTF-8 lexical product.  KELVIN SIGN, LONG S,
+and the sigma trio exercise the different-width and shared-prefix paths rather
+than breaking the reduction.  The proposed mechanism is consequently a
+relabeled/compressed case-expanded byte automaton, the closed outcome named in
+the case hypothesis.
+
+### Decision
+
+This is a documented negative finding, not a candidate optimization.  The
+repository must not add a known-art implementation merely to benchmark its
+decode cost; doing so would violate the invention and negative-result rules in
+`AGENTS.md`.
+
 ## Provenance
 
-This contribution currently adds only this assessment.  `NOVELTY.md` was
-written for this repository from the current `AGENTS.md`, `README.md`,
-`CONTEXT.md`, and the cited source locations; it contains no copied
-implementation code.  If implementation files are added later, each
-non-trivial file will identify its authorship and source provenance here.
+This contribution adds only the novelty assessments in this file.  The
+original assessment and the raw-byte follow-up were written for this
+repository from the current `AGENTS.md`, `README.md`, `CONTEXT.md`, source and
+test files, and the cited source locations; they contain no copied
+implementation code and make no external performance claim.  If implementation
+files are added later, each non-trivial file will identify its authorship and
+source provenance here.
