@@ -276,13 +276,197 @@ requested Cyrillic and hazard collision-density sweep is therefore not
 performed: it could characterize the known technique's cost, but cannot make
 it an invention.  No performance claim is made.
 
+## Follow-up assessment: raw-byte rolling fingerprint with run-membership correction
+
+### Status
+
+**Negative assessment for a fold-invariant raw-byte rolling fingerprint.**
+The required algebra does not yield a stable folded window from a raw byte
+window plus a cheap run summary.  In the width-preserving ASCII subset, the
+correction is a second, position-weighted hash of case-run membership and must
+be updated for every entering and leaving byte.  For general Unicode simple
+folding, width-changing members make raw and folded window boundaries
+variable; exact updates additionally need each unit's folded length, folded
+byte contribution, and UTF-8 boundary status.  Keeping that state only in
+registers avoids an allocation, but it is still online folding inside the
+hash, not recovery from a raw-byte fingerprint without folding.
+
+This is an algebraic negative result.  No SIMD implementation, benchmark, or
+performance claim follows from it.
+
+### Window semantics come before a rolling hash
+
+Let `F` map each valid UTF-8 unit to one deterministic simple-fold
+representative and leave an invalid byte as its own opaque one-byte unit.  The
+particular representative is immaterial to the argument.  The `casefold`
+run-table direction recorded in `CONTEXT.md` §1e gives concrete examples:
+
+```
+E2 84 AA       (U+212A KELVIN SIGN)  ->  6B       (k)
+C8 BA          (U+023A)              ->  E2 B1 A5 (U+2C65)
+```
+
+The repository's `orbitMin` reference can choose the opposite representative
+for an orbit, but the two members still have unequal input byte widths.  Thus
+for a folded one-character needle such as `k`, valid source windows include
+`6B`, `4B`, and `E2 84 AA`.  No fixed raw-byte window length contains all
+three.  Conversely, the U+023A example shows that a fold can grow from two
+source bytes to three folded bytes.
+
+A correct search window must therefore be a sequence of decoded units whose
+*folded* byte length equals the needle's folded length, with a source byte
+start retained for that sequence.  Moving either endpoint requires knowing
+unit boundaries and each unit's folded length.  Choosing a window by raw byte
+length instead misses one of the legal renderings; choosing it by character
+count is a decoded-unit stream rather than a raw-byte window.
+
+### The favorable fixed-width algebra still needs a second classified stream
+
+Use the usual order-sensitive linear polynomial hash over bytes, with base
+`B` (byte literals below are hexadecimal):
+
+```
+H(b0 ... b(L-1)) = sum(bj * B^(L-1-j))
+H(x || y) = H(x) * B^len(y) + H(y)
+```
+
+Grant the most favorable case: an ASCII window has no width changes and the
+only transform is `A` through `Z` gaining `0x20`.  Put
+`uj = 1` when byte `bj` is an uppercase ASCII letter and zero otherwise.  Then
+
+```
+H(F(w)) = H(w) + 0x20 * U(w)
+U(w)    = sum(uj * B^(L-1-j))
+```
+
+`U`, not the number of uppercase bytes, is the required correction.  For
+example, `Aa` and `aA` have the same uppercase count but corrections
+`0x20 * B` and `0x20`.  The rolling update for `U` is the same kind of update
+as the raw hash:
+
+```
+U(i+1) = B * (U(i) - ui * B^(L-1)) + u(i+L)
+```
+
+So this restricted case is recoverable only by maintaining a second rolling
+hash of a separately classified membership stream.  Each entering byte must
+be tested for membership (and each leaving byte's membership must be retained
+or recomputed).  A base of one would reduce the correction to a count, but it
+also discards byte order and is not an equality fingerprint for substring
+search.  The `casefold` run table can compress the membership lookup; it
+cannot remove the position-weighted membership state.
+
+For non-ASCII units, the same equation needs a run-specific output-byte
+contribution instead of `0x20`, and membership is not byte-local.  A valid
+UTF-8 unit must first be recognized and assigned to its run before that
+contribution is known.  This is the folding/classification work that the
+hypothesis was required to avoid, merely with the transformed bytes fed to a
+hash accumulator instead of being stored.
+
+### Width changes break raw-window recovery
+
+For source units `u0 ... u(m-1)`, the desired hash is
+
+```
+H(F(u0 ... u(m-1))) =
+  sum(H(F(ui)) * B^(sum(len(F(ut)) for t > i)))
+```
+
+The raw hash uses `len(ut)` in those exponents instead.  A width-changing
+unit changes the weight of every earlier unit, so a per-run packed-word delta
+cannot be added to `H(raw)` at a fixed position.  With the Kelvin mapping,
+for example,
+
+```
+H(61 E2 84 AA) = 61*B^3 + E2*B^2 + 84*B + AA
+H(F(61 E2 84 AA)) = H(61 6B) = 61*B + 6B
+```
+
+The `61` term changes exponent because the following source unit shrank by
+two bytes.  U+023A supplies the opposite direction:
+
+```
+H(C8 BA) = C8*B + BA
+H(F(C8 BA)) = E2*B^2 + B1*B + A5
+```
+
+Knowing only a total width delta or a run count cannot repair these changing
+exponents.  It would require the folded-length prefix/suffix position of each
+unit and its folded-byte hash.  A state that stores and combines those values
+is directly maintaining `H(F(window))`; its update applies the fold transition
+for every unit.  It is not a raw-hash correction that escapes folding.
+
+Opaque bytes add a separate necessary state.  `84` alone is an invalid opaque
+unit and folds to `84`, whereas the same byte in `E2 84 AA` is a continuation
+inside a valid Kelvin-sign unit that folds to `6B`.  A byte-window hash cannot
+let a candidate begin at that continuation.  Correct membership therefore
+also requires the UTF-8 lexical/boundary state exercised by the existing
+`lone continuation vs kelvin bytes` trap in `casei_test.go`.
+
+### A fixed character-lane hash is not raw-byte recovery
+
+There is a valid escape from the *fixed raw-byte window*: pad each decoded
+unit to a fixed-width lane, use the run table's delta on that lane, and roll a
+hash over the needle's number of units.  Width changes no longer move lane
+positions.  But this state must determine every unit's UTF-8 boundary,
+opaque-versus-valid status, packed value, and run delta before it can update
+the lane hash.  It hashes a folded unit sequence in a different fixed-width
+encoding, not `H` of a raw byte window plus an aggregate correction.
+
+Avoiding storage for those lanes does not alter that distinction.  The update
+is still an online fold transition for every unit, followed by a hash update;
+source offsets must still be carried beside the unit window.  This is the
+fold-inside-the-hash fallback described below, not a falsifier of the requested
+raw-byte algebra.
+
+### Relation to existing work
+
+`CONTEXT.md` §1e is the source for the run-table arithmetic and the two
+width-changing examples above.  Its packed-`u32` relation can supply a
+per-unit output value, but it does not make concatenation positions
+width-invariant.  `casei.go`, `casei_test.go`, and `CONTEXT.md` §1b specify the
+required source-boundary and opaque-byte behavior.
+
+`CONTEXT.md` §6 already lists the viable fallback operation: fold each input
+unit in the hashing loop and hash in the folded domain.  Keeping only the hash
+rather than materializing the folded bytes does not change that operation.
+This conclusion does not reopen the closed orbit-quotient, raw-byte automaton,
+or `index_fold` assessments above: it rejects the proposed raw-hash algebra
+before relying on any projected-stream reduction.
+
+### Falsification search and result
+
+This negative would be falsified by a precise order-sensitive linear hash and
+rolling update that produces the exact folded-window hash for all legal source
+windows while avoiding all three requirements: position-weighted run
+membership, folded-length/output-coordinate state at width changes, and UTF-8
+unit/boundary classification.  It would need to handle `k`/`K`/KELVIN SIGN,
+U+023A/U+2C65, and an isolated `0x84` without changing the returned source
+byte position.  Merely vectorizing membership tests, storing an implicit
+folded hash, or verifying hash collisions after a fold-aware update would not
+falsify the result; each retains the work identified by the equations.
+
+Applying that test gives the negative result.  The fixed-width formula demands
+`U`; width changes demand output-coordinate state; and invalid-byte opacity
+demands UTF-8 lexical state.  No raw-byte rolling fingerprint satisfying the
+hypothesis remains to implement.
+
+### Decision
+
+This is a documented negative finding, not a candidate optimization.  Per
+`AGENTS.md`, the repository must not add a SIMD/hash implementation or run a
+benchmark merely to measure an operation that either fails the required window
+semantics or reduces to folding inside a rolling hash.  No performance claim
+is made.
+
 ## Provenance
 
 This contribution adds only the novelty assessments in this file.  The
-original assessment, the raw-byte follow-up, and the fixed-width projection
-assessment were written for this repository from the current `AGENTS.md`,
-`README.md`, `CONTEXT.md`, source and test files, and the cited source
-locations; they contain no copied implementation code and make no external
-performance claim.  The last assessment also records the inspected upstream
-crate commit and version.  If implementation files are added later, each
-non-trivial file will identify its authorship and source provenance here.
+original assessment, the raw-byte follow-up, the fixed-width projection
+assessment, and the raw-byte rolling-fingerprint assessment were written for
+this repository from the current `AGENTS.md`, `README.md`, `CONTEXT.md`, source
+and test files, and the cited source locations; they contain no copied
+implementation code and make no external performance claim.  The projection
+assessment also records the inspected upstream crate commit and version.  If
+implementation files are added later, each non-trivial file will identify its
+authorship and source provenance here.
