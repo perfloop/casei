@@ -41,6 +41,21 @@ something to show; the proof is the thing to show.
 State what would falsify the negative. That is what makes it usable by whoever
 looks next, instead of merely discouraging.
 
+## 3b. One refutation is not a round
+
+A closed cell is a result, not a stopping condition. Refuting a construction
+frees you to route around it, so generate the next one and refute that. Keep
+going until the budget is spent or a construction survives.
+
+Stopping after a single refutation is the failure mode this rule exists to
+prevent: the reward for "still closed" and for "here is something that
+survives" are the same, and the first is reachable in minutes. Report every cell
+you closed, not just the last.
+
+Record what you ruled out cheaply on paper as well as what you implemented. A
+cell closed by a two-line argument is worth as much to the next reader as one
+closed by a benchmark, and costs far less.
+
 ## 4. Measure against the field, not against yourself
 
 The scoreboard is `BenchmarkBar` in the `arena/` module. It reports
