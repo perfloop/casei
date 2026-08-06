@@ -98,24 +98,46 @@ one, both of which have happened here:
   `/ceiling`). Those lanes exist for profiling. Reporting `/candidate` borrows
   the arena's authority for a number that never looked at the field.
 
-Report `x_vs_best` on at least these rows:
+### The acceptance bar
+
+**Every row of `BenchmarkBar` must measure `x_vs_best` below 1.0.** Not a
+subset, not a listed few, not "the mandatory ones" -- every row, ASCII and
+UTF-8, single needle and multi needle. The goal is to be the fastest thing in
+existence at this problem, so a single row above 1.0 is a row the field still
+wins and the work is not done.
+
+There are exactly two ways a row is excused, both narrow:
+
+- **Ceiling-limited.** The best field implementation is within 5% of the
+  exact-match ceiling, so a large multiple would mean beating memory bandwidth.
+  Such a row instead requires this engine within 5% of that ceiling, and is
+  reported separately with the ceiling number shown.
+- **Not yet measurable.** No entrant exists that answers the same question.
+  Then the row is not excused so much as unmeasured: say so, and wiring an
+  entrant in becomes the work.
+
+**A row is only measured if at least two entrants ran in it.** `x_vs_best`
+against Go's `regexp` alone is a comparison with a scalar NFA floor, and a
+number below 1.0 there says nothing about the field. Report the entrant count
+for every row. A UTF-8 row with one entrant is an unoccupied tier, which is
+missing work in this repository -- go wire a competitor in and measure again.
+
+Do not report a lost row as a guardrail, a non-regression, or a diagnostic. A
+row above 1.0 is a row that is losing. Name it, give its number, and say what
+you intend to do about it.
+
+These rows are the ones most likely to expose a construction that only looks
+fast, so lead with them -- but they are a starting point for reporting, never
+the definition of passing:
 
 | row | competitor |
 |---|---|
 | `single/log_miss_1mb` | veloz NEON/AVX2 |
 | `single/latency_miss_1kb` | short-input shape where plan setup shows up |
 | `single/samechar_miss_64kb` | adversarial; linearity |
+| `single/periodic_miss_64kb` | adversarial; self-similar input |
 | `multi/multi_N512_miss_log_64kb` | aho-corasick |
-
-Report a row you currently lose. A row above 1.0 is the only thing that tells
-you the field is still ahead while there is time to act on it.
-
-The UTF-8 tier currently has no entrant but Go's `regexp`, a scalar NFA. Say so
-when reporting a UTF-8 row -- that is a reporting obligation, not a bar on the
-claim, and an unoccupied tier is missing work in this repository rather than a
-reason to narrow what the engine is for. The goal is to be the fastest thing in
-existence on every row, ASCII and UTF-8, single needle and multi needle, in one
-construction.
+| `multi/multi_N512_miss_hazard_64kb` | width-changing folds at N=512 |
 
 ## 5. One engine
 
