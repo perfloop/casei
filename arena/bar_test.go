@@ -26,7 +26,22 @@ import (
 	veloz "github.com/mhr3/veloz/ascii"
 
 	"github.com/tsenart/casei"
+	"github.com/tsenart/casei/arena"
 )
+
+// entrants counts what a row actually ran against, so a number can never be
+// read as a field result when it only ever beat the scalar-NFA floor. It is
+// reported alongside x_vs_best rather than left to the reader to infer.
+func entrantCount(utf8Row bool) float64 {
+	n := 1.0 // regexp, always present
+	if !utf8Row {
+		n += 2 // veloz (or aho-corasick on multi) and tolower
+	}
+	if arena.PCRE2Available {
+		n++
+	}
+	return n
+}
 
 // timeOp returns ns/op for one operation. It times manually rather than
 // through testing.Benchmark, which cannot be nested inside a running
@@ -72,10 +87,20 @@ func BenchmarkBar(b *testing.B) {
 					best = t
 				}
 			}
+			// PCRE2 with JIT enters both tiers. On UTF-8 it is the only
+			// entrant besides regexp, so it is what makes a UTF-8 row a
+			// statement about the field rather than about the floor.
+			if p, err := arena.NewPCRE2([]string{s.needle}); err == nil {
+				if v := timeOp(func() { sink = p.FirstIndex(s.haystack) }); v < best {
+					best = v
+				}
+				p.Close()
+			}
 			for i := 0; i < b.N; i++ {
 				sink = casei.IndexFold(s.haystack, s.needle)
 			}
 			b.ReportMetric(cand/best, "x_vs_best")
+			b.ReportMetric(entrantCount(s.utf8), "entrants")
 		})
 	}
 
@@ -93,10 +118,20 @@ func BenchmarkBar(b *testing.B) {
 					best = v
 				}
 			}
+			// One JIT-compiled alternation in pattern order is PCRE2's
+			// multi-pattern form, and its leftmost-first rule is the arena's
+			// leftmost/lowest-ID rule when built that way.
+			if p, err := arena.NewPCRE2(s.patterns); err == nil {
+				if v := timeOp(func() { matcherSink = p.FirstIndex(s.haystack) }); v < best {
+					best = v
+				}
+				p.Close()
+			}
 			for i := 0; i < b.N; i++ {
 				_, matcherFound = m.Find(s.haystack)
 			}
 			b.ReportMetric(cand/best, "x_vs_best")
+			b.ReportMetric(entrantCount(s.utf8), "entrants")
 		})
 	}
 }

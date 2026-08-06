@@ -1,8 +1,14 @@
-# The frozen competitive field.
+# The competitive field.
 #
-# A result is only ever "fastest among this manifest, on the declared
-# platform". "Fastest in existence" is not a claim this repository can
-# support, and the bar no longer asks for it.
+# The goal of this repository is one unified engine that is the fastest thing
+# in existence at caseless search -- single needle and multi needle, ASCII and
+# UTF-8, in one construction rather than a family of special cases. This file
+# lists what it has to beat.
+#
+# The field is therefore a work list, not a ceiling. A tier with no entrant is
+# missing work here; it is never a reason to discount a result or to narrow the
+# goal. Every engine below that is not yet wired in is an open task, and the
+# right response to "that tier has no competitor" is to go put one in it.
 #
 # semantic_status decides whether a baseline's time may enter x_vs_best:
 #
@@ -13,13 +19,14 @@
 #   diagnostic     runs for reference but never enters x_vs_best, because its
 #                  semantics differ (full folding vs simple folding, different
 #                  match position, different tie rule).
-#   pending-adapter  a real competitor that has no semantics-preserving
-#                  adapter here yet. Any adaptation, preprocessing, or
-#                  conversion needed for equivalence is timed as part of it.
+#   unwired        a real competitor that is not yet callable from this arena.
+#                  Any adaptation, preprocessing, or conversion needed for
+#                  equivalence is timed as part of it, so a semantic mismatch
+#                  is an adapter to write, not grounds for exclusion.
 #
-# A row whose only competitor is Go's regexp is FIELD-INCOMPLETE. It cannot be
-# reported as a competitive win. Today every UTF-8 row is in that state, which
-# is why the naive reference already scores below 1.0 there.
+# Reporting rule: state which entrants a row actually ran against. A row whose
+# only entrant is Go's regexp has been measured against a scalar NFA floor and
+# must say so -- that is a reporting obligation, not a bar on the claim.
 
 baselines:
   - name: regexp
@@ -42,21 +49,31 @@ baselines:
     semantic_status: diagnostic
     what: strings.ToLower + strings.Index. Not folding; wrong beyond ASCII.
 
-  # Unoccupied. Until at least one of these lands with an adapter, no UTF-8
-  # row has a competitor and no UTF-8 result is a field win.
+  # The UTF-8 tier is unoccupied. That is the largest open task in this
+  # repository: the engine claims a caseless UTF-8 result, and nothing here
+  # yet contests it. Wire these in, adapters and all, then beat them.
+  - name: rust-regex
+    tier: [ascii, utf8]
+    semantic_status: unwired
+    what: Rust regex crate via rure FFI, (?i) with Unicode case folding.
+          Teddy/memchr SIMD literal search. The strongest general entrant and
+          the one an outside reader will name first.
+
+  - name: vectorscan
+    tier: [ascii, utf8]
+    semantic_status: unwired
+    what: Vectorscan/Hyperscan caseless literal set, SIMD multi-pattern. The
+          real multi-needle bar. Reports all matches; needs a leftmost/tie
+          adapter, timed as part of it.
+
   - name: stringzilla
     tier: [utf8]
-    semantic_status: pending-adapter
+    semantic_status: unwired
     what: StringZilla v4.5 caseless UTF-8, AVX-512/NEON. Full folding, so it
-          needs a simple-fold adapter before its time can count.
+          needs a simple-fold adapter, timed as part of it.
 
   - name: pcre2-jit
     tier: [utf8]
-    semantic_status: pending-adapter
-    what: PCRE2 JIT scan_prefix, caseless. Needs an offset/tie adapter.
-
-  - name: vectorscan
-    tier: [utf8]
-    semantic_status: pending-adapter
-    what: Vectorscan/Hyperscan caseless literal set. Reports all matches;
-          needs a leftmost/tie adapter.
+    semantic_status: unwired
+    what: PCRE2 JIT, PCRE2_CASELESS|PCRE2_UTF. Needs an offset/tie adapter,
+          timed as part of it.

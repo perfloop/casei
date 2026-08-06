@@ -89,20 +89,21 @@ same plan.
 
 ### Competitive acceptance
 
-Results are scoped to the frozen field in `arena/field.yaml` — baseline
-versions, build flags, ISA, corpus hashes, semantic status. The claim this
-repository can support is *fastest among the audited field, on the declared
-platform*. It cannot support "fastest in existence", and no longer asks for it.
+The goal is one unified engine that is the fastest thing in existence at
+caseless search — single needle and multi needle, ASCII and UTF-8, in one
+construction. `arena/field.yaml` lists what it has to beat, with baseline
+versions, build flags, ISA, corpus hashes, and semantic status.
 
 A baseline's time enters `x_vs_best` only if its `semantic_status` says it
 agrees with the arena oracle on that tier. Any adaptation needed to make it
-comparable is timed as part of it.
+comparable is timed as part of it, so a semantic mismatch is an adapter to
+write rather than grounds to exclude a competitor.
 
-**A row whose only compatible competitor is Go's `regexp` is field-incomplete
-and cannot be reported as a competitive win.** Every UTF-8 row is currently in
-that state: the naive reference in this repository already scores 0.31–0.90
-there, having beaten nothing but a scalar NFA. Occupying `stringzilla`,
-`pcre2-jit`, or `vectorscan` is what makes those rows mean something.
+**The field is a work list, not a ceiling.** A tier with no entrant is missing
+work here — never a reason to discount a result or narrow the goal. The UTF-8
+tier is currently unoccupied, so a UTF-8 row has run against a scalar NFA floor
+and must say so when reported. Wiring in `rust-regex`, `vectorscan`,
+`stringzilla`, and `pcre2-jit` is the open task that makes those rows contested.
 
 On every mandatory row that is not ceiling-limited, the upper bound of the 95%
 confidence interval of `candidate / best-field` must be **≤ 0.67**, and the

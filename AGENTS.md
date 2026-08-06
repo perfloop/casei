@@ -96,9 +96,12 @@ Report `x_vs_best` on at least these rows:
 Report a row you currently lose. A row above 1.0 is the only thing that tells
 you the field is still ahead while there is time to act on it.
 
-A UTF-8 row whose only compatible competitor is Go's `regexp` is
-**field-incomplete** and is not a competitive result. The naive reference
-already scores 0.31-0.90 there, having beaten a scalar NFA and nothing else.
+The UTF-8 tier currently has no entrant but Go's `regexp`, a scalar NFA. Say so
+when reporting a UTF-8 row -- that is a reporting obligation, not a bar on the
+claim, and an unoccupied tier is missing work in this repository rather than a
+reason to narrow what the engine is for. The goal is to be the fastest thing in
+existence on every row, ASCII and UTF-8, single needle and multi needle, in one
+construction.
 
 ## 5. One engine
 
