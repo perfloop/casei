@@ -75,6 +75,20 @@ The scoreboard is `BenchmarkBar` in the `arena/` module. It reports
 `x_vs_best`: this implementation's time divided by the fastest correct
 alternative present.
 
+**Run it with `-tags pcre2`.** Without that tag the UTF-8 rows have no entrant
+but Go's `regexp`, a scalar NFA, and a row measured that way inverts once a real
+matcher enters it -- rows that read 0.31-0.90 against the floor measure 1.09 to
+1202 against PCRE2. Install the library first if it is missing:
+
+```
+apt-get install -y libpcre2-dev   # or: brew install pcre2
+cd arena && go test -tags pcre2 -run '^$' -bench BenchmarkBar
+```
+
+Every row also reports an `entrants` count. A UTF-8 row with `entrants` below 2
+was measured against the floor alone: say so when reporting it, and treat
+closing that gap as the work rather than the number as a win.
+
 A measurement with no competitor in it is not evidence. Two ways to produce
 one, both of which have happened here:
 
