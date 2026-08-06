@@ -459,14 +459,136 @@ benchmark merely to measure an operation that either fails the required window
 semantics or reduces to folding inside a rolling hash.  No performance claim
 is made.
 
+## Follow-up assessment: prefix-invariant anchor with arithmetic start recovery
+
+### Status
+
+**Negative assessment for a width-invariant-prefix anchor.**  This would move
+work out of the byte scan: choose a pattern position after a fixed-width
+prefix, scan for that position's byte forms, subtract the prefix width to get
+a proposed start, and confirm the whole pattern.  It is not a new matcher
+state.  It is a specialization of the published safe-slice-at-an-offset plus
+head/tail confirmation pipeline, combined with the already-rejected raw-byte
+fold alternatives.  The subtraction partially evaluates known start recovery;
+it does not add a transition or remove the required confirmation.
+
+No implementation or benchmark follows from this assessment.
+
+### Construction assessed
+
+Decode the needle once into simple-fold units.  Call a valid unit
+*width-invariant* when every member of its `unicode.SimpleFold` orbit has the
+same UTF-8 byte width; an opaque invalid byte is a singleton width-one unit.
+Choose an anchor unit `a_j` after a width-invariant prefix
+`a_0 ... a_{j-1}`, and let
+
+```
+L = sum(encodedWidth(a_i), 0 <= i < j).
+```
+
+A scan searches the haystack bytes for any member of the anchor's finite UTF-8
+form set `E(a_j)`.  For a hit whose anchor bytes begin at `t`, it proposes
+`start = t - L`, then validates the prefix, anchor, and suffix under simple
+folding and returns the leftmost validated start.  An implementation may use
+SIMD to find `E(a_j)` and may pre-expand a small set of anchor forms.  It must
+still reject a byte hit in the middle of a valid UTF-8 encoding, and must treat
+an invalid byte as an opaque unit.
+
+For example, a prefix ending before `k` has a known byte width when none of
+its units has a cross-width fold mate.  The anchor can then admit `k`, `K`, and
+`E2 84 AA` (KELVIN SIGN); a hit at `t` implies only a *candidate* start
+`t - L`.  It does not prove that the preceding bytes render the prefix, nor
+that `t` is a legal unit boundary.  Those facts remain confirmation work.
+
+The intended operational benefit is real but narrow: the streaming scan need
+not call `utf8.DecodeRuneInString` or walk a `SimpleFold` orbit at every byte
+position.  The novelty question is whether the resulting candidate state is
+more than a known safe window and verifier.
+
+### Current-art check
+
+| Construction | Source | Relation to the assessed plan |
+| --- | --- | --- |
+| Safe folded slice at an arbitrary needle offset, SIMD probes, and head/tail verification | StringZilla current `main`, inspected at `657f21c5d8c2c2da5da06d4a9ad87c3ef80953d0`: [`utf8_uncased.h`](https://raw.githubusercontent.com/ashvardanian/stringzilla/657f21c5d8c2c2da5da06d4a9ad87c3ef80953d0/include/stringzilla/utf8_uncased.h), [`serial.h`](https://raw.githubusercontent.com/ashvardanian/stringzilla/657f21c5d8c2c2da5da06d4a9ad87c3ef80953d0/include/stringzilla/utf8_uncased/serial.h), [`haswell.h`](https://raw.githubusercontent.com/ashvardanian/stringzilla/657f21c5d8c2c2da5da06d4a9ad87c3ef80953d0/include/stringzilla/utf8_uncased/haswell.h) | Its metadata builder considers every rune-boundary slice, records `offset_in_unfolded` and `length_in_unfolded`, and its SIMD driver scans that selected safe slice.  `sz_utf8_uncased_verify_match_` reverse-verifies the head, forward-verifies the tail, and returns the candidate-window offset minus the verified head width.  The assessed subtraction is this general recovery specialized to a head whose accepted rendering width is `L`. |
+| Width-preserving case-insensitive prefix acceleration | PCRE2 [`pcre2_jit_compile.c`](https://raw.githubusercontent.com/PCRE2Project/pcre2/master/src/pcre2_jit_compile.c), `scan_prefix` | For a UTF-8 caseless character, `scan_prefix` stops growing its prefix when `ord2utf(othercase) != len`.  Thus the width-invariance condition is an established acceleration boundary.  Moving the probe to the next character changes the candidate coordinate, not the finite byte alternatives or confirmation relation. |
+| Raw UTF-8 form paths and boundary state | “Follow-up assessment: direct raw-byte fold transitions” above | Expanding `E(a_j)` into one-byte and multi-byte alternatives, plus rejecting mid-rune starts, is exactly the byte-path construction already reduced here to a case-expanded UTF-8 automaton. |
+| SIMD candidate plus full confirmation | StringZilla sources above; Teddy/FDR/Snort sources cataloged in `CONTEXT.md` §§1b--1d and 3 | A fixed byte displacement before confirmation is ordinary candidate bookkeeping.  It does not make a filter/verify pipeline a new recognizer. |
+
+StringZilla has full-fold rather than this repository's simple-fold contract,
+so it is not a drop-in implementation and is not cited as one.  That semantic
+difference does not make this state new: safe-slice selection at a pattern
+offset, a SIMD candidate scan, and recovery/verification around that slice are
+already used for the harder expansion and variable-width setting.  Restricting
+those mechanics to simple-fold orbits removes cases; it does not introduce a
+new transition.
+
+### Reduction
+
+Take each anchor form in `E(a_j)` and draw its ordinary byte-labelled path.
+The scan's output is a pair `(t, form)`.  Because the prefix is
+width-invariant, translating that pair to `t - L` is a fixed coordinate change;
+it carries no information about whether the prefix actually matches.  The
+validator decides precisely that remaining predicate, along with UTF-8
+boundary validity, anchor equality, and the suffix.  Replacing an SIMD probe
+with a scan of the expanded byte paths produces the same candidate pairs;
+replacing `t - L` with StringZilla's general reverse-head recovery produces
+the same start on every accepted prefix, since its consumed head length is
+then exactly `L`.
+
+Skipping confirmation is unsound: any occurrence of the anchor form can be
+preceded by a nonmatching prefix, and raw matching can find a continuation-byte
+location.  Pre-expanding and comparing the prefix instead merely moves the
+same finite byte paths into the candidate filter.  It is the closed raw-byte
+transition construction, not a new state.  A multi-pattern version only adds
+`(pattern, anchor, L)` labels to those candidates; merging them in a
+dictionary state is ordinary case-expanded dictionary matching, while keeping
+per-pattern confirmations is the known candidate/confirm shape and does not
+meet the repository's one-engine rule.
+
+Consequently, the apparent distinction — no reverse walk after a successful
+anchor probe — is a partial evaluation of a known verifier under a static
+width fact.  It can save instructions on a surviving candidate, but it cannot
+change the accepted language, a state update, or the offset-selection rule.
+Under `AGENTS.md` §1, that is an optimization of published art, not the
+required invention.
+
+### Falsification search and result
+
+This negative would be falsified by a block transition that uses the
+width-invariant prefix to accept or advance anchored alternatives while
+preserving simple-fold equality, source byte boundaries, leftmost order, and
+multi-pattern ties, but cannot be expanded into finite anchor byte paths plus
+a fixed coordinate translation and ordinary confirmation.  Merely eliminating
+a reverse iterator, choosing a different anchor, vectorizing the form probe,
+or encoding the prefix forms in a table would not suffice.
+
+The upstream source check gives the opposite result.  StringZilla's current
+metadata records an arbitrary safe-slice offset and its verifier already
+recovers the start by validating the preceding head; under the invariant the
+recovered width is the constant `L`.  PCRE2 independently uses the same
+width-equality test to delimit its caseless fast-forward prefix.  Applying the
+byte-path expansion above leaves no state or output that cannot be reproduced
+by those known ingredients.  The proposed construction is therefore rejected
+before performance work.
+
+### Decision
+
+Do not add a prefix-anchor implementation, AVX2 kernel, portable fallback,
+or benchmark sweep for this construction.  It would be a specialization and
+retuning of known safe-window/filter-and-verify machinery, contrary to
+`AGENTS.md` §§1--3.  A future attempt would need the falsifying block
+transition above, not a different anchor scoring rule or a faster verifier.
+
 ## Provenance
 
 This contribution adds only the novelty assessments in this file.  The
 original assessment, the raw-byte follow-up, the fixed-width projection
-assessment, and the raw-byte rolling-fingerprint assessment were written for
-this repository from the current `AGENTS.md`, `README.md`, `CONTEXT.md`, source
-and test files, and the cited source locations; they contain no copied
-implementation code and make no external performance claim.  The projection
-assessment also records the inspected upstream crate commit and version.  If
-implementation files are added later, each non-trivial file will identify its
-authorship and source provenance here.
+assessment, the raw-byte rolling-fingerprint assessment, and the
+prefix-invariant-anchor assessment were written for this repository from the
+current `AGENTS.md`, `README.md`, `CONTEXT.md`, source and test files, and the
+cited source locations; they contain no copied implementation code and make
+no external performance claim.  The projection assessment records the
+inspected upstream crate commit and version; the prefix-anchor assessment
+records the current StringZilla source revision inspected through `git
+ls-remote`.  If implementation files are added later, each non-trivial file
+will identify its authorship and source provenance here.
