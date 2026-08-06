@@ -579,16 +579,446 @@ retuning of known safe-window/filter-and-verify machinery, contrary to
 `AGENTS.md` §§1--3.  A future attempt would need the falsifying block
 transition above, not a different anchor scoring rule or a faster verifier.
 
+## Follow-up construction sweep: lazy canonical Two-Way
+
+### Status
+
+**Negative assessment for a lazy canonical Two-Way scan.**  This construction
+would use a different outer search algorithm from the reference: it avoids
+calling `foldHasPrefix` at every source start by making period-based shifts.
+It is nevertheless ordinary Two-Way matching over the already-closed
+fold-equivalence quotient, with lazy access and a source-offset decoration.
+It is an algorithm substitution on a canonical stream, not a new state
+representation or transition.
+
+This assessment deliberately does not reopen the orbit-class, raw-byte,
+projection, rolling-fingerprint, or prefix-anchor cells above.  The proposed
+control state is tested here because it tries to route around them by skipping
+starts rather than by changing the fold representation.
+
+### Construction assessed
+
+Let `q` be the valid-rune orbit token / opaque-byte token map defined in the
+first assessment.  The compiler computes a critical factorization and period
+of `q(needle)`.  The scanner retains the usual Two-Way `memory`, factor
+position, and period state, but does **not** materialize `q(haystack)`.  A
+forward or reverse accessor at a source byte boundary decodes only the unit
+needed for a comparison, returns its `q` token and its source width, and keeps
+the byte offset of the proposed start.  Mismatches take the Two-Way shift;
+only surviving candidates are compared across the factor boundary.
+
+The attractive operational claim is that starts skipped by the period do not
+invoke `utf8.DecodeRuneInString` or a simple-fold orbit walk.  A compiled
+fold lookup could also remove the orbit walk at the comparison locations.
+Variable UTF-8 widths would be handled by the accessor and by retaining a
+unit-index-to-byte-offset cursor, rather than by assuming a fixed byte shift.
+
+### Closest known constructions
+
+| Construction | Source | Relation to the assessed plan |
+| --- | --- | --- |
+| Canonical-element Two-Way `strcasestr` | GNU libc [`strcasestr.c`](https://raw.githubusercontent.com/bminor/glibc/04e750e75b73957cf1c791535a3f4319534a52fc/string/strcasestr.c) and [`str-two-way.h`](https://raw.githubusercontent.com/bminor/glibc/04e750e75b73957cf1c791535a3f4319534a52fc/string/str-two-way.h), inspected at commit `04e750e75b73957cf1c791535a3f4319534a52fc` | `strcasestr.c` supplies `CANON_ELEMENT(c) = TOLOWER(c)` to the generic Two-Way implementation.  The header computes factorization, period, memory, and shifts only through that canonical-element interface. |
+| Two-Way string matching | Crochemore and Perrin, *Two-Way String-Matching*, JACM 38(3), 1991 | The assessed factor, period, forward comparison, reverse comparison, and mismatch shifts are its normal control state. |
+| Fold-orbit quotient | “Novelty assessment: fold-orbit alphabet” above | Replacing a valid source unit by `q` is exactly the previously closed representation; lazy emission changes storage and scheduling only. |
+| Lazy automata over byte equivalence classes | rust-lang/regex [`regex-automata/src/hybrid/dfa.rs`](https://raw.githubusercontent.com/rust-lang/regex/ada2a5a6a08c8038daed9f77e1b4d9a3ca9930da/regex-automata/src/hybrid/dfa.rs), inspected at commit `ada2a5a6a08c8038daed9f77e1b4d9a3ca9930da` | Its lazy DFA computes transitions on demand and uses alphabet equivalence classes.  Deferring a canonical-unit access is the same kind of evaluation scheduling, not a new accepted relation. |
+
+glibc's byte/locale contract is not this repository's Unicode contract, so it
+is not a candidate implementation or semantic authority.  It is direct
+current-source evidence that canonicalize-at-comparison plus Two-Way control
+is an established construction.  The Unicode-specific part of the proposal is
+supplied entirely by `q`, which is the closed component.
+
+### Reduction
+
+For a parsed haystack, write
+
+```
+Q = q(h0) q(h1) ... q(hk-1)
+```
+
+and retain the source-offset array beside it conceptually.  At every point in
+the assessed scan, its accessor returns exactly `Q[t]` for some unit index `t`;
+the source width merely converts a change in `t` to an entry in that offset
+array.  The Two-Way factor, period, memory value, comparison result, and next
+unit index are all functions of `Q`, `q(needle)`, and the standard Two-Way
+control state.  Therefore materializing `Q` first and running ordinary
+Two-Way produces the same comparison trace and selected match.  Laziness can
+save allocation or avoid accesses to skipped units, but it adds no state that
+is unavailable in that materialized execution.
+
+Unequal source widths do not break this reduction: they change adjacent
+entries of the offset map, not equality or order in `Q`.  A proposed direct
+byte shift that tries to avoid this map must either classify a complete source
+unit as `q` (returning to the quotient) or distinguish prefixes of its UTF-8
+forms (returning to the closed raw-byte transition).  For multiple needles,
+keeping one Two-Way state per needle violates the one-engine rule, while
+merging the patterns is ordinary dictionary/automaton matching after `q`.
+
+### Falsification search and result
+
+This negative would be falsified by a shift or match-selection state that
+preserves simple-fold equality, opaque-byte boundaries, leftmost byte offsets,
+and multi-pattern ties but cannot be replayed from `Q`, its source offsets,
+and a standard Two-Way execution.  A different factor heuristic, a packed
+fold table, reverse decoding, or a faster implementation of `memory` would
+not suffice.
+
+The current glibc source check found the canonical-element parameterization
+rather than a distinct state, and the quotient reduction maps every proposed
+Unicode comparison to that interface.  No output or transition survives the
+materialized-`Q` replay, so this construction is rejected before an
+implementation or benchmark.
+
+### Decision
+
+Do not add a lazy Two-Way path, a separate single-needle engine, or a benchmark
+for it.  It is a known canonical-stream algorithm applied to the already
+closed quotient and would violate `AGENTS.md` §§1, 3, and 5 as a contribution.
+
+## Follow-up construction sweep: ASCII-island seam ledger
+
+### Status
+
+**Negative assessment for an AVX2 ASCII-island scan with a Unicode seam
+ledger.**  The proposal has a real fast-path shape: fold and search long
+all-ASCII chunks in vectors, and decode only chunks that contain a non-ASCII
+byte or a match spanning such a chunk.  Its seam state is, however, either a
+canonical token stream at the exceptional units or the UTF-8 byte-prefix
+state already closed above.  The vector filter plus confirmation arrangement
+is also established current art.
+
+### Construction assessed
+
+For each 32-byte block, an AVX2 high-bit test decides whether the block is an
+ASCII island.  In an island, a pattern-specific pair of ASCII probes is
+folded with a letter-safe mask and compared in parallel.  The plan retains a
+small ledger at either side of an island: partially matched pattern positions,
+possible start byte offsets, and markers for the few fold orbits whose member
+can cross the ASCII/UTF-8 width boundary.  On a non-ASCII block the ledger
+would decode just enough units to continue a candidate, then hand the next
+ASCII island back to the vector loop.  It aims to avoid a decode/orbit walk at
+every byte position of common ASCII haystacks without materializing a full
+folded string.
+
+### Closest known constructions
+
+| Construction | Source | Relation to the assessed plan |
+| --- | --- | --- |
+| Vector ASCII case-insensitive search with candidate confirmation | .NET [`Ordinal.cs`](https://raw.githubusercontent.com/dotnet/runtime/6e7f3434c54a58277a5d53eb30e89823e54788d6/src/libraries/System.Private.CoreLib/src/System/Globalization/Ordinal.cs), inspected at commit `6e7f3434c54a58277a5d53eb30e89823e54788d6` | `IndexOfOrdinalIgnoreCase` chooses an ASCII vector path, probes first and last characters with `Vector256`, extracts candidates, then calls full ignore-case equality; non-ASCII reaches a fallback. |
+| SIMD folded islands with danger alarms and serial seams | StringZilla [`haswell.h`](https://raw.githubusercontent.com/ashvardanian/stringzilla/657f21c5d8c2c2da5da06d4a9ad87c3ef80953d0/include/stringzilla/utf8_uncased/haswell.h), inspected at commit `657f21c5d8c2c2da5da06d4a9ad87c3ef80953d0` | Its shared AVX2 driver folds a chunk once, probes a safe window, routes alarmed width-changing chunks to a serial danger-zone scanner, and verifies candidates using the stored safe-slice offset. |
+| SIMD candidate plus verifier | Teddy/FDR/Snort, cataloged in `CONTEXT.md` §§1d and 3--5 | The island probes are a standard no-false-negative filter; a full matcher decides survivors. |
+| Fold-orbit tokens and raw UTF-8 form paths | The first two assessments in this file | The seam's complete-unit case is `q`; its partial-unit case is a node of an expanded UTF-8 form path plus lexical boundary state. |
+
+The .NET and StringZilla contracts differ from this repository's simple-fold
+UTF-8 contract, so neither is a drop-in baseline or a correctness source.
+They are cited for the state layout and control shape the proposal claims as
+new.  StringZilla is particularly direct current evidence: its AVX2 loop has
+both the folded-island probes and an explicit width-hazard handoff.
+
+### Reduction
+
+Within an all-ASCII island, every source byte is one complete unit and its
+fold class is a singleton or the ordinary ASCII letter pair.  The probe state
+is therefore an ordinary ASCII quotient comparison or a conventional
+candidate filter.  At a seam, a correct ledger has only two choices:
+
+1. emit one complete valid unit or opaque byte as a fold class and advance a
+   pattern position; this is the closed `q` stream with a sparse offset map;
+2. retain a lead byte, continuation progress, or alternative form until the
+   unit completes; these are exactly the proper-prefix and lexical states of
+   the closed raw-byte fold transition.
+
+There is no third state that can distinguish an isolated opaque `0x84` from
+the middle `0x84` of `E2 84 AA` while declining both a token and a UTF-8
+prefix state.  This distinction is required by the repository's existing
+Kelvin trap.  Decorating either representation with an ASCII-island boundary,
+a candidate bit mask, or a resume pointer does not change its transition
+relation.  Sending candidates to a whole-pattern checker is the published
+filter/verify shape, not a new recognizer.
+
+### Falsification search and result
+
+This negative would be falsified by a seam record that advances or accepts a
+simple-fold match across a non-ASCII unit, preserves all source-boundary and
+tie rules, and cannot be expanded into either a `q` token or finite UTF-8
+prefix paths followed by confirmation.  Merely widening the vector block,
+choosing rarer probes, changing the alarm threshold, or eliding a decoder call
+on ordinary ASCII does not meet that test.
+
+The current .NET source contains the vector-probe/candidate/full-equality
+shape, and current StringZilla contains the more relevant folded-chunk,
+width-alarm, serial-seam, and safe-slice verification shape.  Applying the
+required opaque-byte distinction leaves only the two closed representations.
+The seam ledger is rejected without a Go AVX2 implementation or measurement.
+
+### Decision
+
+Do not add an ASCII-island fast path, seam cache, AVX2 kernel, or portable
+fallback for this construction.  It would be a retuning of published staged
+search machinery and an encoding of an already closed transition.
+
+## Follow-up construction sweep: width-debt bit-parallel wavefront
+
+### Status
+
+**Negative assessment for a width-debt Shift-Or wavefront.**  This was the
+most direct attempt to make variable UTF-8 width part of the matcher state
+rather than canonicalizing input or using a fixed-width anchor.  Once made
+precise, every width-debt bit denotes an active case-expanded UTF-8 path.  The
+proposed packed state is a standard NFA subset / bit-parallel encoding of the
+closed raw-byte automaton.
+
+### Construction assessed
+
+Choose one representative encoding length for each compiled pattern unit.  At
+a raw source byte cursor, retain a bitset `S[d]` for each feasible accumulated
+width debt `d`: a bit for pattern position `j` says that a rendering of the
+first `j` units can end here with source-byte consumption differing by `d`
+from the representative prefix.  AVX2 would update several `S[d]` words at
+once.  Lead/continuation masks decide whether an incoming byte begins,
+continues, or completes a candidate form; a completed form updates `d` by its
+actual source width minus the representative width.  Pattern bits carry
+pattern IDs so an accepting bit can select leftmost start and lowest index.
+
+The intended distinction is that no decoded rune or `unicode.SimpleFold`
+orbit is materialized.  The scan appears to use only byte masks, width debt,
+and bit shifts, while allowing Kelvin, long-s, sigma, and other unequal-width
+members to converge at the same pattern position.
+
+### Closest known constructions
+
+| Construction | Source | Relation to the assessed plan |
+| --- | --- | --- |
+| Bit-parallel Shift-Or / Bitap matching | Baeza-Yates and Gonnet, *A New Approach to Text Searching*, Communications of the ACM 35(10), 1992 | A bit vector of active pattern positions is the standard packed NFA subset representation; adding another bit-vector dimension does not alter that fact. |
+| Elastic-degenerate matching | Iliopoulos, Kundu, and Pissis, *Elastic-Degenerate String Matching*, Information and Computation 279 (2021), cited in `CONTEXT.md` §1b | Each pattern position here is a finite set of variable-length encodings.  The width dimension records which alternative path is active. |
+| Case-expanded UTF-8 paths | “Follow-up assessment: direct raw-byte fold transitions” above | A form's lead, continuation, and terminal states are exactly the states the debt update must distinguish. |
+| Lazy DFA transition tables and byte equivalence classes | rust-lang/regex [`hybrid/dfa.rs`](https://raw.githubusercontent.com/rust-lang/regex/ada2a5a6a08c8038daed9f77e1b4d9a3ca9930da/regex-automata/src/hybrid/dfa.rs), inspected at commit `ada2a5a6a08c8038daed9f77e1b4d9a3ca9930da` | Its DFA state is a cached subset transition over an equivalence-classed byte alphabet; `S[d]` changes the bit packing, not the accepted paths. |
+
+### Reduction
+
+Expand every simple-fold form of a pattern unit into its byte-labelled path.
+For a proposed bit `(d, j)`, attach the path node reached in the form of unit
+`j` and the UTF-8 lexical state necessary to distinguish valid bytes from
+opaque bytes.  If `d` alone does not identify that node, the proposal must add
+lead/continuation/form bits; those additions identify it exactly.  Conversely,
+the path node's consumed source width and representative prefix width compute
+`d`, so the mapping is lossless after the necessary prefix distinction is
+included.
+
+Thus a complete wavefront word is a subset of nodes in the expanded byte graph.
+A byte update advances that subset along outgoing edges; the Shift-Or shifts
+and masks merely pack the subset into machine words.  Width debt is a label on
+an NFA state, not a new transition.  Pattern IDs, source starts, and tie order
+are output tags on the same active paths.  Selecting their minimum preserves
+contract semantics but does not change acceptance.
+
+Without the lexical/path component the scheme is unsound: a raw `0x84` would
+have the same local debt as a continuation byte unless it records the
+preceding lead state, causing the existing opaque-continuation trap to fail.
+With the component it is the raw-byte automaton product already assessed.
+
+### Falsification search and result
+
+This negative would be falsified by a width-debt update that handles every
+simple-fold form and opaque invalid byte, reports the same leftmost source
+start and lowest pattern index, yet cannot be expanded into an active subset
+of byte-form and lexical nodes.  A wider debt range, a different representative
+length, a lane-parallel update, or a SIMD prefix classifier would not suffice.
+
+No such state remains after attaching the mandatory form-prefix information:
+each `S[d]` bit maps to an expanded path node, and each raw-byte transition is
+its ordinary edge update.  The current regex-automata DFA source independently
+uses transition caching and alphabet equivalence classes for this same
+subset-transition family.  The construction is therefore rejected on the
+state reduction, before implementation or benchmarking.
+
+### Decision
+
+Do not add a Shift-Or wavefront, width-debt tables, SIMD kernels, or a
+multi-pattern benchmark for this construction.  It is a bit packing of a
+known case-expanded byte automaton and violates the negative-result rule if
+implemented merely for speed.
+
+## Follow-up construction sweep: boundary-tagged block transducer
+
+### Status
+
+**Negative assessment for a boundary-tagged block transducer.**  This was the
+remaining block-oriented attempt: process a 32-byte block as one relation from
+an incoming lexer/matcher state to an outgoing state, while carrying the
+minimum source start and pattern index as tags.  It could eliminate scalar
+per-position calls operationally, but the block relation is exactly a
+composition of byte transitions from the closed raw-byte automaton.  Tags are
+ordinary output decoration, not a new matching state.
+
+### Construction assessed
+
+Let a compiled plan have an incoming UTF-8 lexical residue `l` and an active
+multi-pattern state set `s`.  For a raw 32-byte block `B`, the proposal forms
+
+```
+T_B(l, s) = (l', s', earliest-start, lowest-pattern-at-that-start).
+```
+
+An AVX2 implementation would calculate or compose several such effects in
+parallel, perhaps retaining only boundary summaries for a block and using a
+min-plus-like rule for the output tags.  `IndexFold` would instantiate the
+one-pattern plan; `Matcher.Find` would instantiate the same plan over all
+patterns.  Unlike the width-debt plan, this description does not expose a
+per-position fold class or a debt dimension at runtime.
+
+### Closest known constructions
+
+| Construction | Source | Relation to the assessed plan |
+| --- | --- | --- |
+| Case-expanded byte automaton with UTF-8 lexical product | “Follow-up assessment: direct raw-byte fold transitions” above | Its state already consists of the byte-form and boundary information that `(l, s)` must retain. |
+| Lazy DFA transition tables | rust-lang/regex [`hybrid/dfa.rs`](https://raw.githubusercontent.com/rust-lang/regex/ada2a5a6a08c8038daed9f77e1b4d9a3ca9930da/regex-automata/src/hybrid/dfa.rs), inspected at commit `ada2a5a6a08c8038daed9f77e1b4d9a3ca9930da` | The source describes a DFA that computes and caches next transitions, including multi-pattern DFAs and byte equivalence classes.  A block table is a repeated next-transition table. |
+| Compiled matcher state across input blocks | Hyperscan [`runtime.rst`](https://raw.githubusercontent.com/intel/hyperscan/828b4fef341759e05292741a6c89cb66055986f8/doc/dev-reference/runtime.rst), inspected at commit `828b4fef341759e05292741a6c89cb66055986f8` | Its streaming interface retains compiled pattern-matching state across blocks specifically so matches can span block boundaries. |
+| Tagged start-of-match state | Hyperscan SOM and tagged-regex machinery, summarized in `CONTEXT.md` §1b | Carrying an earliest start with an active state is standard match-output bookkeeping; it does not alter the input transition relation. |
+
+### Reduction
+
+Let `delta` be the one-byte transition of the expanded raw-byte matcher,
+including its UTF-8 lexical component.  For any block
+`B = b0 b1 ... b31`, the untagged part of the claimed summary is exactly
+
+```
+delta(...delta(delta((l, s), b0), b1)..., b31).
+```
+
+A table, SIMD circuit, or composed relation can evaluate that expression in a
+different order, but it cannot accept a byte sequence that the expression does
+not accept.  Conversely, expanding the block summary into its 32 applications
+of `delta` reproduces every outgoing state.  The earliest-start / lowest-index
+pair is an associative min-selection over the same accepting paths, so it is a
+standard output tag layered on that transition.
+
+This is not changed by computing effects for every possible entry state,
+retaining only selected summaries, or using an AVX2 shuffle to apply many
+entries.  Those are table layout and evaluation choices.  The claimed plan is
+therefore a block acceleration of the closed byte graph, just as a lazy DFA
+caches an ordinary next-state relation.
+
+### Falsification search and result
+
+This negative would be falsified by a precise block update whose accepted
+paths, source-boundary behavior, or tagged leftmost/tie output cannot be
+recovered by expanding it into byte transitions plus min-selection tags.  A
+faster composition, a smaller table, or a proof that the SIMD circuit does
+less work is not enough: it must change the state relation.
+
+The inspected current regex-automata source describes cached DFA transition
+and equivalence-class machinery, while current Hyperscan documentation records
+compiled state maintained across blocks.  Applying the direct expansion above
+leaves no irreducible block state or output.  The proposal is rejected before
+an AVX2 implementation, portable fallback, or performance measurement.
+
+### Decision
+
+Do not add a block-summary matcher for this construction.  It would be a
+repacking of the existing case-expanded byte automaton, contrary to
+`AGENTS.md` §§1--3, even if it made the reference scan much faster.
+
+## Follow-up construction sweep: elastic-offset anchor lattice
+
+### Status
+
+**Negative assessment for an elastic-offset anchor lattice.**  Unlike the
+closed prefix-invariant anchor, this proposal does not require a constant
+prefix width.  It retains every legal byte displacement from a pattern start
+to a selected anchor and intersects several such anchors.  That apparent
+escape fails because width sets prove only length.  To prove the intervening
+contents, the state must either run an ordinary verifier or retain which
+fold-form path generated each displacement; those are, respectively, the
+published candidate/confirm pipeline and the closed raw-byte automaton.
+
+### Construction assessed
+
+For a pattern with unit form sets `E(a0), ..., E(am-1)`, choose one or more
+internal anchors.  For anchor `j`, compile the displacement set
+
+```
+D[j] = { len(e0) + ... + len(e(j-1)) : ei in E(ai) }.
+```
+
+The scanner finds an anchor form at source byte `t` and inserts every proposed
+start `t-d`, `d` in `D[j]`, into a small source-coordinate lattice.  A second
+anchor tests the corresponding displacement set and removes incompatible
+starts.  The intended AVX2 form uses vector probes for multiple
+`(anchor-form, displacement)` lanes; a multi-pattern plan shares the lattice
+and carries pattern IDs with starts.  Because the state holds a *set* of
+widths, Kelvin or long-s can occur before an anchor without the fixed-
+width-prefix assumption rejected above.
+
+### Closest known constructions
+
+| Construction | Source | Relation to the assessed plan |
+| --- | --- | --- |
+| Safe arbitrary-offset slice with head/tail verification | StringZilla [`utf8_uncased.h`](https://raw.githubusercontent.com/ashvardanian/stringzilla/657f21c5d8c2c2da5da06d4a9ad87c3ef80953d0/include/stringzilla/utf8_uncased.h), [`serial.h`](https://raw.githubusercontent.com/ashvardanian/stringzilla/657f21c5d8c2c2da5da06d4a9ad87c3ef80953d0/include/stringzilla/utf8_uncased/serial.h), and [`haswell.h`](https://raw.githubusercontent.com/ashvardanian/stringzilla/657f21c5d8c2c2da5da06d4a9ad87c3ef80953d0/include/stringzilla/utf8_uncased/haswell.h), inspected at commit `657f21c5d8c2c2da5da06d4a9ad87c3ef80953d0` | It chooses a safe slice at an arbitrary needle offset, scans it in SIMD, and verifies head/tail to recover a source match.  Multiple candidate offsets instead of one do not alter that filter/verify shape. |
+| Case-expanded literal paths | “Follow-up assessment: direct raw-byte fold transitions” above | Every element of `D[j]` arises from one or more concatenated form paths; a displacement is a projection of those paths that has forgotten their content. |
+| Elastic-degenerate matching | Iliopoulos, Kundu, and Pissis, *Elastic-Degenerate String Matching*, Information and Computation 279 (2021), cited in `CONTEXT.md` §1b | Per-position variable-length alternatives and the possible aggregate lengths are the formal object.  A length lattice is a coarse projection of its path state. |
+| Literal prefilters that discard pattern identity | rust-lang/regex [`prefilter/mod.rs`](https://raw.githubusercontent.com/rust-lang/regex/ada2a5a6a08c8038daed9f77e1b4d9a3ca9930da/regex-automata/src/util/prefilter/mod.rs), inspected at commit `ada2a5a6a08c8038daed9f77e1b4d9a3ca9930da` | Its documentation explicitly describes no-false-negative prefilters that may have false positives and discard which pattern supplied a literal; the lattice's anchors have the same information loss. |
+
+StringZilla has full-fold semantics and is not a candidate implementation for
+this repository.  It is current-source evidence for the claimed
+arbitrary-offset probe plus surrounding verification mechanics.  The proposal
+changes the number of retained offsets, not the information available to an
+anchor hit.
+
+### Reduction
+
+A lattice node `(j, d)` states only that some rendering of the pattern prefix
+has source length `d`.  It does not identify which member was chosen at any
+prior position, nor whether the bytes preceding the anchor match those members.
+For example, two different prefixes can have the same total width and produce
+the same node even when one has a mismatching non-ASCII unit.  Therefore an
+anchor intersection alone cannot accept a match.
+
+If a candidate is checked by replaying the prefix/suffix, the full predicate
+is the known anchor-filter-plus-verifier pipeline.  If instead the lattice is
+refined until it can accept without replay, each node must retain the chosen
+form's partial/terminal identity and UTF-8 lexical boundary state.  Draw an
+edge for each chosen form: the refined lattice is precisely the concatenation
+of the finite `E(ai)` byte paths, with `d` as an annotation.  Its vector of
+possible offsets is a subset-state encoding of the closed raw-byte matcher.
+
+Intersections, packed displacement bits, and minimum source-start tags can
+reduce candidate cost, but they do not restore the discarded content
+information.  They consequently cannot introduce a transition other than
+ordinary path advance or ordinary candidate confirmation.
+
+### Falsification search and result
+
+This negative would be falsified by an elastic-offset update that proves all
+prefix and suffix fold equality, rejects opaque continuation-byte starts,
+returns leftmost/lowest ties, and cannot be expanded into either form paths or
+an anchor hit plus a verifier.  A larger displacement set, more anchors,
+vectorized intersections, or a better scoring policy would not suffice.
+
+The current StringZilla source check found arbitrary-offset safe-slice probing
+with verification, and the current regex-automata prefilter source documents
+the corresponding deliberate loss of identity.  Lifting the lattice's
+lost-content projection to a correct accepting state reconstructs the
+case-expanded paths.  No distinct state survives, so no implementation or
+benchmark follows.
+
+### Decision
+
+Do not add an elastic-offset lattice, multi-anchor AVX2 filter, or portable
+fallback.  It is either known candidate/confirmation machinery or an annotated
+case-expanded byte automaton, not the required invention.
+
 ## Provenance
 
-This contribution adds only the novelty assessments in this file.  The
-original assessment, the raw-byte follow-up, the fixed-width projection
-assessment, the raw-byte rolling-fingerprint assessment, and the
-prefix-invariant-anchor assessment were written for this repository from the
-current `AGENTS.md`, `README.md`, `CONTEXT.md`, source and test files, and the
-cited source locations; they contain no copied implementation code and make
-no external performance claim.  The projection assessment records the
-inspected upstream crate commit and version; the prefix-anchor assessment
-records the current StringZilla source revision inspected through `git
-ls-remote`.  If implementation files are added later, each non-trivial file
-will identify its authorship and source provenance here.
+This contribution contains only novelty assessments in this file.  The
+original orbit-quotient, raw-byte, fixed-width projection, rolling-fingerprint,
+and prefix-invariant-anchor assessments, plus the five follow-up construction
+sweeps above, were written for this repository from the current `AGENTS.md`,
+`README.md`, `CONTEXT.md`, source and test files, and the cited source
+locations.  They contain no copied implementation code and make no external
+performance claim.  The follow-up sweep checked current upstream source via
+`git ls-remote` and immutable raw-source revisions for GNU libc, .NET,
+rust-lang/regex, Hyperscan, and StringZilla; semantic differences are stated
+where those engines are used only as mechanical prior art.  If implementation
+files are added later, each non-trivial file will identify its authorship and
+source provenance here.
