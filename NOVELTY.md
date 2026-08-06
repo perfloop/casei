@@ -1008,6 +1008,313 @@ Do not add an elastic-offset lattice, multi-anchor AVX2 filter, or portable
 fallback.  It is either known candidate/confirmation machinery or an annotated
 case-expanded byte automaton, not the required invention.
 
+## Follow-up assessment: synchronization-tagged variable shift
+
+### Status
+
+**Negative assessment for the queued synchronization-aware shift
+construction.**  The construction can avoid attempting a full fold comparison
+at every byte or rune boundary, but its state is a bad-character/good-suffix
+(or q-gram) shift table over the already-known case-expanded UTF-8 language,
+with the ordinary UTF-8 boundary state attached.  A width tag is necessary for
+correctness, but it is just a compressed encoding-path coordinate.  It does
+not create a new transition or recognizer.
+
+No implementation, AVX2 kernel, portable fallback, or benchmark is warranted
+for this construction.
+
+### Construction assessed
+
+For a pattern decoded into units `a_0 ... a_(m-1)`, let `E(a_i)` be the finite
+set of raw UTF-8 strings for its simple-fold orbit, with a singleton raw byte
+for an opaque invalid unit.  The proposed scanner does not try every source
+start.  Instead it keeps a synchronization descriptor `sigma` at a probe
+location (enough UTF-8 lexical state to distinguish a valid unit boundary from
+an in-codeword byte and from an opaque invalid byte) and looks up a shift from
+an observed byte or q-gram:
+
+```
+shift[sigma, observed fragment] -> next probe displacement,
+                                  candidate pattern offsets / width tags
+```
+
+A tag records the possible source-byte distance from the candidate start to
+that pattern fragment.  It is needed because a preceding unit may have a
+fold-equivalent form with another UTF-8 width.  For example, for `akb`, a
+fragment after `k` has different start distances in `akb` and `a\u212Ab`.
+The scanner would use the fragment, its boundary tag, and the associated
+distance(s) to skip directly to the next possible alignment, then confirm a
+surviving start under simple folding.  A SIMD version batches several
+fragments and tags in a block; a multi-pattern version associates pattern IDs
+with the same entries.
+
+The descriptor cannot be omitted.  The raw byte `0x84` must not become a
+candidate start inside `E2 84 AA` (KELVIN SIGN), while an isolated `0x84` is
+an opaque unit.  Thus a raw-byte shift that does not carry an equivalent
+boundary/error state fails the existing `lone continuation vs kelvin bytes`
+trap.
+
+### Current-art check
+
+| Construction | Source | Relation to the assessed plan |
+| --- | --- | --- |
+| Bad-character and good-suffix shifts | Boyer and Moore, *A Fast String Searching Algorithm* (1977); Go 1.26.5 `src/strings/search.go` (`stringFinder`) | A table whose safety assertion is “no alignment in this interval can match this observed fragment” is exactly a generalized shift table.  Replacing a byte key with a q-gram or a boundary tag changes the table alphabet, not the shift argument. |
+| UTF-8 synchronization | RFC 3629, §3 | UTF-8 lead/continuation structure supplies the boundary descriptor.  It is a lexical property of the encoded stream, not a new pattern-search state. |
+| UTF-8 case-insensitive n-gram indexing with synchronization | ClickHouse [`Volnitsky.h`](https://github.com/ClickHouse/ClickHouse/blob/e1d7e5b99c63dc18b08919808f5296a5f0248b87/src/Common/Volnitsky.h) and [`StringSearcher.h`](https://github.com/ClickHouse/ClickHouse/blob/e1d7e5b99c63dc18b08919808f5296a5f0248b87/src/Common/StringSearcher.h), inspected at commit `e1d7e5b99c63dc18b08919808f5296a5f0248b87` | `putNGramUTF8CaseInsensitive` calls `UTF8::syncBackward`, enumerates case forms for a byte n-gram, and records its pattern offset in Volnitsky's skip/filter table.  It declines a form when the case variants have unequal UTF-8 widths; adding a set of width-tagged offsets is an extension of this existing representation, not a different machine. |
+| Elastic-degenerate matching | Iliopoulos, Kundu, and Pissis, *Information and Computation* 279 (2021), cited in `CONTEXT.md` §1b | A sequence of finite, variable-length `E(a_i)` sets is the formal object.  Prefix-width sets and position recovery are ordinary state for that object. |
+| Width-safe Unicode fast-forward | PCRE2 [`pcre2_jit_compile.c`](https://github.com/PCRE2Project/pcre2/blob/ff92e0b9cea5b5ae3af12ba930d03556684f098b/src/pcre2_jit_compile.c#L6308-L6318), inspected at commit `ff92e0b9cea5b5ae3af12ba930d03556684f098b`; StringZilla [`haswell.h`](https://github.com/ashvardanian/stringzilla/blob/657f21c5d8c2c2da5da06d4a9ad87c3ef80953d0/include/stringzilla/utf8_uncased/haswell.h), inspected at commit `657f21c5d8c2c2da5da06d4a9ad87c3ef80953d0` | PCRE2 stops an offset-based prefix at a width-changing case form.  StringZilla carries a safe-window offset, detects width hazards, and recovers/validates around the window.  Both establish the same coordinate and confirmation problem the tag is meant to solve. |
+| Raw-byte fold-path state | “Follow-up assessment: direct raw-byte fold transitions” above | An `E(a_i)` form plus a UTF-8 lexical tag is an ordinary path in the already-assessed expanded byte graph. |
+
+The ClickHouse source is especially direct prior art for the proposed control
+shape: its n-gram compiler synchronizes from a byte fragment back to a UTF-8
+unit, enumerates the accepted case variants, stores the source pattern offset,
+and uses that entry to drive a skip/filter scan.  Its unequal-width rejection
+is a semantic limitation, not evidence that carrying multiple offsets is a
+new transition.  The only extra datum in the proposed table is the prefix
+width delta needed to select one of those offsets.
+
+### Constructive reduction
+
+Expand every member of every `E(a_i)` into a byte-labelled path.  Product the
+result with the finite UTF-8 lexical machine that distinguishes valid unit
+boundaries and opaque bytes.  Call the resulting graph `G`.  Each
+synchronization descriptor in the proposal is a state (or a short path label)
+of that lexical factor; each width tag is the byte distance accumulated along a
+path in `G` from the candidate start to the selected probe.
+
+For a fixed observed fragment, the shift table says that every path in `G`
+which could yield an accepted occurrence has its next possible alignment at or
+after the recorded displacement.  That is the usual bad-character statement.
+If the table also considers a matched suffix, it is the usual good-suffix
+statement.  A q-gram merely packs several labelled edges into the lookup key.
+Unpacking the tag into one row per possible path produces the same candidate
+starts; packing rows with equal fragments and displacements recovers the
+proposal.
+
+Width changes do not escape this reduction.  A `k` alternative has the paths
+`6B`, `4B`, and `E2 84 AA`.  If a probe lies after it, the third path contributes
+two more source bytes than either ASCII path.  Keeping `{d, d+2}` as a compact
+prefix-distance set is equivalent to retaining the three paths until their
+common continuation.  Dropping `d+2` misses a KELVIN rendering; treating an
+`84` fragment as an independent start admits the forbidden continuation-byte
+match.  The required tag therefore either expands to the paths or fails the
+contract.
+
+A vector implementation evaluates several such lookup/transition rows at
+once.  It remains a block transition of `G`, exactly the category rejected in
+the raw-byte assessment: batching, a larger fragment, or a branchless table
+layout changes scheduling and cost, not the state relation.  If the scan works
+over decoded units instead, the same construction is Boyer--Moore over the
+fold-orbit quotient already rejected at the beginning of this file.
+
+For multiple patterns, attaching `(pattern ID, pattern offset, width tag)` to
+a fragment is the dictionary version of the same q-gram filter.  It is covered
+by MultiVolnitsky/Commentz--Walter/Wu--Manber-style candidate machinery in
+`CONTEXT.md` §1d; a merged continuation state is an ordinary case-expanded
+dictionary automaton.  Neither form supplies the one new package-owned engine
+required by `AGENTS.md` §5.
+
+### Falsification search and result
+
+This negative would be falsified by a synchronization-aware shift update that
+simultaneously preserves source byte boundaries, all variable-width
+simple-fold forms, leftmost order, and multi-pattern ties, but cannot be
+reproduced by either:
+
+1. byte paths for `E(a_i)` producted with the UTF-8 lexical state plus a
+   generalized bad-character/good-suffix or q-gram shift table; or
+2. an online orbit-token stream followed by an ordinary literal/dictionary
+   shift transition.
+
+In particular, merely storing a set or bitset of cumulative width deltas,
+conditioning a second probe on the first form's width, using a longer q-gram,
+or evaluating the table in SIMD would not falsify the reduction.  Each is a
+finite collection of the same paths and coordinate tags.
+
+The source check produced the opposite result.  ClickHouse already has the
+synchronized n-gram/offset/filter shape, while its documented unequal-width
+surrender identifies precisely the path coordinate the proposal adds.  PCRE2
+and StringZilla separately show the established width-safe boundary and
+recovery strategies.  Expanding the proposed tags leaves no transition or
+output beyond those paths and standard shift safety.  The construction is
+therefore known-art composition before an implementation is considered.
+
+### Adjacent construction batch
+
+The following nearby states were generated after rejecting the queued shift.
+They are recorded separately so that a later round does not rediscover them as
+new variants of the same idea.
+
+| Cell | Proposed state | Why it closes | What would falsify that closure |
+| --- | --- | --- | --- |
+| Delta-tagged Volnitsky | Store every reachable prefix-width delta beside each fold-variant n-gram and choose a candidate start from `(n-gram, delta)`. | This is the unequal-width generalization of ClickHouse's existing n-gram-plus-offset entry.  The delta is the path coordinate in `G`; it is also an elastic-degenerate prefix-width state. | A shift/output that cannot be expanded into the corresponding n-gram rows and path coordinates. |
+| Form-conditioned SIMD pair probe | A first probe's matched form chooses the byte offset of a second probe, so distinct-width forms re-synchronize lanes without serial decoding. | The `(first form, second offset)` cases are finite byte paths between two probes.  A SIMD lane mask is a packed block transition of those paths; StringZilla's safe/danger split and the Sneller serial width chain in `CONTEXT.md` §1b are the closest published scheduling variants. | A joint lane transition whose matches, starts, or pattern ties cannot be reproduced by the finite form paths plus the UTF-8 boundary state. |
+| Boundary bitmap plus unit shift | Classify UTF-8 starts in a SIMD bitmap, then run a bad-character shift over fold classes at only those starts. | The bitmap is only a batched decoder boundary stream and the classes are the already-rejected orbit quotient.  It moves classification in time but does not change the matcher state. | A boundary/block state that retains information unavailable to the quotient token stream while not reducing to raw byte paths. |
+| Shared multi-pattern shift map | Map a fragment to all `(pattern, offset, delta)` records and resolve earliest candidates in one pass. | This is a dictionary q-gram/filter table; merging records is a case-expanded dictionary automaton, and retaining them as confirmations is the known multi-filter shape. | A transition with a proof of linearity and leftmost/tie selection that is neither a dictionary automaton nor a candidate/confirm table. |
+
+No construction in this batch survives the novelty gate.  This closes the
+**synchronization/coordinate-aware shift** class, not the whole problem.
+
+### What would reopen this space
+
+A next round should not try another byte tag, shift heuristic, q-gram length,
+or SIMD layout.  The class would reopen only with a state representation that
+uses variable-width fold alternatives *jointly* to produce a safe skip and the
+leftmost `(start, pattern)` result, while proving that it cannot be expanded
+into finite UTF-8 form paths plus lexical state and a standard shift/filter or
+into an orbit-token matcher.  It would also need a single N=1--N=512 plan, a
+linear adversarial bound, and an AVX2 block transition with a portable
+fallback.  A published construction with that state would instead falsify any
+claim of novelty immediately.
+
+### Decision
+
+Do not implement or benchmark synchronization-tagged shifts or the four
+adjacent variants.  They would be a competent extension, combination, or
+repacking of published shift/filter and UTF-8 path machinery, contrary to
+`AGENTS.md` §§1--3.  No performance claim is made.
+
+
+## Follow-up assessment: fused classified block frontier
+
+### Status
+
+**Negative assessment for a fused UTF-8 classifier, fold-set matcher, and
+leftmost-origin frontier.**  This was the next distinct construction after the
+shift family: classify each byte block once with SIMD, feed the classification
+directly into a compiled fold-set transition, and carry the earliest source
+start and pattern ID in that transition.  It would remove both the per-start
+`utf8.DecodeRuneInString` call and the orbit walk without allocating a stream
+of decoded tokens.
+
+The absence of a materialized token slice is operational, not a new state
+representation.  A lossless classifier produces the already-rejected
+fold-orbit quotient with an offset map; a classifier that retains raw-form or
+partial-width distinctions is the already-rejected case-expanded byte graph.
+Adding a leftmost-origin tag is established tagged-automaton state.  No
+implementation or benchmark follows.
+
+### Construction assessed
+
+For a 32-byte input block `B` and a carry `c` for a UTF-8 sequence crossing the
+block edge, compile a search plan `P` that emits, without a scalar per-position
+decode:
+
+```
+C_P(B, c) = (boundary mask, opaque-byte mask, fold-set masks, byte-offset map, c')
+T_P(frontier, C_P(B, c)) = (next frontier, earliest (start, pattern) output)
+```
+
+A fold-set mask marks valid source-unit starts whose rune belongs to one of the
+simple-fold orbits used by `P`; opaque bytes have their own singleton masks.
+`T_P` would advance one shared N=1--N=512 state machine.  Instead of reporting
+a bare accept bit, every active state carries the lexicographically least
+`(source byte start, pattern ID)` that reaches it.  A portable scalar path
+would implement the same `C_P` and `T_P` relation; an AVX2 path would batch the
+masks and transitions.
+
+This is stronger than merely running a SIMD prefilter: it proposes to use the
+classified masks as the matcher input itself, retain source offsets through the
+block transition, and accept without a separate `foldHasPrefix` confirmation.
+The intended payoff is one classification pass per input block, including
+mixed-width forms and invalid-byte opacity.
+
+### Current-art check
+
+| Construction | Source | Relation to the assessed plan |
+| --- | --- | --- |
+| SIMD UTF-8 validation, transcoding, and character counting | [`simdutf` README](https://raw.githubusercontent.com/simdutf/simdutf/449f6b00ab5529a617bcc7f95fe4f886a847d690/README.md), inspected at commit `449f6b00ab5529a617bcc7f95fe4f886a847d690` | The project supplies the established block-classification/transcoding primitive.  Fusing its output into a matcher changes scheduling, not the information emitted by classification. |
+| SIMD fold/search block with width-hazard routing | StringZilla [`haswell.h`](https://raw.githubusercontent.com/ashvardanian/stringzilla/657f21c5d8c2c2da5da06d4a9ad87c3ef80953d0/include/stringzilla/utf8_uncased/haswell.h), inspected at commit `657f21c5d8c2c2da5da06d4a9ad87c3ef80953d0` | Its AVX2 driver folds one 32-byte block, intersects probe masks, carries chunk-edge hazard state, and routes variable-width forms to a serial handler.  It is not this contract, but it establishes the fused block-plus-hazard control shape. |
+| Unicode-caseless bit-parallel expressions | icgrep/Parabix, cited in `CONTEXT.md` §1d | The transposed-bitstream line natively compiles Unicode-caseless expressions into one block machine.  A dictionary/tie contract is an additional output discipline, not evidence that a classified block transition is new. |
+| Leftmost source-origin tracking | Hyperscan [`compilation.rst`](https://raw.githubusercontent.com/intel/hyperscan/828b4fef341759e05292741a6c89cb66055986f8/doc/dev-reference/compilation.rst), inspected at commit `828b4fef341759e05292741a6c89cb66055986f8,` “Start of Match” | `HS_FLAG_SOM_LEFTMOST` returns the leftmost source start for an accepted end and documents the extra runtime state required to carry potential starts.  Choosing the lowest terminal pattern ID is an ordinary ordered reduction over the same tagged frontier. |
+| Case-expanded UTF-8 paths and fold quotient | The first two assessments in this file; UTS #18, RE2, rust-regex, and regex-automata cited there and in `CONTEXT.md` §1b | These are the two exhaustive representations available after a block has either forgotten or retained the raw encoding form. |
+
+The source inspection also refutes the tempting “fused means unclaimed”
+argument.  StringZilla's driver explicitly folds its loaded block once, creates
+candidate masks from multiple probes, and manages width-danger blocks before
+verification.  simdutf's classifier is a faster way to obtain block facts, but
+putting a different consumer immediately after it does not make the facts or
+consumer state new.  Hyperscan independently shows that carrying match origins
+is established state with a documented cost.
+
+### Constructive reduction
+
+Consider a valid unit at each set bit in the boundary mask.  There are only two
+ways `C_P` can make its match-relevant identity available to `T_P`:
+
+1. **One identity per unit.**  If its fold-set masks determine one orbit token
+   (restricted to the plan's needed alphabet is enough), define that identity
+   to be `q_P(unit)`.  The masks plus byte-offset map are an online,
+   non-materialized rendering of `q_P(haystack)` plus its source-position map.
+   `T_P` is then a literal or dictionary transition over the orbit quotient,
+   which is the initial negative assessment.
+2. **More than one identity or partial form progress.**  If `T_P` needs to
+   distinguish `k`, `K`, and `E2 84 AA`, or needs a mask for a continuation
+   prefix, expand every such distinction into its corresponding `E(a_i)` byte
+   path.  The carry `c` and boundary/opaque masks are the UTF-8 lexical product
+   state.  `T_P` is then a packed block transition of the raw-byte fold graph,
+   which is the second negative assessment.
+
+There is no third match-relevant datum.  A mask that does not distinguish
+orbit-equal forms belongs in case 1; one that does distinguish their bytes or
+width belongs in case 2.  SIMD packing, lane compaction, or avoiding a
+materialized slice does not alter that dichotomy.
+
+The origin tag does not rescue novelty.  Let an active matcher state carry a
+value from the ordered set of source starts and pattern IDs.  On a transition,
+it propagates the value attached to the predecessor; when paths merge, it takes
+the lexicographic minimum.  Erasing the values yields exactly the quotient or
+byte-path matcher above.  Restoring them is a tagged NFA/DFA or Hyperscan-style
+start-of-match product, not a new folding or block transition.  A hazard
+bitmap is likewise the safe/danger partition already visible in StringZilla;
+it changes which known representation handles a block, not the representation
+of a match.
+
+### Falsification search and result
+
+This negative would be falsified by a classified-block state that carries
+match-relevant information which cannot be recovered from either a fold-orbit
+token plus its byte start or a finite raw UTF-8 form path plus lexical state,
+while still deciding simple-fold equality, opaque-byte behavior, and
+leftmost/lowest-ID selection.  It would need to show why erasing its SIMD
+layout cannot yield either of those two ordinary machines.  A faster
+classification kernel, no temporary token allocation, a wider vector, or a
+better origin-tag packing would not suffice.
+
+Applying that test gives the negative result.  The proposed masks either
+collapse to the quotient or retain form paths; the origin field is an existing
+tagged-machine output.  The fused construction is therefore a composition of
+known classifier, fold representation, and match-origin mechanisms, despite
+having a potentially useful cost profile.
+
+### Adjacent construction batch
+
+| Cell | Proposed state | Why it closes | What would falsify that closure |
+| --- | --- | --- | --- |
+| SIMD hazard overlay | A fast width-preserving block transition plus a sparse event map that repairs starts only near cross-width fold forms. | StringZilla's alarm/danger-zone driver already partitions safe blocks from width hazards and recovers around a selected safe window.  Restricting it to simple folding or changing the event-map layout removes cases rather than creating a state. | A repair transition that accepts/reports matches without safe-window confirmation and cannot be expanded into form paths with boundary state. |
+| Tagged leftmost fold frontier | Carry `(start, pattern ID)` alongside every active native fold-set state and reduce at merges. | Erasing the tag recovers an ordinary case-expanded or quotient matcher; restoring it is start-of-match tracking, for which Hyperscan documents the state cost. | An origin update that cannot be represented as propagation plus an ordered merge over active paths. |
+| Classify-then-compact rune lanes | SIMD-compacts decoded units into fixed lanes and compares all pattern positions in those lanes. | The compacted lanes are an explicit `q_P` stream with a byte-offset map, even if retained only in registers. | A lane value needed for matching that is neither an orbit identity nor raw-form/path information. |
+
+No cell in this block-frontier batch survives the novelty gate.  This closes the
+**fused classification, hazard-overlay, and tagged-origin** class, not every
+possible native fold-set construction.
+
+### What would reopen this space
+
+A viable next construction must expose a match-relevant state that is neither a
+canonical orbit token with source coordinates nor a case-expanded UTF-8 path
+with lexical state, and it must do more than carry a standard origin tag.  It
+would need a proof that the state composes across AVX2 blocks, gives a linear
+adversarial bound, selects leftmost/lowest-ID results, and remains one plan for
+N=1 through N=512.  Evidence of a published state with those properties would
+instead close the claim.  Until then, a faster fused classifier alone is an
+engineering experiment explicitly excluded by `AGENTS.md` §§1--3.
+
+### Decision
+
+Do not implement or benchmark the fused classified frontier or its adjacent
+variants.  No performance claim is made.
+
 ## Provenance
 
 This contribution contains only novelty assessments in this file.  The
