@@ -52,6 +52,14 @@ var multiScenarios = func() []multiScenario {
 		{"multi_N8_miss_log_1mb", logs1m, genNeedles(8, "Zq%03dxW vK"), false},
 		{"multi_N64_miss_log_64kb", logs1m[:64<<10], genNeedles(64, "Zq%03dxW"), false},
 		{"multi_N512_miss_log_64kb", logs1m[:64<<10], genNeedles(512, "Zq%03dxW"), false},
+		// The ASCII N=512 row above exercises pattern count and nothing else: its
+		// orbit union is 14 orbits over 18 members, all single-byte, so a plan
+		// compiled from it never meets a width-changing fold. This row is the same
+		// pattern count over the hazards -- Kelvin sign, long s, sigma, and Cyrillic
+		// -- where a shared multi-pattern plan has to agree about unit boundaries
+		// across 512 needles at once. Without it, a multi-needle claim says nothing
+		// about the tier this repository exists for.
+		{"multi_N512_miss_hazard_64kb", cyr1m[:64<<10], genHazardNeedles(512), true},
 		{"multi_N8_hit_log_1mb", plant(logs1m, "Payment Declined", 4), hit8, false},
 		{"multi_N8_miss_ru_1mb", cyr1m, genNeedles(8, "щупальце%d"), true},
 		{"multi_N64_miss_ru_64kb", cyr1m[:64<<10], genNeedles(64, "щупальце%d"), true},
@@ -175,3 +183,17 @@ var (
 	matcherSink  int
 	matcherFound bool
 )
+
+// genHazardNeedles builds n distinct needles whose fold orbits change UTF-8
+// width, so a compiled multi-pattern plan cannot assume a fixed byte stride.
+// The cycle covers the three hazard classes the repository pins -- KELVIN SIGN
+// (3 bytes folding to 1), LONG S (2 to 1), and the sigma trio (2 to 2 with three
+// members) -- plus a Cyrillic base so the row is non-ASCII throughout.
+func genHazardNeedles(n int) []string {
+	seeds := []string{"\u212Aелвин%d", "\u017Fекрет%d", "\u03A3игма%d", "\u03C2игма%d", "щупальце%d"}
+	out := make([]string, n)
+	for i := range out {
+		out[i] = fmt.Sprintf(seeds[i%len(seeds)], i)
+	}
+	return out
+}

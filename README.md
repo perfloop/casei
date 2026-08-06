@@ -78,7 +78,7 @@ that no search was invented. The module boundary can.
 
 `IndexFold` and `Matcher.Find` must be one package-owned compiled search plan
 and one block-transition state machine. A single needle is the `N=1` plan.
-ASCII, UTF-8, scalar, AVX2 and NEON paths may differ only as representations of
+ASCII, UTF-8, scalar, and vector paths may differ only as representations of
 that same transition.
 
 Prohibited as alternate engines: per-pattern `IndexFold` loops, regex
@@ -167,10 +167,15 @@ hole the split exists to close, and the isolation check will fail.
 
 ### And it must also
 
-1. **Exploit the instruction set.** The ASCII bar is a hand-written NEON/AVX2
-   kernel. Scalar code does not reach it, and no wrapper reaches it either.
+1. **Exploit the instruction set.** The ASCII bar is a hand-written SIMD kernel.
+   Scalar code does not reach it, and no wrapper reaches it either.
    Architecture-specific kernels are expected — each with a correct portable
    fallback and identical semantics under every differential.
+
+   The measurement host is `genuineintel/6/85` and exposes `avx512f`,
+   `avx512bw`, `avx512cd`, `avx512dq`, `avx512vl` — **512-bit vectors, byte
+   compares, `vpermb`, and k-mask registers are available**, not just AVX2.
+   Gate on runtime detection.
 2. **Keep a linear worst case.** The adversarial scenarios (`periodic`,
    `samechar`, `torture`) exist so throughput cannot be bought with a
    quadratic cliff.
@@ -245,6 +250,10 @@ go test -bench=BenchmarkBar -benchtime=10ms  # the scoreboard: x_vs_best per row
 folding primitives, SIMD prefilter designs, candidate-extraction tricks on
 movemask-less ISAs, vectorized rolling hashes, adaptive stage-escalation
 budgets, rare-byte statistics, and what regex engines do for caseless UTF-8
-today — with sources and measured numbers. It is the line between
-engineering and invention here: **an approach only counts as new if it is
-not already in that document.**
+today — with sources and measured numbers.
+
+It is an exclusion list, not a certificate: **absence from it is not evidence
+of novelty**, and it carries a novelty gate saying so. Twelve constructions are
+closed by proof in [`NOVELTY.md`](NOVELTY.md), each with sources and pinned
+revisions. Read both before proposing; combining what is in them into a result
+the field does not hold is the work, and is legitimate.

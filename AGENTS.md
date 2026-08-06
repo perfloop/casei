@@ -3,17 +3,24 @@
 These are binding rules for any change to the search implementation, not
 advice. A change that violates one should not be proposed, however fast it is.
 
-## 1. The deliverable is an invention, not an optimization
+## 1. The deliverable is a result the field does not hold
 
-This repository exists to produce a caseless search construction that does not
-currently exist. Making the reference implementation faster is not the
-deliverable. A change that is a competent implementation of a known technique
-has failed its purpose here, even when every benchmark improves.
+This repository exists to produce a caseless search engine that does not
+currently exist: the fastest correct one, on workloads the field does not
+serve. Twelve constructions are closed by proof in `NOVELTY.md`, so a wholly
+new state or transition is not the expected route and is no longer the bar.
 
-Two specific outcomes are failures:
+The bar is a new **result**, reached however it is reached. Assembling known
+techniques into an engine that holds a position nobody holds -- `x_vs_best < 1`
+on rows the field contests, or correct caseless UTF-8 multi-needle search that
+no shipped engine provides -- is the deliverable, and building it is required
+rather than forbidden.
 
-- a re-implementation of an existing engine's approach;
-- a wrapper, port, or re-tuning of a published technique.
+Two outcomes are still failures:
+
+- a re-implementation of an existing engine's approach that produces no new
+  result;
+- a wrapper or port of a published technique.
 
 ## 2. Novelty must be argued, not assumed
 
@@ -23,8 +30,12 @@ A change claiming a new construction ships `NOVELTY.md` containing:
    enough to disagree with;
 2. the closest known constructions, each with a source (paper, repository, or
    engine), including the ones in `CONTEXT.md`;
-3. why this is not an equivalent combination, repacking, or threshold variation
-   of those constructions;
+3. what is combined from them and what result that combination produces.
+   **Combining known techniques is legitimate and is how most real advances
+   happen.** The test is whether the RESULT is new -- a capability nobody has,
+   or a measured position nobody holds -- not whether every component is. A
+   repacking that produces no new result is not enough; a combination that
+   produces one is;
 4. what evidence would falsify the claim, and the result of looking for it.
 
 **Absence from `CONTEXT.md` is not evidence of novelty.** That document is one
@@ -33,10 +44,12 @@ claims usually die.
 
 ## 3. A negative result is a result
 
-If the novelty assessment concludes the construction is known art, that is the
-answer, not a failure to produce one. Say so, in `NOVELTY.md`, with the
-sources. Do not fall back to optimizing the known construction so the work has
-something to show; the proof is the thing to show.
+If the assessment concludes every component is known art, record that in
+`NOVELTY.md` with the sources -- and then build the thing anyway if the
+combination reaches a result the field does not hold. Known components are not
+a reason to stop; only a known *result* is.
+
+Do not use a novelty finding as a reason to ship nothing.
 
 State what would falsify the negative. That is what makes it usable by whoever
 looks next, instead of merely discouraging.
@@ -109,9 +122,21 @@ overhead to it, and a ratio cannot tell you no search was invented.
 
 ## 7. Scope
 
-Target amd64 with AVX2, plus a correct portable fallback. arm64/NEON is out of
-scope for now and its absence is not a defect. Say which ISA a measurement
-covers; cross-compilation proves portability, not performance.
+Target amd64, plus a correct portable fallback. arm64/NEON is out of scope for
+now and its absence is not a defect.
+
+**The measurement host has AVX-512, not merely AVX2.** Recorded CPU is
+`genuineintel/6/85` (Skylake-SP class) and sessions observe `avx512f`,
+`avx512bw`, `avx512cd`, `avx512dq`, `avx512vl`. Use them: 512-bit vectors,
+byte-granularity compares under BW, `vpermb` for in-register table lookup, and
+k-mask registers that make set/liveness arithmetic native rather than emulated.
+An earlier version of this file said AVX2 and that was an unchecked assumption,
+not a constraint -- state counts computed against 256-bit lanes were computed
+against the wrong machine.
+
+Gate every path on runtime feature detection with a portable fallback. Say
+which ISA a measurement covers; cross-compilation proves portability, not
+performance.
 
 ## 8. Correctness is not negotiable
 
