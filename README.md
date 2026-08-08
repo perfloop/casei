@@ -60,6 +60,42 @@ independent canonical-fold reference on arbitrary bytes, a random
 differential against `regexp (?i)` on valid UTF-8, and a fuzz target
 enforcing both.
 
+### The full-folding tier
+
+Simple folding is 1:1 — a code point folds to other code points, so a pattern
+position is a small orbit. **Full** folding is 1:N: `ß` folds to `ss`, `ﬄ` to
+`ffl`, `ﬁ` to `fi`. A pattern position becomes a variable-length sequence, and
+that is a different and harder problem. StringZilla implements it; ClickHouse's
+UTF-8 caseless searcher declines it (`force_fallback = true`) whenever case
+forms differ in encoded length; regex engines reach it only by case-expanding
+literals into alternations.
+
+That expansion is where the cost is, and it is multiplicative. Counting
+realisations per position on this repository's own orbit rules:
+
+| pattern | case-expansion branches | units in a 1:N frontier |
+|---|---|---|
+| `straße` | 528 | 7 |
+| `großstraße` | 46,464 | 12 |
+| `straße-straße` | 278,784 | 15 |
+| 512 patterns, 4 sharp-s each | 179,908,608 | 6,144 |
+
+The asymmetry is structural rather than incidental. A **literal-set** engine --
+Teddy, Aho-Corasick, Vectorscan -- needs concrete literals to build its tables,
+so full folding forces it to enumerate that cross product. An **automaton**
+engine treats `ß → (ß|ss)` as a local branch and stays linear, but pays
+automaton speed. Neither gets both.
+
+So the second tier is one engine that consumes N units at a pattern position
+natively: literal-set speed with linear state. It is a separate deliverable
+with its own entry points, not a change to the ones above -- `IndexFold` and
+`Matcher.Find` keep simple-fold semantics exactly as specified, because the
+whole point is that the same compiled plan serves both rather than one
+replacing the other.
+
+The tier is specified here and not yet built. Nothing in `AGENTS.md` requires
+it, and a change is not judged against it until a case opens on it.
+
 ## The bar
 
 ### Baseline isolation

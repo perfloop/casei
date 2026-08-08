@@ -10,6 +10,23 @@
 # goal. Every engine below that is not yet wired in is an open task, and the
 # right response to "that tier has no competitor" is to go put one in it.
 #
+# Two folding tiers exist. `simple` is 1:1 per code point and is what IndexFold
+# and Matcher.Find implement today. `full` is 1:N -- sharp s folds to ss, the
+# ligatures expand -- specified in README and not yet built. They are different
+# fields, and an engine can be exact on one and adapted on the other.
+# StringZilla is the clearest case: it implements full folding natively, so on
+# the simple tier its time carries a timed simple-fold verification, while on
+# the full tier it competes with no adapter at all and is the engine to beat.
+#
+# An entrant must also declare the instruction set it dispatched to at runtime,
+# and refuse to race on a weaker path than the machine offers. A competitor
+# quietly running a portable build is not a competitor, and a ratio measured
+# against one says nothing. StringZilla's adapter is the model: it queries
+# sz_capabilities() and errors rather than let a serial fallback flatter this
+# repository. Vectorscan's AVX-512 support is a compile-time option that is off
+# by default, so a distribution package is presumed handicapped until its
+# dispatch is shown.
+#
 # semantic_status decides whether a baseline's time may enter x_vs_best:
 #
 #   exact          agrees with the arena oracle on every input, both tiers.
@@ -63,14 +80,24 @@ baselines:
     tier: [ascii, utf8]
     semantic_status: unwired
     what: Vectorscan/Hyperscan caseless literal set, SIMD multi-pattern. The
-          real multi-needle bar. Reports all matches; needs a leftmost/tie
-          adapter, timed as part of it.
+          real multi-needle bar, and the only entrant designed for the N=512
+          shape. Reports all matches; needs a leftmost/tie adapter, timed as
+          part of it. Build from source with BUILD_AVX512 and BUILD_AVX512VBMI
+          on and prove the dispatch: those are off by default, so a package
+          build races AVX2 at best and any ratio against it is a handicap.
+          Being a literal-set engine, full folding forces it to case-expand,
+          which is the cost the full tier exists to expose.
 
   - name: stringzilla
     tier: [utf8]
     semantic_status: unwired
-    what: StringZilla v4.5 caseless UTF-8, AVX-512/NEON. Full folding, so it
-          needs a simple-fold adapter, timed as part of it.
+    what: StringZilla v4.5 caseless UTF-8, AVX-512/NEON. Full folding, so on the
+          simple tier it needs a simple-fold adapter, timed as part of it. On
+          the full tier it needs no adapter and is the engine to beat. Must
+          prove its Ice Lake dispatch via sz_capabilities() and refuse to run
+          without it. Single-needle API only: a multi-needle row runs one native
+          scan per pattern, which is the per-pattern loop this repository
+          exists to remove, so beating it there proves little.
 
   - name: pcre2-jit
     tier: [utf8]
