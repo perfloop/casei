@@ -69,6 +69,30 @@ Record what you ruled out cheaply on paper as well as what you implemented. A
 cell closed by a two-line argument is worth as much to the next reader as one
 closed by a benchmark, and costs far less.
 
+## 3c. Read the field's implementations
+
+Every entrant in `arena/field.yaml` is open source and its implementation is
+reachable. Read them -- at whatever level the answer lives: source, intrinsics,
+generated assembly, or the disassembly of a built object -- and take every
+technique worth taking.
+
+This is the standing method for any row this engine does not lead. The winner is
+doing something specific, that something is readable, and not having read it is
+never the reason a row cannot move. Name what the leading implementation does
+that this one does not, adopt it, adapt it to the shared plan, and where wider
+registers allow more than the original technique needed, push past it rather
+than porting it.
+
+Combining known techniques is legitimate here; what has to be new is the result.
+A construction assembled from the best of the field and then taken further with
+an instruction set none of them target is exactly the deliverable.
+
+Two limits. The candidate module must not import, link, execute or embed any
+field implementation -- `scripts/check-baseline-isolation.sh` decides that. And
+these are licensed works: reimplement from the technique, never copy the code.
+Record in `NOVELTY.md` which technique came from where and what the combination
+reaches that no source reaches alone.
+
 ## 4. Measure against the field, not against yourself
 
 The scoreboard is `BenchmarkBar` in the `arena/` module. It reports
