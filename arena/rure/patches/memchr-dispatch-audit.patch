@@ -1,0 +1,60 @@
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -202,0 +203,49 @@
++
++#[cfg(all(feature = "std", target_arch = "x86_64"))]
++mod casei_audit {
++    use std::cell::Cell;
++
++    std::thread_local! {
++        static LAST: Cell<u16> = Cell::new(0);
++    }
++
++    pub fn record(bits: u16) {
++        LAST.with(|last| last.set(last.get().max(bits)));
++    }
++
++    pub fn reset() {
++        LAST.with(|last| last.set(0));
++    }
++
++    pub fn bits() -> u16 {
++        LAST.with(Cell::get)
++    }
++}
++
++#[cfg(not(all(feature = "std", target_arch = "x86_64")))]
++mod casei_audit {
++    pub fn record(_: u16) {}
++    pub fn reset() {}
++    pub fn bits() -> u16 {
++        0
++    }
++}
++
++/// Records the widest x86 dispatch observed by the arena audit.
++#[doc(hidden)]
++pub fn casei_dispatch_record(bits: u16) {
++    casei_audit::record(bits);
++}
++
++/// Clears the x86 dispatch observed by the arena audit.
++#[doc(hidden)]
++pub fn casei_dispatch_reset() {
++    casei_audit::reset();
++}
++
++/// Returns the widest x86 dispatch observed by the arena audit.
++#[doc(hidden)]
++pub fn casei_dispatch_bits() -> u16 {
++    casei_audit::bits()
++}
++
+--- a/src/arch/x86_64/memchr.rs
++++ b/src/arch/x86_64/memchr.rs
+@@ -82,0 +83 @@
++            crate::casei_dispatch_record(256);
+@@ -94,0 +96 @@
++            crate::casei_dispatch_record(128);
+@@ -104,0 +107 @@
++            crate::casei_dispatch_record(0);

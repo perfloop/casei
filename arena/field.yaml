@@ -5,45 +5,45 @@
 # UTF-8, in one construction rather than a family of special cases. This file
 # lists what it has to beat.
 #
-# The field is therefore a work list, not a ceiling. A tier with no entrant is
-# missing work here; it is never a reason to discount a result or to narrow the
-# goal. Every engine below that is not yet wired in is an open task, and the
-# right response to "that tier has no competitor" is to go put one in it.
+# The field is a work list, not a ceiling. A tier with no entrant is missing
+# work here; it is never a reason to discount a result or to narrow the goal,
+# and the right response to "that tier has no competitor" is to put one in it.
 #
-# Two folding tiers exist. `simple` is 1:1 per code point and is what IndexFold
-# and Matcher.Find implement today. `full` is 1:N -- sharp s folds to ss, the
-# ligatures expand -- specified in README and not yet built. They are different
-# fields, and an engine can be exact on one and adapted on the other.
-# StringZilla is the clearest case: it implements full folding natively, so on
-# the simple tier its time carries a timed simple-fold verification, while on
-# the full tier it competes with no adapter at all and is the engine to beat.
-#
-# An entrant must also declare the instruction set it dispatched to at runtime,
-# and refuse to race on a weaker path than the machine offers. A competitor
+# An entrant must declare the instruction set it dispatched to at runtime and
+# refuse to race on a weaker path than the machine offers. A competitor
 # quietly running a portable build is not a competitor, and a ratio measured
-# against one says nothing. StringZilla's adapter is the model: it queries
+# against one says nothing: Vectorscan's AVX-512 support is a compile-time
+# option that is off by default, so it is built from source here with the
+# option on and its dispatch proven, and StringZilla's adapter queries
 # sz_capabilities() and errors rather than let a serial fallback flatter this
-# repository. Vectorscan's AVX-512 support is a compile-time option that is off
-# by default, so a distribution package is presumed handicapped until its
-# dispatch is shown.
+# repository. Every bar row reports each entrant's dispatched width.
 #
 # semantic_status decides whether a baseline's time may enter x_vs_best:
 #
-#   exact          agrees with the arena oracle on every input, both tiers.
+#   exact          agrees with the arena oracle on its declared arena tier.
 #                  Counts as a competitor.
 #   exact-for-ascii  agrees on the ASCII tier only. Counts there, excluded
 #                  from UTF-8 rows.
 #   diagnostic     runs for reference but never enters x_vs_best, because its
 #                  semantics differ (full folding vs simple folding, different
-#                  match position, different tie rule).
-#   unwired        a real competitor that is not yet callable from this arena.
-#                  Any adaptation, preprocessing, or conversion needed for
-#                  equivalence is timed as part of it, so a semantic mismatch
-#                  is an adapter to write, not grounds for exclusion.
+#                  match position, different tie rule). Any adaptation needed
+#                  for equivalence is timed as part of the entrant it adapts.
 #
-# Reporting rule: state which entrants a row actually ran against. A row whose
-# only entrant is Go's regexp has been measured against a scalar NFA floor and
-# must say so -- that is a reporting obligation, not a bar on the claim.
+# Reporting rule: state which entrants a row actually ran against, and report
+# rows the candidate loses next to the ones it wins.
+#
+# This is the virtualized CPU profile that produced this field record. It is an
+# observed CPUID identity, not a product-name or feature inference: each native
+# adapter reports its actual per-row state and the candidate gates execution on
+# runtime feature detection.
+measurement_host:
+  vendor: GenuineIntel
+  family: 6
+  model: 143
+  benchmark_cpu: "Intel(R) Xeon(R) Platinum 8481C CPU @ 2.70GHz"
+  lscpu_model_name: "unknown (KVM virtualized CPUID)"
+  observed_features: [avx2, avx512f, avx512bw, avx512vbmi]
+  observed_with: "Go benchmark header, lscpu, and golang.org/x/sys/cpu on the measurement process"
 
 baselines:
   - name: regexp
@@ -54,53 +54,67 @@ baselines:
   - name: veloz
     tier: [ascii]
     semantic_status: exact-for-ascii
-    what: mhr3/veloz ascii.IndexFold, hand-written NEON/AVX2. The real ASCII bar.
+    what: mhr3/veloz ascii.IndexFold, hand-written AVX2 on this x86 field.
+          Its SSE/scalar fallback is excluded rather than raced as the same entrant.
+
+  - name: rust-aho-corasick
+    tier: [ascii]
+    semantic_status: exact-for-ascii
+    what: Direct pinned Rust aho-corasick 1.1.5 C ABI, DFA with ASCII case
+          insensitivity, LeftmostFirst ordering, and enabled prefilter. A
+          checked memchr source patch records the backend reached by each
+          exact query; only an observed AVX2 query enters x_vs_best. An
+          unobserved, SSE, or scalar query remains available to semantic tests
+          but is excluded rather than inferred from Go CPU flags. Original
+          pattern IDs are retained.
 
   - name: aho-corasick
     tier: [ascii]
-    semantic_status: exact-for-ascii
-    what: petar-dambovaliev/aho-corasick, DFA. Multi-pattern ASCII bar.
+    semantic_status: diagnostic
+    what: petar-dambovaliev/aho-corasick DFA. Retained as a supplemental
+          non-winning Go multi-pattern control; its timing never establishes x_vs_best.
 
   - name: tolower
     tier: [ascii]
     semantic_status: diagnostic
     what: strings.ToLower + strings.Index. Not folding; wrong beyond ASCII.
 
-  # The UTF-8 tier is unoccupied. That is the largest open task in this
-  # repository: the engine claims a caseless UTF-8 result, and nothing here
-  # yet contests it. Wire these in, adapters and all, then beat them.
-  - name: rust-regex
+  - name: stringzilla
     tier: [ascii, utf8]
-    semantic_status: unwired
-    what: Rust regex crate via rure FFI, (?i) with Unicode case folding.
-          Teddy/memchr SIMD literal search. The strongest general entrant and
-          the one an outside reader will name first.
+    semantic_status: exact
+    what: StringZilla v4.5.0 caseless UTF-8 search with runtime-dispatched
+          Ice Lake AVX-512 required. It is excluded before native calls when
+          that path is unavailable, never silently downgraded. The arena
+          compiles each literal once, verifies full-fold candidates with simple
+          folding in the timed path, and reduces single-literal scans to
+          leftmost/lowest-pattern results after fold-hazard and ordered-
+          alternation checks against the oracle.
+
+  - name: pcre2-jit
+    tier: [ascii, utf8]
+    semantic_status: exact
+    what: PCRE2 JIT with PCRE2_CASELESS|PCRE2_UTF. The arena compiles literals
+          and ordered alternations once, requires JIT, and checks fold hazards,
+          leftmost start, and branch-order ties against its oracle on every
+          valid-UTF-8 row, including ASCII.
+
+  - name: rure
+    tier: [ascii, utf8]
+    semantic_status: exact
+    what: rust-regex through the pinned rure C API with (?i) and Unicode mode.
+          A checked source patch records the memchr backend reached by each
+          query; only an observed AVX2 query enters x_vs_best. An unobserved,
+          SSE, or scalar query remains available to semantic tests but is
+          excluded rather than labeled from Go CPU flags. Literals and ordered
+          capture alternations are compiled once and checked against the oracle.
 
   - name: vectorscan
     tier: [ascii, utf8]
-    semantic_status: unwired
-    what: Vectorscan/Hyperscan caseless literal set, SIMD multi-pattern. The
-          real multi-needle bar, and the only entrant designed for the N=512
-          shape. Reports all matches; needs a leftmost/tie adapter, timed as
-          part of it. Build from source with BUILD_AVX512 and BUILD_AVX512VBMI
-          on and prove the dispatch: those are off by default, so a package
-          build races AVX2 at best and any ratio against it is a handicap.
-          Being a literal-set engine, full folding forces it to case-expand,
-          which is the cost the full tier exists to expose.
-
-  - name: stringzilla
-    tier: [utf8]
-    semantic_status: unwired
-    what: StringZilla v4.5 caseless UTF-8, AVX-512/NEON. Full folding, so on the
-          simple tier it needs a simple-fold adapter, timed as part of it. On
-          the full tier it needs no adapter and is the engine to beat. Must
-          prove its Ice Lake dispatch via sz_capabilities() and refuse to run
-          without it. Single-needle API only: a multi-needle row runs one native
-          scan per pattern, which is the per-pattern loop this repository
-          exists to remove, so beating it there proves little.
-
-  - name: pcre2-jit
-    tier: [utf8]
-    semantic_status: unwired
-    what: PCRE2 JIT, PCRE2_CASELESS|PCRE2_UTF. Needs an offset/tie adapter,
-          timed as part of it.
+    semantic_status: exact
+    what: Source-built Vectorscan 5.4.11 fat runtime with AVX2, AVX-512, and
+          AVX-512 VBMI targets enabled. Each database is explicitly compiled
+          for the process's audited AVX-512-VBMI or AVX2 target and its
+          hs_database_info feature string is checked before timing. The arena
+          uses HS_FLAG_CASELESS|HS_FLAG_UTF8|HS_FLAG_SOM_LEFTMOST and times its
+          all-match leftmost/lowest-pattern adapter after fold-hazard and
+          ordered-alternation checks against the oracle.

@@ -1,0 +1,17 @@
+[package]
+name = "casei-rustac"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+aho-corasick = "=1.1.5"
+# This direct dependency is the query-local dispatch audit used by the arena.
+memchr = "=2.8.3"
+
+[patch.crates-io]
+# prepare.sh copies and patches this exact source beside the staged Rust crate.
+memchr = { path = "../rustac-memchr-source" }

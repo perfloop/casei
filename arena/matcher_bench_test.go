@@ -6,8 +6,20 @@ package arena_test
 //   candidate  - casei.Matcher (naive reference form, under optimization)
 //   regexpAlt  - precompiled (?i)(?:p0|p1|...): the stdlib answer and the
 //                semantic anchor for leftmost-start
+//   pcre2-jit  - precompiled PCRE2 caseless UTF-8 alternation, with JIT
+//                required before it enters either valid-UTF-8 tier
+//   rure       - precompiled rust-regex C API (?i) alternation; capture branches
+//                expose its leftmost-first selection as a pattern ID, and only
+//                an observed memchr AVX2 query can enter the competitive bar
+//   vectorscan - precompiled Vectorscan caseless literal set; its scan adapter
+//                reduces all reports to leftmost/lowest-pattern order
+//   stringzilla - precompiled full-fold StringZilla literals; the timed adapter
+//                verifies simple folding and reduces leftmost/lowest-pattern
+//   rustac     - direct pinned Rust aho-corasick DFA, ASCII case-insensitive,
+//                LeftmostFirst, with its prefilter enabled and query-audited
+//                before it enters the ASCII field
 //   ac         - github.com/petar-dambovaliev/aho-corasick, DFA,
-//                leftmost-first, AsciiCaseInsensitive (ASCII tier only:
+//                supplemental and non-winning (ASCII tier only:
 //                the reference multi-pattern library renounces Unicode
 //                folding in its own docs)
 //   ceiling    - exact-match AC (DFA) over pre-folded haystack+patterns:
@@ -106,10 +118,11 @@ func foldAll(patterns []string, utf8Tier bool) []string {
 	return out
 }
 
-// TestMultiBaselinesAgree pins the multi-needle contract: candidate and the
-// ASCII-tier AC baseline against refFind; regexpAlt on match start.
+// TestMultiBaselinesAgree pins the multi-needle contract: candidate, each
+// native adapter, and the ASCII-tier AC baseline against refFind; regexpAlt is
+// checked on match start.
 func TestMultiBaselinesAgree(t *testing.T) {
-	for _, s := range multiScenarios {
+	for scenarioIndex, s := range multiScenarios {
 		want, wantOK := refFind(s.haystack, s.patterns)
 		got, gotOK := casei.NewMatcher(s.patterns).Find(s.haystack)
 		if gotOK != wantOK || (gotOK && got != want) {
@@ -127,7 +140,34 @@ func TestMultiBaselinesAgree(t *testing.T) {
 		if reStart != wantStart {
 			t.Errorf("%s/regexpAlt: start %d want %d", s.name, reStart, wantStart)
 		}
+		pcre := pcre2Alts[scenarioIndex]
+		start, pattern, pcreOK := pcre.Find(s.haystack)
+		if pcreOK != wantOK || (pcreOK && (start != want.Start || pattern != want.Pattern)) {
+			t.Errorf("%s/pcre2-jit: {%d %d},%v want %+v,%v", s.name, pattern, start, pcreOK, want, wantOK)
+		}
+		rure := rureAlts[scenarioIndex]
+		start, pattern, rureOK := rure.Find(s.haystack)
+		if rureOK != wantOK || (rureOK && (start != want.Start || pattern != want.Pattern)) {
+			t.Errorf("%s/rure: {%d %d},%v want %+v,%v", s.name, pattern, start, rureOK, want, wantOK)
+		}
+		vectorscan := vectorscanAlts[scenarioIndex]
+		start, pattern, vectorscanOK := vectorscan.Find(s.haystack)
+		if vectorscanOK != wantOK || (vectorscanOK && (start != want.Start || pattern != want.Pattern)) {
+			t.Errorf("%s/vectorscan: {%d %d},%v want %+v,%v", s.name, pattern, start, vectorscanOK, want, wantOK)
+		}
+		if stringZillaAvailable {
+			stringzilla := stringZillaAlts[scenarioIndex]
+			start, pattern, stringzillaOK := stringzilla.Find(s.haystack)
+			if stringzillaOK != wantOK || (stringzillaOK && (start != want.Start || pattern != want.Pattern)) {
+				t.Errorf("%s/stringzilla: {%d %d},%v want %+v,%v", s.name, pattern, start, stringzillaOK, want, wantOK)
+			}
+		}
 		if !s.utf8 {
+			rust := rustACAlts[scenarioIndex]
+			start, pattern, rustOK := rust.Find(s.haystack)
+			if rustOK != wantOK || (rustOK && (start != want.Start || pattern != want.Pattern)) {
+				t.Errorf("%s/rustac: {%d %d},%v want %+v,%v", s.name, pattern, start, rustOK, want, wantOK)
+			}
 			a := acBuild(s.patterns, true)
 			acGot, acOK := acFirst(&a, s.haystack)
 			if acOK != wantOK || (acOK && acGot != want) {
@@ -138,7 +178,7 @@ func TestMultiBaselinesAgree(t *testing.T) {
 }
 
 func BenchmarkMatcher(b *testing.B) {
-	for _, s := range multiScenarios {
+	for scenarioIndex, s := range multiScenarios {
 		m := casei.NewMatcher(s.patterns)
 		b.Run(s.name+"/candidate", func(b *testing.B) {
 			b.SetBytes(int64(len(s.haystack)))
@@ -154,7 +194,46 @@ func BenchmarkMatcher(b *testing.B) {
 				matcherSink = len(re.FindStringIndex(s.haystack))
 			}
 		})
+		pcre := pcre2Alts[scenarioIndex]
+		b.Run(s.name+"/pcre2-jit", func(b *testing.B) {
+			b.SetBytes(int64(len(s.haystack)))
+			for i := 0; i < b.N; i++ {
+				_, _, matcherFound = pcre.Find(s.haystack)
+			}
+		})
+		// This diagnostic lane remains useful for the adapter, but BenchmarkBar
+		// admits it only after the query-level Rust dispatch audit sees AVX2.
+		rure := rureAlts[scenarioIndex]
+		b.Run(s.name+"/rure", func(b *testing.B) {
+			b.SetBytes(int64(len(s.haystack)))
+			for i := 0; i < b.N; i++ {
+				_, _, matcherFound = rure.Find(s.haystack)
+			}
+		})
+		vectorscan := vectorscanAlts[scenarioIndex]
+		b.Run(s.name+"/vectorscan", func(b *testing.B) {
+			b.SetBytes(int64(len(s.haystack)))
+			for i := 0; i < b.N; i++ {
+				_, _, matcherFound = vectorscan.Find(s.haystack)
+			}
+		})
+		if stringZillaAvailable {
+			stringzilla := stringZillaAlts[scenarioIndex]
+			b.Run(s.name+"/stringzilla", func(b *testing.B) {
+				b.SetBytes(int64(len(s.haystack)))
+				for i := 0; i < b.N; i++ {
+					_, _, matcherFound = stringzilla.Find(s.haystack)
+				}
+			})
+		}
 		if !s.utf8 {
+			rust := rustACAlts[scenarioIndex]
+			b.Run(s.name+"/rustac", func(b *testing.B) {
+				b.SetBytes(int64(len(s.haystack)))
+				for i := 0; i < b.N; i++ {
+					_, _, matcherFound = rust.Find(s.haystack)
+				}
+			})
 			a := acBuild(s.patterns, true)
 			b.Run(s.name+"/ac", func(b *testing.B) {
 				b.SetBytes(int64(len(s.haystack)))
