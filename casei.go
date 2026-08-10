@@ -91,3 +91,13 @@ func foldEq(a, b rune) bool {
 	}
 	return false
 }
+
+// RuntimeVectorBits reports the widest vector path this package dispatches to
+// on the running machine: 0 for the scalar/portable path, 256 for AVX2, 512
+// for AVX-512. It is telemetry, not capability -- the answer is what the
+// engine actually uses, never what the CPU offers. This reference
+// implementation is scalar and says so; a candidate engine is expected to
+// raise it to the machine's width, and the arena's dispatch report prints it
+// beside every entrant's so a scalar engine can never borrow a vector field's
+// credibility.
+func RuntimeVectorBits() int { return 0 }

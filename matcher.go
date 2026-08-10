@@ -58,3 +58,8 @@ func (m *Matcher) Find(haystack string) (Match, bool) {
 	}
 	return best, true
 }
+
+// VectorBits reports the widest vector path this Matcher's compiled plan
+// dispatches to on the running machine, with the same contract as
+// RuntimeVectorBits. The reference implementation compiles no vector plan.
+func (m *Matcher) VectorBits() int { return 0 }
