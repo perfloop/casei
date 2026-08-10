@@ -99,19 +99,28 @@ The scoreboard is `BenchmarkBar` in the `arena/` module. It reports
 `x_vs_best`: this implementation's time divided by the fastest correct
 alternative present.
 
-**Run it with `-tags pcre2`.** Without that tag the UTF-8 rows have no entrant
-but Go's `regexp`, a scalar NFA, and a row measured that way inverts once a real
-matcher enters it -- rows that read 0.31-0.90 against the floor measure 1.09 to
-1202 against PCRE2. Install the library first if it is missing:
+**Build the native field first.** The arena's competitors are compiled from
+pinned sources by the prepare scripts; without them the arena does not build,
+which is deliberate -- a bar run that silently dropped the field once measured
+rows at 0.31-0.90 that read 1.09 to 1202 the moment a real matcher entered.
+This is exactly what CI runs on every push:
 
 ```
-apt-get install -y libpcre2-dev   # or: brew install pcre2
-cd arena && go test -tags pcre2 -run '^$' -bench BenchmarkBar
+sudo apt-get install -y cargo cmake curl libboost-dev pkg-config python3-pip
+native="$(mktemp -d)"
+cd arena
+for dep in pcre2 vectorscan rure rustac stringzilla; do "./$dep/prepare.sh" "$native"; done
+export PKG_CONFIG_PATH="$native/root/usr/lib/x86_64-linux-gnu/pkgconfig"
+export PKG_CONFIG_SYSROOT_DIR="$native/root"
+export LD_LIBRARY_PATH="$native/root/usr/lib/x86_64-linux-gnu"
+go test -run '^$' -bench BenchmarkBar
 ```
 
-Every row also reports an `entrants` count. A UTF-8 row with `entrants` below 2
-was measured against the floor alone: say so when reporting it, and treat
-closing that gap as the work rather than the number as a win.
+Every row reports an `entrants` count and each entrant's dispatched vector
+width. A row with `entrants` below 2 was measured against the floor alone: say
+so when reporting it, and treat closing that gap as the work rather than the
+number as a win. An entrant reporting a narrower width than the machine offers
+is a handicapped opponent, not a beaten one.
 
 A measurement with no competitor in it is not evidence. Two ways to produce
 one, both of which have happened here:
