@@ -38,10 +38,14 @@ var matcherTraps = []struct {
 	{"leftmost wins", "aa bravo alpha", []string{"ALPHA", "BRAVO"}, Match{1, 3}, true},
 	{"tie goes to lower index", "xxABCxx", []string{"abc", "ABC"}, Match{0, 2}, true},
 	{"empty pattern matches at zero", "abc", []string{"zzz", ""}, Match{1, 0}, true},
+	{"non-empty lower ID beats empty tie", "ABC", []string{"abc", ""}, Match{0, 0}, true},
+	{"longer terminal beats suffix terminal", "abc", []string{"BC", "ABC"}, Match{1, 0}, true},
 	{"empty set", "abc", []string{}, Match{}, false},
 	{"fold pair across patterns", "the Kelvin scale", []string{"KELVIN", "scale"}, Match{0, 4}, true},
-	{"kelvin sign haystack multi", "xxKelvin scale", []string{"scale", "kelvin"}, Match{1, 2}, true},
+	{"kelvin sign haystack multi", "xxKelvin scale", []string{"scale", "kelvin"}, Match{1, 2}, true},
 	{"cyrillic multi", "доктор Ватсон", []string{"ШЕРЛОК", "ватсон"}, Match{1, 13}, true},
+	{"opaque byte cannot match continuation", "K", []string{"\x84"}, Match{}, false},
+	{"opaque byte matches opaque byte", "x\x84Y", []string{"\x84y"}, Match{0, 1}, true},
 	{"bracket not brace multi", "fn{T}(x)", []string{"fn[T]", "(X)"}, Match{1, 5}, true},
 	{"overlapping patterns leftmost", "abcd", []string{"BCD", "ABC"}, Match{1, 0}, true},
 }
@@ -56,6 +60,65 @@ func TestMatcherTraps(t *testing.T) {
 		ref, refOK := refFind(tc.haystack, tc.patterns)
 		if refOK != tc.ok || (refOK && ref != tc.want) {
 			t.Fatalf("%s: trap table wrong: reference = %+v,%v", tc.name, ref, refOK)
+		}
+	}
+}
+
+func TestMatcherPairPrefixBoundaries(t *testing.T) {
+	patterns := []string{"ZqA", "zQa", "ZqB"}
+	for offset := 0; offset < 192; offset++ {
+		haystack := strings.Repeat("x", offset) + "zQa" + strings.Repeat("x", 192-offset)
+		got, gotOK := NewMatcher(patterns).Find(haystack)
+		want, wantOK := refFind(haystack, patterns)
+		if gotOK != wantOK || (gotOK && got != want) {
+			t.Fatalf("offset %d: Find = %+v,%v want %+v,%v", offset, got, gotOK, want, wantOK)
+		}
+	}
+
+	// The pair probe may skip an ASCII root byte only when its required next
+	// token is absent. High bytes remain scalar so width-changing folds and
+	// opaque bytes preserve the regular transition semantics.
+	for _, haystack := range []string{
+		strings.Repeat("Z!", 128) + "zQa",
+		strings.Repeat("x", 63) + "Kqa" + strings.Repeat("x", 128),
+		strings.Repeat("x", 63) + "z\x80a" + strings.Repeat("x", 128),
+	} {
+		patterns := []string{"ZqA", "kqa", "z\x80a"}
+		got, gotOK := NewMatcher(patterns).Find(haystack)
+		want, wantOK := refFind(haystack, patterns)
+		if gotOK != wantOK || (gotOK && got != want) {
+			t.Fatalf("Find(%q) = %+v,%v want %+v,%v", haystack, got, gotOK, want, wantOK)
+		}
+	}
+}
+
+func TestMatcherUnicodePairPairBoundaries(t *testing.T) {
+	patterns := []string{"яр"}
+	plan := newSearchPlan(patterns)
+	if plan.unicodePairN < 2 || plan.unicodePairs[0].pairPair.valid == 0 {
+		t.Fatalf("no dispersed pair transition: %+v", plan.unicodePairs[0])
+	}
+	for _, offset := range []int{0, 63, 64, 127, 128, 4093} {
+		for _, rendering := range []string{"яр", "ЯР", "яР", "Яр"} {
+			haystack := strings.Repeat("x", offset) + rendering + strings.Repeat("x", 4300-offset)
+			got, gotOK := plan.find(haystack)
+			want, wantOK := refFind(haystack, patterns)
+			if gotOK != wantOK || (gotOK && got != want) {
+				t.Fatalf("offset %d, %q: Find = %+v,%v want %+v,%v", offset, rendering, got, gotOK, want, wantOK)
+			}
+		}
+	}
+
+	// A primary pair without its dispersed partner must not enter the token
+	// machine, including when an invalid byte replaces the partner.
+	for _, haystack := range []string{
+		strings.Repeat("яx", 2048),
+		strings.Repeat("x", 63) + "я\xd1\xff" + strings.Repeat("x", 4096),
+	} {
+		got, gotOK := plan.find(haystack)
+		want, wantOK := refFind(haystack, patterns)
+		if gotOK != wantOK || (gotOK && got != want) {
+			t.Fatalf("false-primary Find = %+v,%v want %+v,%v", got, gotOK, want, wantOK)
 		}
 	}
 }

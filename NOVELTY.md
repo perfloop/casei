@@ -1315,9 +1315,53 @@ engineering experiment explicitly excluded by `AGENTS.md` §§1--3.
 Do not implement or benchmark the fused classified frontier or its adjacent
 variants.  No performance claim is made.
 
+## Retained implementation transition and experiment ledger
+
+### Retained transition
+
+The implementation uses one compiled fold-orbit plan for `IndexFold` and
+`Matcher.Find`.  Its AVX-512 BW fast path is a conservative candidate
+transition, not a second recognizer: the plan records two fixed-width raw UTF-8
+pair sets at known source-byte offsets, intersects their 64-byte candidate masks
+in one block, and sends each survivor through the same decoded token transition
+that decides the match.  The pair sets include every simple-fold rendering of
+both runes.  The construction is enabled only after fixed-width prefix analysis;
+invalid bytes, continuation bytes, variable-width folds, leftmost position, and
+pattern-ID ties remain decided by the common plan.
+
+This is a direct adaptation of the dispersed-probe/candidate-confirm shape in
+StringZilla's UTF-8 uncased search driver (the source and revision cited in the
+fused-frontier assessment above).  Its source probes are known art.  The
+repository-specific combination is a compiled pair-pair filter over two
+fold-orbit byte sets, followed by the shared Unicode plan rather than a
+per-pattern byte verifier.  It makes no claim that the state representation is
+new; the falsifiable claim is operational: it must improve a contested field
+row without dropping a semantic differential.  `BenchmarkBar` with all native
+entrants and the long Unicode differential tests are the falsifier.
+
+The same provenance applies to the retained ASCII three-probe and mixed-triple
+transitions: they are conservative byte filters followed by the plan, informed
+by StringZilla-style dispersed probing and AVX-512 mask arithmetic, not claimed
+as a new language recognizer.
+
+### Rejected cells
+
+| Cell | Result | Decision |
+| --- | --- | --- |
+| AVX-512 `vpermb` table lookup and affine pair mapping | Focused Cyrillic rows lost to the simpler compares. | Removed from runtime paths. |
+| Dynamic Unicode pair-anchor sampling | Sampling and an interior pair route added setup and regressed sparse-hit and latency shapes. | Removed; use the fixed compiled pair-pair transition only when its prefix proof holds. |
+| Broad two/four-form Unicode triple anchors | Focused Cyrillic miss and latency shapes regressed substantially. | Removed. |
+| Short fixed-prefix direct-root route | Regressed bracket/code and latency shapes. | Removed. |
+| Triple-product specialization | Introduced while exploring the rejected Unicode-anchor path and had no independent retained use. | Removed. |
+
+These are engineering outcomes, not novelty claims.  They would be reopened
+only by a complete field measurement showing a previously rejected transition
+wins without moving another row above the acceptance bar, plus the same
+Unicode/invalid-byte differential evidence.
+
 ## Provenance
 
-This contribution contains only novelty assessments in this file.  The
+This contribution contains novelty assessments and implementation provenance in this file.  The
 original orbit-quotient, raw-byte, fixed-width projection, rolling-fingerprint,
 and prefix-invariant-anchor assessments, plus the five follow-up construction
 sweeps above, were written for this repository from the current `AGENTS.md`,
