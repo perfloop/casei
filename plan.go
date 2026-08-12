@@ -19,47 +19,58 @@ type searchPlan struct {
 	// ascii and opaque map respectively valid one-byte runes and invalid UTF-8
 	// bytes to plan tokens. Token zero means that no pattern can consume the
 	// input unit, which always returns the state machine to its root.
-	ascii           [utf8.RuneSelf]uint32
-	opaque          [256]uint32
-	rootByte        [256]uint8
-	rootKind        uint8
-	rootNeedle      byte
-	pairKind        uint8
-	pairNeedle      byte
-	filter          rootFilter
-	pairSecond      bool
-	triples         tripleFilter
-	tripleRoots     []bool
-	triplesComplete bool
+	ascii                [utf8.RuneSelf]uint32
+	opaque               [256]uint32
+	rootByte             [256]uint8
+	rootKind             uint8
+	rootNeedle           byte
+	pairKind             uint8
+	pairNeedle           byte
+	filter               rootFilter
+	pairSecond           bool
+	triples              tripleFilter
+	tripleRoots          []bool
+	triplesComplete      bool
+	asciiTriples         tripleFilter
+	asciiTriplesComplete bool
+	// asciiPairAnchors is the all-ASCII multi-pattern transition for the
+	// partial-triple shape. Its bounded pair table only nominates starts; the
+	// decoded plan replays each survivor and remains the match authority.
+	asciiPairAnchors asciiPairAnchors
 	// asciiProbe is a single-pattern, byte-aligned block transition. It
 	// intersects three dispersed literal positions, then confirms the same
 	// compiled pattern at the surviving start.
-	asciiProbe        asciiProbe
-	asciiOnlyProbe    asciiProbe
-	asciiOnlyNeedle   string
-	asciiOnlyWord     uint64
-	asciiOnlyFold     uint64
-	asciiOnly         bool
-	asciiOnlyLong     bool
-	asciiPair         asciiPairProbe
-	asciiNeedle       string
-	asciiFirstWord    uint64
-	asciiFirstFold    uint64
-	asciiTailWord     uint64
-	asciiTailFold     uint64
-	asciiTailMask     uint64
-	asciiVerifyTokens bool
-	asciiFixedPrefix  int
-	asciiByteAnchor   bool
-	asciiRun          bool
-	asciiRunKind      uint8
-	asciiRunByte      byte
-	unicodeAnchor     tripleFilter
-	unicodeAt         int
-	unicodePairs      [8]unicodePairAnchor
-	unicodePairN      uint8
-	singleTokens      []uint32
-	runes             map[rune]uint32
+	asciiProbe         asciiProbe
+	asciiOnlyProbe     asciiProbe
+	asciiOnlyNeedle    string
+	asciiOnlyWord      uint64
+	asciiOnlyFold      uint64
+	asciiOnly          bool
+	asciiOnlyLong      bool
+	asciiPair          asciiPairProbe
+	asciiNeedle        string
+	asciiFirstWord     uint64
+	asciiFirstFold     uint64
+	asciiTailWord      uint64
+	asciiTailFold      uint64
+	asciiTailMask      uint64
+	asciiVerifyTokens  bool
+	asciiFixedPrefix   int
+	asciiByteAnchor    bool
+	asciiStaticAnchor  bool
+	asciiStaticAt      int
+	asciiStaticKind    uint8
+	asciiStaticByte    byte
+	asciiRun           bool
+	asciiRunKind       uint8
+	asciiRunByte       byte
+	unicodeAnchor      tripleFilter
+	unicodeAt          int
+	unicodePairs       [8]unicodePairAnchor
+	unicodePairN       uint8
+	singleTokens       []uint32
+	runes              map[rune]uint32
+	opaqueContinuation bool
 
 	nodes []planNode
 
@@ -253,6 +264,16 @@ func pairShuftiSkipScalar(s string, at int, filter *pairShuftiFilter) int {
 		}
 		at++
 	}
+	// The pair projection needs a following byte, but mixed filters can also
+	// admit a one-byte root. Check that final byte before reporting the whole
+	// tail skippable.
+	if at < len(s) {
+		for i := range filter.oneN {
+			if s[at] == filter.ones[i] {
+				return at - start
+			}
+		}
+	}
 	return len(s) - start
 }
 
@@ -261,14 +282,184 @@ func pairShuftiSkipScalar(s string, at int, filter *pairShuftiFilter) int {
 type tripleFilter struct {
 	values [16]rootTriple
 	n      uint8
+
+	// shufti packs up to eight three-byte forms into six nibble-to-slot
+	// tables. It normalizes bit five conservatively, then the regular decoded
+	// plan transition decides every survivor.
+	shufti tripleShuftiFilter
 }
 
 type rootTriple struct{ first, second, third, fold byte }
+
+const tripleShuftiSlots = 8
+
+// tripleShuftiFilter is a single-group three-byte Shufti projection. Each
+// table maps one nibble to the set of triple slots that allow it. Intersecting
+// the six table results leaves a slot bit for a possible triple. The table is
+// deliberately conservative: normalizing bit five at every byte position can
+// admit extra candidates, but cannot omit a folded ASCII rendering.
+//
+// The six consecutive 16-byte tables are consumed by tripleShuftiSkip64 via
+// VBROADCASTI32X4, which repeats each table in the four 128-bit VPSHUFB lanes.
+type tripleShuftiFilter struct {
+	firstLo  [16]byte
+	firstHi  [16]byte
+	secondLo [16]byte
+	secondHi [16]byte
+	thirdLo  [16]byte
+	thirdHi  [16]byte
+	valid    uint8
+}
+
+func (f *tripleShuftiFilter) usable() bool { return f.valid != 0 }
+
+func makeTripleShuftiFilter(filter tripleFilter) tripleShuftiFilter {
+	// The existing two- and three-form transitions use fewer instructions.
+	// A table has one bit per form, so broader unions need a second group and
+	// lose the benefit over the regular compare loop.
+	if filter.n < 4 || filter.n > tripleShuftiSlots {
+		return tripleShuftiFilter{}
+	}
+
+	var out tripleShuftiFilter
+	for i := range filter.n {
+		triple := filter.values[i]
+		first, second, third := triple.first|0x20, triple.second|0x20, triple.third|0x20
+		bit := byte(1 << uint(i))
+		out.firstLo[first&0x0f] |= bit
+		out.firstHi[first>>4] |= bit
+		out.secondLo[second&0x0f] |= bit
+		out.secondHi[second>>4] |= bit
+		out.thirdLo[third&0x0f] |= bit
+		out.thirdHi[third>>4] |= bit
+	}
+	out.valid = 1
+	return out
+}
+
+func tripleShuftiAt(first, second, third byte, filter *tripleShuftiFilter) bool {
+	first |= 0x20
+	second |= 0x20
+	third |= 0x20
+	matches := filter.firstLo[first&0x0f] & filter.firstHi[first>>4]
+	matches &= filter.secondLo[second&0x0f] & filter.secondHi[second>>4]
+	matches &= filter.thirdLo[third&0x0f] & filter.thirdHi[third>>4]
+	return matches != 0
+}
+
+func tripleShuftiSkipScalar(s string, at int, filter *tripleShuftiFilter) int {
+	start := at
+	for at+2 < len(s) {
+		if tripleShuftiAt(s[at], s[at+1], s[at+2], filter) {
+			return at - start
+		}
+		at++
+	}
+	return at - start
+}
+
+const asciiPairAnchorSlots = 8
+
+// asciiPairVBMIAnchorFilter is the exact 128-entry VPERMT2B projection of
+// one bounded ASCII pair group. Bit six chooses one of each pair of tables, so
+// the all-ASCII route need not introduce the low-six-bit aliases of VPERMB.
+type asciiPairVBMIAnchorFilter struct {
+	firstLo, firstHi   [64]byte
+	secondLo, secondHi [64]byte
+	valid              uint8
+}
+
+// asciiPairAnchorFilter is a one-group Shufti projection for the selected
+// adjacent ASCII pairs. All table bytes are normalized with bit five because
+// the table is only a conservative filter; the shared decoded plan validates
+// every resulting start. The four tables are consecutive for the AVX-512 BW
+// transition, while vbmi holds its optional AVX-512 VBMI projection.
+type asciiPairAnchorFilter struct {
+	firstLo  [16]byte
+	firstHi  [16]byte
+	secondLo [16]byte
+	secondHi [16]byte
+	valid    uint8
+	vbmi     asciiPairVBMIAnchorFilter
+}
+
+// asciiPairAnchor identifies one fixed-width pair inside a pattern's ASCII
+// fold spelling. pattern is descriptive only: the plan, not this record,
+// selects the actual terminal and tie after the candidate replay.
+type asciiPairAnchor struct {
+	first, second, at byte
+	pattern           int
+}
+
+// asciiPairAnchors is intentionally bounded to one table group. More pairs
+// cost another four shuffles and leave the existing triple transition faster.
+type asciiPairAnchors struct {
+	anchors [asciiPairAnchorSlots]asciiPairAnchor
+	n       uint8
+	maxAt   uint8
+	filter  asciiPairAnchorFilter
+}
+
+func (a *asciiPairAnchors) usable() bool { return a.n != 0 && a.filter.valid != 0 }
+
+func makeASCIIPairAnchorFilter(anchors *asciiPairAnchors) asciiPairAnchorFilter {
+	var out asciiPairAnchorFilter
+	for i := range anchors.n {
+		anchor := anchors.anchors[i]
+		bit := byte(1 << uint(i))
+		out.firstLo[anchor.first&0x0f] |= bit
+		out.firstHi[anchor.first>>4] |= bit
+		out.secondLo[anchor.second&0x0f] |= bit
+		out.secondHi[anchor.second>>4] |= bit
+		// asciiPairAnchorMatches folds bit five unconditionally, including
+		// punctuation aliases, so preserve that exact conservative admission.
+		addASCIIVBMI128Slot(&out.vbmi.firstLo, &out.vbmi.firstHi, anchor.first, 0x20, bit)
+		addASCIIVBMI128Slot(&out.vbmi.secondLo, &out.vbmi.secondHi, anchor.second, 0x20, bit)
+	}
+	if anchors.n != 0 {
+		out.valid = 1
+		out.vbmi.valid = 1
+	}
+	return out
+}
+
+func asciiPairAnchorFilterAt(first, second byte, filter *asciiPairAnchorFilter) bool {
+	first |= 0x20
+	second |= 0x20
+	matches := filter.firstLo[first&0x0f] & filter.firstHi[first>>4]
+	matches &= filter.secondLo[second&0x0f] & filter.secondHi[second>>4]
+	return matches != 0
+}
+
+func asciiPairAnchorSkipScalar(s string, at int, filter *asciiPairAnchorFilter) int {
+	start := at
+	for at+1 < len(s) {
+		if asciiPairAnchorFilterAt(s[at], s[at+1], filter) {
+			return at - start
+		}
+		at++
+	}
+	return len(s) - start
+}
+
+func asciiPairAnchorMatches(s string, at int, anchor asciiPairAnchor) bool {
+	return s[at]|0x20 == anchor.first && s[at+1]|0x20 == anchor.second
+}
+
+// pairPairVBMIFilter maps each raw byte to an alternative slot for the two
+// dispersed pairs. VPERMB's low-six-bit index can over-admit a byte alias, but
+// never removes a real raw pair; the shared plan confirms every survivor.
+type pairPairVBMIFilter struct {
+	first, second, confirmFirst, confirmSecond [64]byte
+	offset                                     byte
+	valid                                      uint8
+}
 
 type pairPairFilter struct {
 	first0, second0, first1, second1             byte
 	confirmFirst0, confirmSecond0, confirmFirst1 byte
 	confirmSecond1, offset, valid                byte
+	vbmi                                         pairPairVBMIFilter
 }
 
 type unicodePairAnchor struct {
@@ -279,12 +470,44 @@ type unicodePairAnchor struct {
 	pairPair  pairPairFilter
 }
 
+// asciiVBMIProbe is the AVX-512 VBMI projection for one sparse three-byte
+// ASCII-letter probe. VPERMB indexes only the low six input bits. Each table
+// therefore admits the bit-six alias too; it is a conservative filter and the
+// ordinary plan replay remains responsible for exact matching.
+type asciiVBMIProbe struct {
+	firstAt, secondAt, thirdAt int
+	first, second, third       [64]byte
+	valid                      uint8
+}
+
+// asciiPairVBMIProbe is the corresponding two-byte projection for long fixed
+// ASCII literals. The tables contain a non-zero lane value only for a possible
+// spelling of their respective anchor byte. secondAt is independent from the
+// baseline pair probe so the VBMI kernel can classify a rarer later letter
+// without changing the portable or non-VBMI transition.
+type asciiPairVBMIProbe struct {
+	first, second [64]byte
+	secondAt      uint8
+	valid         uint8
+}
+
+// asciiShortLiteral records the fully compiled four-byte confirmation used
+// after a dense ASCII probe survivor. The fold mask has bit five only where the
+// source spelling has an ASCII letter, so punctuation remains exact.
+type asciiShortLiteral struct {
+	word, fold uint32
+	valid      uint8
+}
+
 // asciiProbe keeps the three byte tests and their source offsets together so
 // the vector block transition can load each test directly from a candidate
-// start. Its layout is intentionally stable for the amd64 assembly path.
+// start. Its leading 32 bytes are intentionally stable for the existing amd64
+// assembly path; the optional VBMI projection follows them.
 type asciiProbe struct {
 	first, second, third, fold byte
 	firstAt, secondAt, thirdAt int
+	vbmi                       asciiVBMIProbe
+	short                      asciiShortLiteral
 }
 
 // asciiPairProbe is the fixed-offset two-byte form used by the long-literal
@@ -292,11 +515,140 @@ type asciiProbe struct {
 // next 64-byte block with VALIGNQ, while large scans use independent direct
 // loads to expose more block-level parallelism. This path is restricted to a
 // width-invariant ASCII literal, so direct byte confirmation is the same
-// plan's token transition.
+// plan's token transition. Its leading 16 bytes remain the layout consumed by
+// the AVX-512 BW kernels.
 type asciiPairProbe struct {
 	first, second         byte
 	firstFold, secondFold byte
 	secondAt              int
+	vbmi                  asciiPairVBMIProbe
+}
+
+// addASCIIVBMISlot records every source spelling admitted by the existing
+// byte comparison. The low-six-bit projection intentionally adds bit-six
+// aliases, never removes a true candidate.
+func addASCIIVBMISlot(table *[64]byte, value, fold, slot byte) {
+	table[value&0x3f] |= slot
+	if fold != 0 {
+		table[(value^fold)&0x3f] |= slot
+	}
+}
+
+func addPairPairVBMISlot(table *[64]byte, value, slot byte) {
+	table[value&0x3f] |= slot
+}
+
+func makePairPairVBMIFilter(filter *pairPairFilter) {
+	var out pairPairVBMIFilter
+	addPairPairVBMISlot(&out.first, filter.first0, 1)
+	addPairPairVBMISlot(&out.second, filter.second0, 1)
+	addPairPairVBMISlot(&out.first, filter.first1, 2)
+	addPairPairVBMISlot(&out.second, filter.second1, 2)
+	addPairPairVBMISlot(&out.confirmFirst, filter.confirmFirst0, 1)
+	addPairPairVBMISlot(&out.confirmSecond, filter.confirmSecond0, 1)
+	addPairPairVBMISlot(&out.confirmFirst, filter.confirmFirst1, 2)
+	addPairPairVBMISlot(&out.confirmSecond, filter.confirmSecond1, 2)
+	out.offset, out.valid = filter.offset, 1
+	filter.vbmi = out
+}
+
+func addASCIIVBMI128Slot(lo, hi *[64]byte, value, fold, slot byte) {
+	add := func(value byte) {
+		if value&0x40 == 0 {
+			lo[value&0x3f] |= slot
+		} else {
+			hi[value&0x3f] |= slot
+		}
+	}
+	add(value)
+	if fold != 0 {
+		add(value ^ fold)
+	}
+}
+
+func makeASCIIVBMIProbe(probe *asciiProbe) {
+	var out asciiVBMIProbe
+	out.firstAt, out.secondAt, out.thirdAt = probe.firstAt, probe.secondAt, probe.thirdAt
+	tables := [3]*[64]byte{&out.first, &out.second, &out.third}
+	values := [3]byte{probe.first, probe.second, probe.third}
+	// Table lookup reduces steady-state miss work, while direct comparisons
+	// retain lower candidate latency for punctuation and whitespace anchors.
+	for _, value := range values {
+		if !isASCIILetter(value) {
+			probe.vbmi = out
+			return
+		}
+	}
+	for i, value := range values {
+		fold := byte(0)
+		if probe.fold&(1<<i) != 0 {
+			fold = 0x20
+		}
+		addASCIIVBMISlot(tables[i], value, fold, 1)
+	}
+	out.valid = 1
+	probe.vbmi = out
+}
+
+func makeASCIIShortLiteral(pattern string) asciiShortLiteral {
+	if len(pattern) != 4 {
+		return asciiShortLiteral{}
+	}
+	var out asciiShortLiteral
+	for i := range pattern {
+		value := pattern[i]
+		if isASCIILetter(value) {
+			value |= 0x20
+			out.fold |= 0x20 << (8 * i)
+		}
+		out.word |= uint32(value) << (8 * i)
+	}
+	out.valid = 1
+	return out
+}
+
+func asciiShortLiteralAt(s string, at int, literal asciiShortLiteral) bool {
+	got := uint32(s[at]) | uint32(s[at+1])<<8 | uint32(s[at+2])<<16 | uint32(s[at+3])<<24
+	return got|literal.fold == literal.word
+}
+
+func makeASCIIPairVBMIProbe(probe *asciiPairProbe, pattern string) {
+	var out asciiPairVBMIProbe
+	out.secondAt = uint8(probe.secondAt)
+	if !isASCIILetter(probe.first) || !isASCIILetter(probe.second) {
+		probe.vbmi = out
+		return
+	}
+
+	second, secondFold := probe.second, probe.secondFold
+	// The byte-zero and byte-eight anchors are the established portable pair.
+	// Only when both are common can the VBMI-only long-input route exchange the
+	// latter for a rarer later ASCII letter. The same plan confirms every table
+	// survivor, so changing this filter displacement cannot affect semantics.
+	if asciiRarity(probe.first) == 2 && asciiRarity(probe.second) == 2 {
+		bestRank := 2
+		for at := probe.secondAt + 1; at < len(pattern); at++ {
+			value := pattern[at]
+			if !isASCIILetter(value) {
+				continue
+			}
+			value |= 0x20
+			rank := asciiRarity(value)
+			if rank >= bestRank {
+				continue
+			}
+			out.secondAt, second, secondFold = uint8(at), value, 0x20
+			bestRank = rank
+			if rank == 0 {
+				break
+			}
+		}
+	}
+
+	addASCIIVBMISlot(&out.first, probe.first, probe.firstFold, 1)
+	addASCIIVBMISlot(&out.second, second, secondFold, 1)
+	out.valid = 1
+	probe.vbmi = out
 }
 
 func (p *asciiProbe) usable() bool { return p.thirdAt != 0 || p.secondAt != 0 || p.firstAt != 0 }
@@ -482,16 +834,26 @@ type singlePlanCacheEntry struct {
 // IndexFold has no caller-owned Matcher on which to retain its N=1 plan. Keep
 // a small direct-mapped cache of immutable plans instead. A collision only
 // replaces a cached compilation; it never changes matching state or results.
-var singlePlanCache [singlePlanCacheSlots]atomic.Pointer[singlePlanCacheEntry]
+var (
+	singlePlanCache  [singlePlanCacheSlots]atomic.Pointer[singlePlanCacheEntry]
+	recentSinglePlan atomic.Pointer[singlePlanCacheEntry]
+)
 
 func cachedSinglePlan(needle string) *searchPlan {
-	slot := &singlePlanCache[singlePlanCacheIndex(needle)]
-	if entry := slot.Load(); entry != nil && entry.needle == needle {
+	if entry := recentSinglePlan.Load(); entry != nil && entry.needle == needle {
 		return entry.plan
 	}
-	plan := newSearchPlan([]string{needle})
-	slot.Store(&singlePlanCacheEntry{needle: needle, plan: plan})
-	return plan
+
+	slot := &singlePlanCache[singlePlanCacheIndex(needle)]
+	if entry := slot.Load(); entry != nil && entry.needle == needle {
+		recentSinglePlan.Store(entry)
+		return entry.plan
+	}
+
+	entry := &singlePlanCacheEntry{needle: needle, plan: newSearchPlan([]string{needle})}
+	slot.Store(entry)
+	recentSinglePlan.Store(entry)
+	return entry.plan
 }
 
 func singlePlanCacheIndex(needle string) int {
@@ -553,6 +915,9 @@ func newSearchPlan(patterns []string) *searchPlan {
 	}
 
 	p.finish(nextToken)
+	if len(patterns) > 1 {
+		p.makeASCIIPairAnchors(patterns)
+	}
 	if len(patterns) == 1 {
 		p.makeASCIIAnchor(patterns[0])
 		p.makeUnicodeAnchor(patterns[0])
@@ -669,6 +1034,7 @@ func (p *searchPlan) makeASCIIAnchor(pattern string) {
 	p.asciiNeedle = pattern
 	p.asciiVerifyTokens = fixedPrefix != len(pattern)
 	p.asciiFixedPrefix = fixedPrefix
+	p.makeStaticASCIIByteAnchor(pattern, fixedPrefix)
 	if fixedPrefix == len(pattern) && len(pattern) >= 8 {
 		for at := 0; at < 8; at++ {
 			value := pattern[at]
@@ -694,10 +1060,11 @@ func (p *searchPlan) makeASCIIAnchor(pattern string) {
 		if isASCIILetter(value) {
 			value |= 0x20
 		}
-		// Sampling is worthwhile only for literal roots that are rare enough
-		// to plausibly eliminate an entire block. Common prose literals stay
-		// on the constant-cost three-probe transition, especially on hits.
-		if counts[value] == 1 && asciiRarity(value) < 2 {
+		// A dynamic one-byte scan pays a fixed sampling pass. Restrict it to
+		// rank-zero bytes, which are rare enough to plausibly eliminate a full
+		// block; rank-one prose letters stay on the constant-cost three-probe
+		// transition, especially on hits and moderate-size misses.
+		if counts[value] == 1 && asciiRarity(value) == 0 {
 			p.asciiByteAnchor = true
 			break
 		}
@@ -714,6 +1081,10 @@ func (p *searchPlan) makeASCIIAnchor(pattern string) {
 			probe.fold |= 1 << i
 		}
 		*values[i] = value
+	}
+	makeASCIIVBMIProbe(probe)
+	if fixedPrefix == len(pattern) {
+		probe.short = makeASCIIShortLiteral(pattern)
 	}
 	p.asciiNeedle = pattern
 	p.asciiVerifyTokens = fixedPrefix != len(pattern)
@@ -735,6 +1106,59 @@ func (p *searchPlan) makeASCIIAnchor(pattern string) {
 			pair.second |= 0x20
 			pair.secondFold = 0x20
 		}
+		makeASCIIPairVBMIProbe(pair, pattern)
+	}
+}
+
+// makeStaticASCIIByteAnchor avoids sampling the haystack for the narrow
+// repeated-byte shape. The lone normalized byte is a fixed rare anchor, while
+// asciiAnchorMatches still confirms the complete literal through this plan.
+func (p *searchPlan) makeStaticASCIIByteAnchor(pattern string, fixedPrefix int) {
+	const staticASCIIAnchorMin = 16
+	if fixedPrefix != len(pattern) || fixedPrefix < staticASCIIAnchorMin {
+		return
+	}
+
+	var counts [utf8.RuneSelf]int
+	for i := 0; i < fixedPrefix; i++ {
+		value := pattern[i]
+		if isASCIILetter(value) {
+			value |= 0x20
+		}
+		counts[value]++
+	}
+
+	values, singleton, repeated := 0, byte(0), byte(0)
+	for value, count := range counts {
+		if count == 0 {
+			continue
+		}
+		values++
+		switch count {
+		case 1:
+			singleton = byte(value)
+		case fixedPrefix - 1:
+			repeated = byte(value)
+		}
+	}
+	if values != 2 || counts[singleton] != 1 || counts[repeated] != fixedPrefix-1 || asciiRarity(singleton) >= 2 {
+		return
+	}
+	for at := 0; at < fixedPrefix; at++ {
+		value := pattern[at]
+		if isASCIILetter(value) {
+			value |= 0x20
+		}
+		if value != singleton {
+			continue
+		}
+		p.asciiStaticAnchor, p.asciiStaticAt, p.asciiStaticByte = true, at, singleton
+		if isASCIILetter(singleton) {
+			p.asciiStaticKind = rootASCIIFold
+		} else {
+			p.asciiStaticKind = rootExact
+		}
+		return
 	}
 }
 
@@ -795,6 +1219,122 @@ func asciiRarity(value byte) int {
 	default:
 		return 2
 	}
+}
+
+// asciiFoldSpelling returns the byte-5-normalized spelling used by the
+// conservative all-ASCII pair filter. A pattern unit without an ASCII orbit
+// member cannot occur on the specialized stream and deliberately contributes no
+// anchor. Normalizing every byte, rather than just letters, permits the Shufti
+// projection to over-admit punctuation aliases; the shared plan rejects them.
+func asciiFoldSpelling(pattern string) (string, bool) {
+	spelling := make([]byte, 0, len(pattern))
+	for at := 0; at < len(pattern); {
+		r, size := utf8.DecodeRuneInString(pattern[at:])
+		if r == utf8.RuneError && size == 1 {
+			return "", false
+		}
+		var value byte
+		found := false
+		for member := r; ; member = unicode.SimpleFold(member) {
+			if 0 <= member && member < utf8.RuneSelf {
+				value = byte(member) | 0x20
+				found = true
+				break
+			}
+			if unicode.SimpleFold(member) == r {
+				break
+			}
+		}
+		if !found {
+			return "", false
+		}
+		spelling = append(spelling, value)
+		at += size
+	}
+	return string(spelling), true
+}
+
+// asciiPairRarity adds a compact common-digraph penalty to the byte ranks.
+// It is a compile-time selection policy, so a Matcher never samples its
+// haystack before choosing an interior anchor. The penalty only picks a pair;
+// the conservative table and shared plan retain the actual semantics.
+func asciiPairRarity(first, second byte) int {
+	score := asciiRarity(first) + asciiRarity(second)
+	switch uint16(first)<<8 | uint16(second) {
+	case 't'<<8 | 'h', 'h'<<8 | 'e', 'i'<<8 | 'n', 'e'<<8 | 'r', 'a'<<8 | 'n',
+		'r'<<8 | 'e', 'o'<<8 | 'n', 'a'<<8 | 't', 'e'<<8 | 'n', 'n'<<8 | 'd',
+		't'<<8 | 'i', 'e'<<8 | 's', 'o'<<8 | 'r', 't'<<8 | 'e', 'o'<<8 | 'f',
+		'e'<<8 | 'd', 'i'<<8 | 's', 'i'<<8 | 't', 'a'<<8 | 'l', 'a'<<8 | 'r',
+		's'<<8 | 't', 't'<<8 | 'o', 'n'<<8 | 't', 'n'<<8 | 'g', 's'<<8 | 'e',
+		'h'<<8 | 'a', 'a'<<8 | 's', 'o'<<8 | 'u', 'i'<<8 | 'o', 'l'<<8 | 'e',
+		'v'<<8 | 'e', 'c'<<8 | 'o', 'm'<<8 | 'e', 'd'<<8 | 'e', 'h'<<8 | 'i',
+		'r'<<8 | 'i', 'r'<<8 | 'o', 'i'<<8 | 'c', 'n'<<8 | 'e', 'e'<<8 | 'a',
+		'l'<<8 | 'i', 'c'<<8 | 'h', 'l'<<8 | 'l', 'b'<<8 | 'e', 'm'<<8 | 'a',
+		's'<<8 | 'i', 'o'<<8 | 'm', 'u'<<8 | 'r', 'w'<<8 | 'a', 'd'<<8 | 'o',
+		'k'<<8 | 'e':
+		return score + 4
+	}
+	return score
+}
+
+// chooseASCIIPairAnchor uses static byte and digraph ranks. Ties prefer the
+// most interior pair, so roots that share a prefix do not force every
+// candidate through the same early byte position.
+func chooseASCIIPairAnchor(spelling string) int {
+	bestAt, bestScore, bestInterior := 0, int(^uint(0)>>1), -1
+	for at := 0; at+1 < len(spelling); at++ {
+		score := asciiPairRarity(spelling[at], spelling[at+1])
+		interior := at
+		if tail := len(spelling) - 2 - at; tail < interior {
+			interior = tail
+		}
+		if score < bestScore || score == bestScore && interior > bestInterior {
+			bestAt, bestScore, bestInterior = at, score, interior
+		}
+	}
+	return bestAt
+}
+
+// makeASCIIPairAnchors replaces the expensive three-byte table only for its
+// partial-root, all-ASCII shape. Every pattern that can match on that stream
+// contributes one pair; a missing or one-byte spelling leaves the existing
+// triple path in charge rather than risking a skipped match.
+func (p *searchPlan) makeASCIIPairAnchors(patterns []string) {
+	if p.patternCount < 2 || p.rootKind != rootGeneric || p.triplesComplete ||
+		!p.asciiTriplesComplete || !p.asciiTriples.shufti.usable() {
+		return
+	}
+
+	var anchors asciiPairAnchors
+	for patternID, pattern := range patterns {
+		if pattern == "" {
+			continue
+		}
+		spelling, ok := asciiFoldSpelling(pattern)
+		if !ok {
+			continue
+		}
+		if len(spelling) < 2 || anchors.n == asciiPairAnchorSlots {
+			return
+		}
+		at := chooseASCIIPairAnchor(spelling)
+		if at > 255 {
+			return
+		}
+		anchor := asciiPairAnchor{
+			first: spelling[at], second: spelling[at+1], at: byte(at), pattern: patternID,
+		}
+		anchors.anchors[anchors.n] = anchor
+		anchors.n++
+		if anchor.at > anchors.maxAt {
+			anchors.maxAt = anchor.at
+		}
+	}
+	if anchors.n == 0 {
+		return
+	}
+	anchors.filter = makeASCIIPairAnchorFilter(&anchors)
+	p.asciiPairAnchors = anchors
 }
 
 func patternRawForms(pattern string) (forms [][]string, widths []int) {
@@ -920,6 +1460,7 @@ func (p *searchPlan) makeUnicodePairAnchor(pattern string) {
 				confirmFirst1: confirmSecond.first, confirmSecond1: confirmSecond.second,
 				offset: byte(delta), valid: 1,
 			}
+			makePairPairVBMIFilter(&anchor.pairPair)
 		}
 	}
 }
@@ -966,6 +1507,12 @@ func (p *searchPlan) finish(nextToken uint32) {
 	// to the UTF-8 decoder rather than stepping over it.
 	for byteValue := utf8.RuneSelf; byteValue < len(p.rootByte); byteValue++ {
 		p.rootByte[byteValue] = 1
+		if byteValue < 0xc0 && p.opaque[byteValue] != 0 {
+			// A raw byte prefilter cannot distinguish this opaque continuation
+			// from the interior of a valid UTF-8 rune. Keep such plans on the
+			// decoded transition below.
+			p.opaqueContinuation = true
+		}
 	}
 	var rootValues [2]byte
 	rootCount := 0
@@ -1002,8 +1549,16 @@ func (p *searchPlan) finish(nextToken uint32) {
 		arrangeTripleSharedPrefix(&p.triples)
 		p.filter = p.makeRootFilter(p.tripleRoots)
 	} else {
-		// A partial triple set cannot screen a root that it does not cover.
-		// Retain the general prefix filter as the complete representation.
+		// A partial triple set cannot screen a root that it does not cover on a
+		// general UTF-8 stream. It can still screen an all-ASCII stream if it
+		// covers every root which has an ASCII rendering. Retain that bounded
+		// transition separately; the regular filter remains the authority for
+		// mixed input and every unsupported plan shape.
+		p.asciiTriples = p.triples
+		p.asciiTriplesComplete = p.asciiTripleRootsComplete(p.tripleRoots)
+		if p.asciiTriplesComplete {
+			p.asciiTriples.shufti = makeTripleShuftiFilter(p.asciiTriples)
+		}
 		p.triples = tripleFilter{}
 		p.tripleRoots = nil
 		p.filter = p.makeRootFilter(nil)
@@ -1054,6 +1609,25 @@ func (p *searchPlan) finish(nextToken uint32) {
 			row[token] = uint32(child)
 		}
 	}
+}
+
+// asciiTripleRootsComplete reports whether triples cover every root which an
+// all-ASCII haystack can reach. Roots that have only multi-byte renderings are
+// impossible on that restricted stream and do not need a byte-prefix stop.
+func (p *searchPlan) asciiTripleRootsComplete(roots []bool) bool {
+	if !p.asciiTriples.usable() {
+		return false
+	}
+	for _, token := range p.ascii {
+		if token == 0 {
+			continue
+		}
+		if _, isRoot := p.nodes[0].edges[token]; isRoot &&
+			(int(token) >= len(roots) || !roots[token]) {
+			return false
+		}
+	}
+	return true
 }
 
 func isASCIILetter(b byte) bool {
@@ -1361,6 +1935,9 @@ func (p *searchPlan) asciiAnchorMatches(haystack string, at int) bool {
 	if p.asciiVerifyTokens {
 		return p.matchesSingleAt(haystack, at)
 	}
+	if literal := p.asciiProbe.short; literal.valid != 0 {
+		return at+4 <= len(haystack) && asciiShortLiteralAt(haystack, at, literal)
+	}
 	return at+len(p.asciiNeedle) <= len(haystack) && asciiPatternAt(haystack, at, p.asciiNeedle)
 }
 
@@ -1445,6 +2022,10 @@ func (p *searchPlan) findASCIIByteAnchor(haystack string, anchorAt int, kind uin
 
 func (p *searchPlan) asciiPairPromising() bool {
 	return asciiRarity(p.asciiPair.first) < 2 || asciiRarity(p.asciiPair.second) < 2
+}
+
+func (p *searchPlan) asciiPairVBMIDisplaced() bool {
+	return p.asciiPair.vbmi.valid != 0 && int(p.asciiPair.vbmi.secondAt) != p.asciiPair.secondAt
 }
 
 func (p *searchPlan) asciiPairSparse(haystack string) bool {
@@ -1667,21 +2248,30 @@ func (p *searchPlan) find(haystack string) (Match, bool) {
 		}
 		return Match{}, false
 	}
+	if p.opaqueContinuation {
+		return p.findUnfiltered(haystack)
+	}
 	if p.asciiRun {
 		return p.findASCIIRun(haystack)
 	}
 	if p.asciiPair.usable() && len(haystack) >= len(p.asciiNeedle) && p.asciiFixedAt(haystack, 0) {
 		return Match{Pattern: 0}, true
 	}
-	if p.asciiPair.usable() && p.asciiPairPromising() {
+	if p.asciiPairVBMIDisplaced() && len(haystack) >= 4096 && asciiPairVBMIEnabled() {
 		return p.findASCIIPairAnchor(haystack)
+	}
+	if !p.asciiPairVBMIDisplaced() && p.asciiPair.usable() && p.asciiPairPromising() {
+		return p.findASCIIPairAnchor(haystack)
+	}
+	if p.asciiStaticAnchor && len(haystack) >= 4096 {
+		return p.findASCIIByteAnchor(haystack, p.asciiStaticAt, p.asciiStaticKind, p.asciiStaticByte)
 	}
 	if p.asciiByteAnchor {
 		if anchorAt, kind, needle, ok := p.chooseASCIIByteAnchor(haystack); ok {
 			return p.findASCIIByteAnchor(haystack, anchorAt, kind, needle)
 		}
 	}
-	if p.asciiPair.usable() && len(haystack) >= 4096 && p.asciiPairSparse(haystack) {
+	if !p.asciiPairVBMIDisplaced() && p.asciiPair.usable() && len(haystack) >= 4096 && p.asciiPairSparse(haystack) {
 		return p.findASCIIPairAnchor(haystack)
 	}
 	if p.asciiProbe.usable() {
@@ -1702,6 +2292,22 @@ func (p *searchPlan) find(haystack string) (Match, bool) {
 	if p.unicodeAnchor.n == 1 {
 		return p.findUnicodeAnchor(haystack)
 	}
+	// A partial root triple set cannot skip a general UTF-8 stream because a
+	// non-ASCII-only root may occur later. On AVX-512 BW, the high-byte scan
+	// first proves that the complete input is ASCII and NUL-free, leaving only
+	// the separately covered ASCII roots for the bounded Shufti transition. It
+	// still advances this one compiled plan at every survivor; it is a block
+	// transition, not a second matcher.
+	const asciiTripleMinBytes = 64
+	if p.asciiPairAnchors.usable() && runtimeVectorBits() == 512 && len(haystack) >= asciiTripleMinBytes &&
+		rootSkipASCII(haystack, 0, rootExact, 0) == len(haystack) {
+		return p.findASCIIPairAnchored(haystack)
+	}
+	if p.patternCount > 1 && p.rootKind == rootGeneric && p.asciiTriplesComplete && p.asciiTriples.shufti.usable() &&
+		runtimeVectorBits() == 512 && len(haystack) >= asciiTripleMinBytes &&
+		rootSkipASCII(haystack, 0, rootExact, 0) == len(haystack) {
+		return p.findASCIITripleFiltered(haystack)
+	}
 	if p.triplesComplete && p.triples.usable() && (p.patternCount == 1 || p.rootKind == rootGeneric) {
 		return p.findFiltered(haystack)
 	}
@@ -1709,6 +2315,12 @@ func (p *searchPlan) find(haystack string) (Match, bool) {
 		return p.findFiltered(haystack)
 	}
 
+	return p.findUnfiltered(haystack)
+}
+
+// findUnfiltered advances the decoded plan without raw byte filters. It is the
+// boundary-safe path for plans containing opaque UTF-8 continuation bytes.
+func (p *searchPlan) findUnfiltered(haystack string) (Match, bool) {
 	state, unit := 0, 0
 	bestUnitStart := -1
 	best := Match{Pattern: -1, Start: -1}
@@ -1786,6 +2398,126 @@ func (p *searchPlan) find(haystack string) (Match, bool) {
 		return best, true
 	}
 	return p.findNonASCII(haystack, at, unit, state, bestUnitStart, best)
+}
+
+// findASCIITripleFiltered is the all-ASCII specialization of the shared plan.
+// Its caller proves that every byte is a non-NUL ASCII unit and that
+// asciiTriples covers every root that can occur on such input. A triple stop is
+// only a conservative candidate; the regular decoded transition decides every
+// match, leftmost start, and pattern-ID tie.
+func (p *searchPlan) findASCIITripleFiltered(haystack string) (Match, bool) {
+	var inlineStarts [256]int
+	starts := inlineStarts[:]
+	if p.maxUnits > len(starts) {
+		starts = make([]int, p.maxUnits)
+	}
+
+	state, history := 0, 0
+	best := Match{Pattern: -1, Start: -1}
+	if p.empty >= 0 {
+		best = Match{Pattern: p.empty, Start: 0}
+	}
+	for at := 0; at < len(haystack); {
+		if state == 0 {
+			if best.Pattern >= 0 && at > best.Start {
+				return best, true
+			}
+			history = 0
+			skipped := tripleSkipBytes(haystack, at, &p.asciiTriples)
+			at += skipped
+			if at == len(haystack) {
+				break
+			}
+		}
+
+		starts[history%len(starts)] = at
+		token, size := p.haystackToken(haystack, at)
+		state = p.advance(state, token)
+		history++
+		if output := p.nodes[state].output; output.pattern >= 0 {
+			start := starts[(history-output.units)%len(starts)]
+			if best.Pattern < 0 || start < best.Start ||
+				start == best.Start && output.pattern < best.Pattern {
+				best = Match{Pattern: output.pattern, Start: start}
+			}
+		}
+		at += size
+	}
+	if best.Pattern < 0 {
+		return Match{}, false
+	}
+	return best, true
+}
+
+// replayASCIIAnchorStart feeds a bounded candidate window back through the
+// shared compiled plan. Filtering never confirms a pattern directly: the
+// plan's propagated outputs select both the terminal and its lowest-ID tie.
+func (p *searchPlan) replayASCIIAnchorStart(haystack string, start int) (Match, bool) {
+	state := 0
+	best := Match{Pattern: -1, Start: -1}
+	limit := start + p.maxUnits
+	if limit > len(haystack) {
+		limit = len(haystack)
+	}
+	for at := start; at < limit; at++ {
+		state = p.advance(state, p.ascii[haystack[at]])
+		if output := p.nodes[state].output; output.pattern >= 0 {
+			outputStart := at - output.units + 1
+			if outputStart == start && (best.Pattern < 0 || output.pattern < best.Pattern) {
+				best = Match{Pattern: output.pattern, Start: start}
+			}
+		}
+	}
+	if best.Pattern < 0 {
+		return Match{}, false
+	}
+	return best, true
+}
+
+// findASCIIPairAnchored is the lower-work all-ASCII representation of the
+// partial mixed-root plan. Its pair table is only a union prefilter. A matching
+// pair may belong to any spelling, so every possible mapped start is replayed
+// through the common decoded plan before it can affect the selected result.
+func (p *searchPlan) findASCIIPairAnchored(haystack string) (Match, bool) {
+	anchors := &p.asciiPairAnchors
+	best := Match{Pattern: -1, Start: -1}
+	if p.empty >= 0 {
+		best = Match{Pattern: p.empty, Start: 0}
+	}
+
+	for at := 0; at+1 < len(haystack); {
+		// A later-start match can have an earlier pair only when that pair's
+		// source offset is larger. Wait through the maximum compiled offset
+		// before finalizing best, rather than treating filter encounter order as
+		// leftmost order.
+		if best.Pattern >= 0 && at > best.Start+int(anchors.maxAt) {
+			return best, true
+		}
+		at += asciiPairAnchorSkipBytes(haystack, at, &anchors.filter)
+		if at+1 >= len(haystack) {
+			break
+		}
+		for i := range anchors.n {
+			anchor := anchors.anchors[i]
+			if !asciiPairAnchorMatches(haystack, at, anchor) {
+				continue
+			}
+			start := at - int(anchor.at)
+			if start < 0 || best.Pattern >= 0 && start > best.Start {
+				continue
+			}
+			if match, ok := p.replayASCIIAnchorStart(haystack, start); ok &&
+				(best.Pattern < 0 || match.Start < best.Start ||
+					match.Start == best.Start && match.Pattern < best.Pattern) {
+				best = match
+			}
+		}
+		at++
+	}
+	if best.Pattern < 0 {
+		return Match{}, false
+	}
+	return best, true
 }
 
 // findFiltered is the generic-root path. It scans byte prefixes until a root

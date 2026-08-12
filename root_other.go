@@ -6,6 +6,8 @@ import "unicode/utf8"
 
 func runtimeVectorBits() int { return 0 }
 
+func asciiPairVBMIEnabled() bool { return false }
+
 func asciiFixedPrefix8(s string, at int, word, fold uint64) bool {
 	for i := 0; i < 8; i++ {
 		if s[at+i]|byte(fold>>(8*i)) != byte(word>>(8*i)) {
@@ -231,7 +233,19 @@ func filterSkipScalar(s string, at int, filter *rootFilter) int {
 	return filterSkipGeneralBytes(s, at, filter)
 }
 
+func tripleShuftiSkipBytes(s string, at int, filter *tripleShuftiFilter) int {
+	return tripleShuftiSkipScalar(s, at, filter)
+}
+
+func asciiPairAnchorSkipBytes(s string, at int, filter *asciiPairAnchorFilter) int {
+	return asciiPairAnchorSkipScalar(s, at, filter)
+}
+
 func tripleSkipBytes(s string, at int, filter *tripleFilter) int {
+	return tripleSkipScalar(s, at, filter)
+}
+
+func tripleSkipScalar(s string, at int, filter *tripleFilter) int {
 	start := at
 	for at+2 < len(s) {
 		for i := range filter.n {

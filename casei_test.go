@@ -4,6 +4,7 @@ import (
 	"math/rand/v2"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"unicode"
 	"unicode/utf8"
@@ -189,6 +190,69 @@ func randomRuneString(rng *rand.Rand, maxLen int) string {
 		b.WriteRune(diffRunes[rng.IntN(len(diffRunes))])
 	}
 	return b.String()
+}
+
+func TestIndexFoldCachesCompiledPlan(t *testing.T) {
+	needle := "\x00compiled-plan-cache"
+	haystack := strings.Repeat("x", 80)
+	slot := &singlePlanCache[singlePlanCacheIndex(needle)]
+	savedSlot, savedRecent := slot.Load(), recentSinglePlan.Load()
+	slot.Store(nil)
+	recentSinglePlan.Store(nil)
+	t.Cleanup(func() {
+		slot.Store(savedSlot)
+		recentSinglePlan.Store(savedRecent)
+	})
+
+	want := reference(haystack, needle)
+	if got := IndexFold(haystack, needle); got != want {
+		t.Fatalf("IndexFold = %d, want %d", got, want)
+	}
+	entry := slot.Load()
+	if entry == nil || entry.needle != needle || entry.plan == nil {
+		t.Fatalf("IndexFold did not cache a compiled plan: %+v", entry)
+	}
+	if recent := recentSinglePlan.Load(); recent != entry {
+		t.Fatalf("recent cache = %+v, want %+v", recent, entry)
+	}
+}
+
+func TestIndexFoldConcurrentCache(t *testing.T) {
+	cases := []struct {
+		haystack string
+		needle   string
+		want     int
+	}{
+		{"xxAlpha", "alpha", 2},
+		{"xxBRAVO", "bravo", 2},
+		{"xxKelvin", "kelvin", 2},
+		{"xx\x80opaque", "\x80opaque", 2},
+		{"no match", "needle", -1},
+	}
+	const callers = 16
+	start := make(chan struct{})
+	errs := make(chan string, callers)
+	var group sync.WaitGroup
+	for caller := 0; caller < callers; caller++ {
+		group.Add(1)
+		go func(offset int) {
+			defer group.Done()
+			<-start
+			for i := 0; i < 100; i++ {
+				tc := cases[(offset+i)%len(cases)]
+				if got := IndexFold(tc.haystack, tc.needle); got != tc.want {
+					errs <- tc.needle
+					return
+				}
+			}
+		}(caller)
+	}
+	close(start)
+	group.Wait()
+	close(errs)
+	if needle, ok := <-errs; ok {
+		t.Fatalf("concurrent IndexFold returned a wrong result for %q", needle)
+	}
 }
 
 func TestIndexFoldMatchesRegexp(t *testing.T) {

@@ -20,6 +20,10 @@ func runtimeVectorBits() int {
 	return 0
 }
 
+func asciiPairVBMIEnabled() bool {
+	return cpu.X86.HasAVX512F && cpu.X86.HasAVX512BW && cpu.X86.HasAVX512VBMI
+}
+
 // asciiFixedPrefix8 compares the compiled low eight pattern bytes after
 // applying case bits only at ASCII-letter positions. Its callers establish an
 // in-bounds eight-byte window before this unaligned amd64 load.
@@ -52,14 +56,18 @@ func runMask32(ptr *byte, target, fold uint64) uint32
 func runMask64(ptr *byte, target, fold uint64) uint64
 func probeSkip32(ptr *byte, n int, probe *asciiProbe) int
 func probeSkip64(ptr *byte, n int, probe *asciiProbe) int
+func probeVBMISkip64(ptr *byte, n int, probe *asciiVBMIProbe) int
 func asciiOnlyProbeSkip64(ptr *byte, n int, probe *asciiProbe) int
 func asciiPairDirectSkip64(ptr *byte, n int, probe *asciiPairProbe) int
+func asciiPairDirectVBMISkip64(ptr *byte, n int, probe *asciiPairVBMIProbe) int
 func asciiPairShortSkip64(ptr *byte, n int, probe *asciiPairProbe) int
 func pairSetSkip32(ptr *byte, n int, filter *rootFilter) int
 func pairSetSkip64(ptr *byte, n int, filter *rootFilter) int
 func pairShuftiSkip64(ptr *byte, n int, filter *pairShuftiFilter) int
 func pairShuftiWithOnesSkip64(ptr *byte, n int, filter *pairShuftiFilter) int
 func pairPairSkip64(ptr *byte, n int, filter *pairPairFilter) int
+func pairPairVBMISkip64(ptr *byte, n int, filter *pairPairVBMIFilter) int
+func pairPairWordSkip64(ptr *byte, n int, filter *pairPairFilter) int
 func pairSecondSkip32(ptr *byte, n int, filter *rootFilter) int
 func pairSecondSkip64(ptr *byte, n int, filter *rootFilter) int
 func pairSkip32(ptr *byte, n int, first, firstFold, second, secondFold uint64) int
@@ -68,6 +76,9 @@ func filterSkip32(ptr *byte, n int, filter *rootFilter) int
 func filterSkip64(ptr *byte, n int, filter *rootFilter) int
 func tripleSkip32(ptr *byte, n int, filter *tripleFilter) int
 func tripleSkip64(ptr *byte, n int, filter *tripleFilter) int
+func tripleShuftiSkip64(ptr *byte, n int, filter *tripleShuftiFilter) int
+func asciiPairAnchorSkip64(ptr *byte, n int, filter *asciiPairAnchorFilter) int
+func asciiPairAnchorVBMISkip64(ptr *byte, n int, filter *asciiPairVBMIAnchorFilter) int
 func tripleSharedPrefixSkip64(ptr *byte, n int, filter *tripleFilter) int
 func tripleASCIIUTF8Skip64(ptr *byte, n int, filter *tripleFilter) int
 func tripleMixedSkip64(ptr *byte, n int, filter *tripleFilter) int
@@ -193,7 +204,13 @@ func probeSkipBytes(s string, at, candidates int, probe *asciiProbe) int {
 	if cpu.X86.HasAVX512F && cpu.X86.HasAVX512BW && candidates >= 64 {
 		full := candidates &^ 63
 		ptr := (*byte)(unsafe.Add(unsafe.Pointer(unsafe.StringData(s)), at))
-		skipped := probeSkip64(ptr, candidates, probe)
+		vbmi := cpu.X86.HasAVX512VBMI && probe.vbmi.valid != 0
+		var skipped int
+		if vbmi {
+			skipped = probeVBMISkip64(ptr, candidates, &probe.vbmi)
+		} else {
+			skipped = probeSkip64(ptr, candidates, probe)
+		}
 		at += skipped
 		if skipped < full {
 			return at - start
@@ -204,7 +221,12 @@ func probeSkipBytes(s string, at, candidates int, probe *asciiProbe) int {
 			// avoids scalar confirmation probes for its trailing lanes.
 			tailAt := start + candidates - 64
 			tailPtr := (*byte)(unsafe.Add(unsafe.Pointer(unsafe.StringData(s)), tailAt))
-			tail := probeSkip64(tailPtr, 64, probe)
+			var tail int
+			if vbmi {
+				tail = probeVBMISkip64(tailPtr, 64, &probe.vbmi)
+			} else {
+				tail = probeSkip64(tailPtr, 64, probe)
+			}
 			if tail < 64 {
 				return tailAt + tail - start
 			}
@@ -265,9 +287,9 @@ func asciiOnlyProbeSkipBytes(s string, at, candidates int, probe *asciiProbe) (i
 
 func asciiPairSkipBytes(s string, at, candidates int, probe *asciiPairProbe) int {
 	start := at
-	// A byte-eight probe needs one carried 64-byte block after each candidate
-	// block. Bound the assembly input by actual readable bytes, not merely by
-	// candidate starts: a short literal can leave fewer than 64 trailing bytes.
+	// The pair probe loads a second stream after its compiled displacement.
+	// Keep one carried 64-byte block after each candidate block and bound the
+	// assembly input by actual readable bytes, not merely candidate starts.
 	available := len(s) - at
 	vectorCandidates := (available - 64) &^ 63
 	if vectorCandidates > candidates {
@@ -278,6 +300,8 @@ func asciiPairSkipBytes(s string, at, candidates int, probe *asciiPairProbe) int
 		var skipped int
 		if vectorCandidates < 1024 {
 			skipped = asciiPairShortSkip64(ptr, vectorCandidates, probe)
+		} else if cpu.X86.HasAVX512VBMI && probe.vbmi.valid != 0 {
+			skipped = asciiPairDirectVBMISkip64(ptr, vectorCandidates, &probe.vbmi)
 		} else {
 			skipped = asciiPairDirectSkip64(ptr, vectorCandidates, probe)
 		}
@@ -462,7 +486,14 @@ func pairPairSkipBytes(s string, at int, filter *pairPairFilter) int {
 	if cpu.X86.HasAVX512F && cpu.X86.HasAVX512BW && candidates >= 64 {
 		full := candidates &^ 63
 		ptr := (*byte)(unsafe.Add(unsafe.Pointer(unsafe.StringData(s)), at))
-		skipped := pairPairSkip64(ptr, candidates, filter)
+		var skipped int
+		if cpu.X86.HasAVX512VBMI && filter.vbmi.valid != 0 {
+			skipped = pairPairVBMISkip64(ptr, candidates, &filter.vbmi)
+		} else if cpu.X86.HasBMI2 {
+			skipped = pairPairWordSkip64(ptr, candidates, filter)
+		} else {
+			skipped = pairPairSkip64(ptr, candidates, filter)
+		}
 		at += skipped
 		if skipped < full {
 			return at - start
@@ -577,6 +608,47 @@ func filterSkipScalar(s string, at int, filter *rootFilter) int {
 	return at - start
 }
 
+// tripleShuftiSkipBytes evaluates the bounded multi-triple projection with
+// AVX-512 BW. It is entered only by the runtime-gated caller in tripleSkipBytes;
+// scalar tails retain the same conservative table predicate.
+func tripleShuftiSkipBytes(s string, at int, filter *tripleShuftiFilter) int {
+	start := at
+	remaining := len(s) - at
+	if cpu.X86.HasAVX512F && cpu.X86.HasAVX512BW && remaining >= 66 {
+		full := ((remaining - 2) / 64) * 64
+		ptr := (*byte)(unsafe.Add(unsafe.Pointer(unsafe.StringData(s)), at))
+		skipped := tripleShuftiSkip64(ptr, remaining, filter)
+		at += skipped
+		if skipped < full {
+			return at - start
+		}
+	}
+	return at - start + tripleShuftiSkipScalar(s, at, filter)
+}
+
+// asciiPairAnchorSkipBytes scans a single bounded pair table. The route that
+// calls it has already proved an all-ASCII, non-NUL haystack; this function
+// remains a conservative filter and its caller replays plan transitions.
+func asciiPairAnchorSkipBytes(s string, at int, filter *asciiPairAnchorFilter) int {
+	start := at
+	remaining := len(s) - at
+	if cpu.X86.HasAVX512F && cpu.X86.HasAVX512BW && remaining >= 65 {
+		full := ((remaining - 1) / 64) * 64
+		ptr := (*byte)(unsafe.Add(unsafe.Pointer(unsafe.StringData(s)), at))
+		var skipped int
+		if cpu.X86.HasAVX512VBMI && filter.vbmi.valid != 0 {
+			skipped = asciiPairAnchorVBMISkip64(ptr, remaining, &filter.vbmi)
+		} else {
+			skipped = asciiPairAnchorSkip64(ptr, remaining, filter)
+		}
+		at += skipped
+		if skipped < full {
+			return at - start
+		}
+	}
+	return at - start + asciiPairAnchorSkipScalar(s, at, filter)
+}
+
 func triplePairSkipBytes(s string, at int, filter *tripleFilter) int {
 	start := at
 	remaining := len(s) - at
@@ -603,6 +675,9 @@ func triplePairSkipBytes(s string, at int, filter *tripleFilter) int {
 func tripleSkipBytes(s string, at int, filter *tripleFilter) int {
 	if filter.n == 2 && filter.values[0].fold == 7 && filter.values[1].fold == 7 {
 		return triplePairSkipBytes(s, at, filter)
+	}
+	if filter.shufti.usable() && runtimeVectorBits() == 512 {
+		return tripleShuftiSkipBytes(s, at, &filter.shufti)
 	}
 	start := at
 	remaining := len(s) - at

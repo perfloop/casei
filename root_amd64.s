@@ -740,6 +740,51 @@ TEXT ·pairSkip64(SB), NOSPLIT, $0-56
 	VPBROADCASTB CX, K1, Z3
 	MOVQ secondFold+40(FP), CX
 	VPBROADCASTB CX, K1, Z4
+	// Keep a start-of-haystack hit on the original one-block latency path.
+	JMP pairloop64
+
+// Two independent blocks amortize the stop branch and let the byte-mask,
+// fold, and comparison chains overlap on the ordinary root-to-root miss.
+pairdouble64:
+	CMPQ DX, $129
+	JL pairloop64
+	VMOVDQU8 (AX), K1, Z0
+	VMOVDQU8 1(AX), K1, Z5
+	VMOVDQU8 64(AX), K1, Z6
+	VMOVDQU8 65(AX), K1, Z7
+	VPMOVB2M Z0, K2
+	VPMOVB2M Z5, K3
+	KORQ K2, K3, K2
+	VPMOVB2M Z6, K4
+	VPMOVB2M Z7, K5
+	KORQ K4, K5, K4
+	VPORQ Z2, Z0, K1, Z0
+	VPORQ Z4, Z5, K1, Z5
+	VPCMPEQB Z1, Z0, K1, K3
+	VPCMPEQB Z3, Z5, K1, K5
+	KANDQ K3, K5, K3
+	KORQ K2, K3, K2
+	VPORQ Z2, Z6, K1, Z6
+	VPORQ Z4, Z7, K1, Z7
+	VPCMPEQB Z1, Z6, K1, K3
+	VPCMPEQB Z3, Z7, K1, K5
+	KANDQ K3, K5, K3
+	KORQ K4, K3, K4
+	KORTESTQ K2, K4
+	JNE pairfounddouble64
+	ADDQ $128, AX
+	ADDQ $128, BX
+	SUBQ $128, DX
+	JMP pairdouble64
+pairfounddouble64:
+	KMOVQ K2, CX
+	TESTQ CX, CX
+	JNZ pairstop64
+	KMOVQ K4, CX
+	BSFQ CX, CX
+	ADDQ $64, BX
+	ADDQ CX, BX
+	JMP pairdone64
 
 pairloop64:
 	CMPQ DX, $65
@@ -761,7 +806,7 @@ pairloop64:
 	ADDQ $64, AX
 	ADDQ $64, BX
 	SUBQ $64, DX
-	JMP pairloop64
+	JMP pairdouble64
 pairstop64:
 	BSFQ CX, CX
 	ADDQ CX, BX
@@ -2205,6 +2250,666 @@ asciipairshortstop64:
 	BSFQ CX, CX
 	ADDQ CX, BX
 asciipairshortdone64:
+	MOVQ BX, ret+24(FP)
+	VZEROUPPER
+	RET
+
+// tripleShuftiSkip64 scans a bounded union of three-byte forms. Six nibble
+// tables assign every form a slot bit; after bit-five normalization, a lane is
+// a survivor only when all six lookups retain one common slot. The decoded
+// plan transition verifies the conservative result.
+TEXT ·tripleShuftiSkip64(SB), NOSPLIT, $0-32
+	MOVQ ptr+0(FP), AX
+	MOVQ n+8(FP), DX
+	MOVQ filter+16(FP), SI
+	XORQ BX, BX
+	MOVQ $-1, CX
+	KMOVQ CX, K1
+
+	// tripleShuftiFilter stores six consecutive 16-byte nibble tables.
+	VBROADCASTI32X4 0(SI), K1, Z1
+	VBROADCASTI32X4 16(SI), K1, Z2
+	VBROADCASTI32X4 32(SI), K1, Z3
+	VBROADCASTI32X4 48(SI), K1, Z4
+	VBROADCASTI32X4 64(SI), K1, Z5
+	VBROADCASTI32X4 80(SI), K1, Z6
+	MOVQ $0x0f0f0f0f0f0f0f0f, R8
+	VPBROADCASTB R8, K1, Z15
+	MOVQ $0x2020202020202020, R8
+	VPBROADCASTB R8, K1, Z16
+
+tripleshufloop64:
+	// Three overlapping source vectors describe the 64 candidate starts. The
+	// Go wrapper requires two trailing bytes before entering this loop.
+	CMPQ DX, $66
+	JL tripleshufdone64
+	VMOVDQU8 (AX), K1, Z0
+	VMOVDQU8 1(AX), K1, Z9
+	VMOVDQU8 2(AX), K1, Z10
+	VPORQ Z16, Z0, K1, Z0
+	VPORQ Z16, Z9, K1, Z9
+	VPORQ Z16, Z10, K1, Z10
+
+	// Form table indexes: low and high nibbles of each byte position.
+	VPANDQ Z15, Z0, K1, Z11
+	VPSRLW $4, Z0, K1, Z12
+	VPANDQ Z15, Z12, K1, Z12
+	VPANDQ Z15, Z9, K1, Z13
+	VPSRLW $4, Z9, K1, Z14
+	VPANDQ Z15, Z14, K1, Z14
+	VPANDQ Z15, Z10, K1, Z17
+	VPSRLW $4, Z10, K1, Z18
+	VPANDQ Z15, Z18, K1, Z18
+
+	VPSHUFB Z11, Z1, K1, Z19
+	VPSHUFB Z12, Z2, K1, Z20
+	VPANDQ Z20, Z19, K1, Z19
+	VPSHUFB Z13, Z3, K1, Z20
+	VPANDQ Z20, Z19, K1, Z19
+	VPSHUFB Z14, Z4, K1, Z20
+	VPANDQ Z20, Z19, K1, Z19
+	VPSHUFB Z17, Z5, K1, Z20
+	VPANDQ Z20, Z19, K1, Z19
+	VPSHUFB Z18, Z6, K1, Z20
+	VPANDQ Z20, Z19, K1, Z19
+	VPTESTMB Z19, Z19, K1, K2
+	KMOVQ K2, CX
+	TESTQ CX, CX
+	JNZ tripleshufstop64
+	ADDQ $64, AX
+	ADDQ $64, BX
+	SUBQ $64, DX
+	JMP tripleshufloop64
+tripleshufstop64:
+	BSFQ CX, CX
+	ADDQ CX, BX
+tripleshufdone64:
+	MOVQ BX, ret+24(FP)
+	VZEROUPPER
+	RET
+
+// asciiPairAnchorSkip64 scans one eight-slot pair projection. Four nibble
+// lookups intersect the normalized source pair; any surviving lane is replayed
+// by the Go caller through the shared decoded plan before it can be a match.
+TEXT ·asciiPairAnchorSkip64(SB), NOSPLIT, $0-32
+	MOVQ ptr+0(FP), AX
+	MOVQ n+8(FP), DX
+	MOVQ filter+16(FP), SI
+	XORQ BX, BX
+	MOVQ $-1, CX
+	KMOVQ CX, K1
+
+	// asciiPairAnchorFilter stores four consecutive 16-byte nibble tables.
+	VBROADCASTI32X4 0(SI), K1, Z1
+	VBROADCASTI32X4 16(SI), K1, Z2
+	VBROADCASTI32X4 32(SI), K1, Z3
+	VBROADCASTI32X4 48(SI), K1, Z4
+	MOVQ $0x0f0f0f0f0f0f0f0f, R8
+	VPBROADCASTB R8, K1, Z15
+	MOVQ $0x2020202020202020, R8
+	VPBROADCASTB R8, K1, Z16
+
+asciipairanchorloop64:
+	// The second source vector is one byte displaced. The Go wrapper admits
+	// this loop only with one trailing source byte beyond 64 candidates.
+	CMPQ DX, $65
+	JL asciipairanchordone64
+	VMOVDQU8 (AX), K1, Z0
+	VMOVDQU8 1(AX), K1, Z9
+	VPORQ Z16, Z0, K1, Z0
+	VPORQ Z16, Z9, K1, Z9
+	VPANDQ Z15, Z0, K1, Z10
+	VPSRLW $4, Z0, K1, Z11
+	VPANDQ Z15, Z11, K1, Z11
+	VPANDQ Z15, Z9, K1, Z12
+	VPSRLW $4, Z9, K1, Z13
+	VPANDQ Z15, Z13, K1, Z13
+
+	VPSHUFB Z10, Z1, K1, Z14
+	VPSHUFB Z11, Z2, K1, Z17
+	VPANDQ Z17, Z14, K1, Z14
+	VPSHUFB Z12, Z3, K1, Z17
+	VPANDQ Z17, Z14, K1, Z14
+	VPSHUFB Z13, Z4, K1, Z17
+	VPANDQ Z17, Z14, K1, Z14
+	VPTESTMB Z14, Z14, K1, K2
+	KMOVQ K2, CX
+	TESTQ CX, CX
+	JNZ asciipairanchorstop64
+	ADDQ $64, AX
+	ADDQ $64, BX
+	SUBQ $64, DX
+	JMP asciipairanchorloop64
+asciipairanchorstop64:
+	BSFQ CX, CX
+	ADDQ CX, BX
+asciipairanchordone64:
+	MOVQ BX, ret+24(FP)
+	VZEROUPPER
+	RET
+
+// probeVBMISkip64 is the AVX-512 VBMI form of probeSkip64. Its compiled
+// low-six-bit tables preserve every true ASCII spelling and may over-admit a
+// bit-six alias; the Go plan confirms each survivor before it can match.
+TEXT ·probeVBMISkip64(SB), NOSPLIT, $0-32
+	MOVQ ptr+0(FP), AX
+	MOVQ n+8(FP), DX
+	MOVQ probe+16(FP), SI
+	XORQ BX, BX
+	MOVQ $-1, CX
+	KMOVQ CX, K1
+	// asciiVBMIProbe stores its three byte offsets, then three 64-byte tables.
+	MOVQ 0(SI), R8
+	MOVQ 8(SI), R9
+	MOVQ 16(SI), R10
+	VMOVDQU8 24(SI), K1, Z1
+	VMOVDQU8 88(SI), K1, Z2
+	VMOVDQU8 152(SI), K1, Z3
+
+// Four independent blocks amortize the loop control and expose the three
+// VPERMB classification chains for each block before the first stop branch.
+// Check the masks in source order below so the returned candidate remains the
+// earliest table survivor.
+probebvmiquad64:
+	CMPQ DX, $256
+	JL probebvmidouble64
+	VMOVDQU8 (AX)(R8*1), K1, Z0
+	VMOVDQU8 (AX)(R9*1), K1, Z4
+	VMOVDQU8 (AX)(R10*1), K1, Z5
+	VMOVDQU8 64(AX)(R8*1), K1, Z9
+	VMOVDQU8 64(AX)(R9*1), K1, Z10
+	VMOVDQU8 64(AX)(R10*1), K1, Z11
+	VMOVDQU8 128(AX)(R8*1), K1, Z12
+	VMOVDQU8 128(AX)(R9*1), K1, Z13
+	VMOVDQU8 128(AX)(R10*1), K1, Z14
+	VMOVDQU8 192(AX)(R8*1), K1, Z15
+	VMOVDQU8 192(AX)(R9*1), K1, Z16
+	VMOVDQU8 192(AX)(R10*1), K1, Z17
+	VPERMB Z1, Z0, Z0
+	VPERMB Z2, Z4, Z4
+	VPERMB Z3, Z5, Z5
+	VPANDQ Z4, Z0, K1, Z0
+	VPTESTMB Z5, Z0, K1, K2
+	VPERMB Z1, Z9, Z9
+	VPERMB Z2, Z10, Z10
+	VPERMB Z3, Z11, Z11
+	VPANDQ Z10, Z9, K1, Z9
+	VPTESTMB Z11, Z9, K1, K3
+	VPERMB Z1, Z12, Z12
+	VPERMB Z2, Z13, Z13
+	VPERMB Z3, Z14, Z14
+	VPANDQ Z13, Z12, K1, Z12
+	VPTESTMB Z14, Z12, K1, K4
+	VPERMB Z1, Z15, Z15
+	VPERMB Z2, Z16, Z16
+	VPERMB Z3, Z17, Z17
+	VPANDQ Z16, Z15, K1, Z15
+	VPTESTMB Z17, Z15, K1, K5
+	KORTESTQ K2, K3
+	JNE probebvmifoundfirstquad64
+	KORTESTQ K4, K5
+	JNE probebvmifoundsecondquad64
+	ADDQ $256, AX
+	ADDQ $256, BX
+	SUBQ $256, DX
+	JMP probebvmiquad64
+probebvmifoundfirstquad64:
+	KMOVQ K2, CX
+	TESTQ CX, CX
+	JNZ probebvmistop64
+	KMOVQ K3, CX
+	BSFQ CX, CX
+	ADDQ $64, BX
+	ADDQ CX, BX
+	JMP probebvmidone64
+probebvmifoundsecondquad64:
+	KMOVQ K4, CX
+	TESTQ CX, CX
+	JNZ probebvmithirdstop64
+	KMOVQ K5, CX
+	BSFQ CX, CX
+	ADDQ $192, BX
+	ADDQ CX, BX
+	JMP probebvmidone64
+probebvmithirdstop64:
+	BSFQ CX, CX
+	ADDQ $128, BX
+	ADDQ CX, BX
+	JMP probebvmidone64
+
+probebvmidouble64:
+	CMPQ DX, $128
+	JL probebvmiloop64
+	VMOVDQU8 (AX)(R8*1), K1, Z0
+	VMOVDQU8 (AX)(R9*1), K1, Z4
+	VMOVDQU8 (AX)(R10*1), K1, Z5
+	VMOVDQU8 64(AX)(R8*1), K1, Z9
+	VMOVDQU8 64(AX)(R9*1), K1, Z10
+	VMOVDQU8 64(AX)(R10*1), K1, Z11
+	VPERMB Z1, Z0, Z0
+	VPERMB Z2, Z4, Z4
+	VPERMB Z3, Z5, Z5
+	VPANDQ Z4, Z0, K1, Z0
+	VPTESTMB Z5, Z0, K1, K2
+	VPERMB Z1, Z9, Z9
+	VPERMB Z2, Z10, Z10
+	VPERMB Z3, Z11, Z11
+	VPANDQ Z10, Z9, K1, Z9
+	VPTESTMB Z11, Z9, K1, K5
+	KORTESTQ K2, K5
+	JNE probebvmifounddouble64
+	ADDQ $128, AX
+	ADDQ $128, BX
+	SUBQ $128, DX
+	JMP probebvmidouble64
+probebvmifounddouble64:
+	KMOVQ K2, CX
+	TESTQ CX, CX
+	JNZ probebvmistop64
+	KMOVQ K5, CX
+	BSFQ CX, CX
+	ADDQ $64, BX
+	ADDQ CX, BX
+	JMP probebvmidone64
+
+probebvmiloop64:
+	CMPQ DX, $64
+	JL probebvmidone64
+	VMOVDQU8 (AX)(R8*1), K1, Z0
+	VMOVDQU8 (AX)(R9*1), K1, Z4
+	VMOVDQU8 (AX)(R10*1), K1, Z5
+	VPERMB Z1, Z0, Z0
+	VPERMB Z2, Z4, Z4
+	VPERMB Z3, Z5, Z5
+	VPANDQ Z4, Z0, K1, Z0
+	VPTESTMB Z5, Z0, K1, K2
+	KTESTQ K2, K2
+	JNE probebvmistop64
+	ADDQ $64, AX
+	ADDQ $64, BX
+	SUBQ $64, DX
+	JMP probebvmiloop64
+probebvmistop64:
+	KMOVQ K2, CX
+	BSFQ CX, CX
+	ADDQ CX, BX
+probebvmidone64:
+	MOVQ BX, ret+24(FP)
+	VZEROUPPER
+	RET
+
+// asciiPairDirectVBMISkip64 is the large-input direct-load form of the
+// byte-zero and compiled-displacement literal filter. Two VPERMB tables
+// replace per-byte folding and comparison; confirmation retains exact literal
+// meaning.
+TEXT ·asciiPairDirectVBMISkip64(SB), NOSPLIT, $0-32
+	MOVQ ptr+0(FP), AX
+	MOVQ n+8(FP), DX
+	MOVQ probe+16(FP), SI
+	XORQ BX, BX
+	MOVQ $-1, CX
+	KMOVQ CX, K1
+	VMOVDQU8 0(SI), K1, Z1
+	VMOVDQU8 64(SI), K1, Z2
+	MOVBLZX 128(SI), R8
+
+asciipairdirectvbmiquad64:
+	CMPQ DX, $256
+	JL asciipairdirectvbmidouble64
+	VMOVDQU8 (AX), K1, Z0
+	VMOVDQU8 (AX)(R8*1), K1, Z3
+	VMOVDQU8 64(AX), K1, Z4
+	VMOVDQU8 64(AX)(R8*1), K1, Z5
+	VMOVDQU8 128(AX), K1, Z6
+	VMOVDQU8 128(AX)(R8*1), K1, Z7
+	VMOVDQU8 192(AX), K1, Z10
+	VMOVDQU8 192(AX)(R8*1), K1, Z11
+	VPERMB Z1, Z0, Z0
+	VPERMB Z2, Z3, Z3
+	VPTESTMB Z3, Z0, K1, K2
+	VPERMB Z1, Z4, Z4
+	VPERMB Z2, Z5, Z5
+	VPTESTMB Z5, Z4, K1, K3
+	VPERMB Z1, Z6, Z6
+	VPERMB Z2, Z7, Z7
+	VPTESTMB Z7, Z6, K1, K4
+	VPERMB Z1, Z10, Z10
+	VPERMB Z2, Z11, Z11
+	VPTESTMB Z11, Z10, K1, K5
+	KORTESTQ K2, K3
+	JNE asciipairdirectvbmifoundfirstquad64
+	KORTESTQ K4, K5
+	JNE asciipairdirectvbmifoundsecondquad64
+	ADDQ $256, AX
+	ADDQ $256, BX
+	SUBQ $256, DX
+	JMP asciipairdirectvbmiquad64
+asciipairdirectvbmifoundfirstquad64:
+	KMOVQ K2, CX
+	TESTQ CX, CX
+	JNZ asciipairdirectvbmifirststop64
+	KMOVQ K3, CX
+	BSFQ CX, CX
+	ADDQ $64, BX
+	ADDQ CX, BX
+	JMP asciipairdirectvbmidone64
+asciipairdirectvbmifoundsecondquad64:
+	KMOVQ K4, CX
+	TESTQ CX, CX
+	JNZ asciipairdirectvbmithirdstop64
+	KMOVQ K5, CX
+	BSFQ CX, CX
+	ADDQ $192, BX
+	ADDQ CX, BX
+	JMP asciipairdirectvbmidone64
+asciipairdirectvbmithirdstop64:
+	BSFQ CX, CX
+	ADDQ $128, BX
+	ADDQ CX, BX
+	JMP asciipairdirectvbmidone64
+
+asciipairdirectvbmidouble64:
+	CMPQ DX, $128
+	JL asciipairdirectvbmiloop64
+	VMOVDQU8 (AX), K1, Z0
+	VMOVDQU8 (AX)(R8*1), K1, Z3
+	VMOVDQU8 64(AX), K1, Z4
+	VMOVDQU8 64(AX)(R8*1), K1, Z5
+	VPERMB Z1, Z0, Z0
+	VPERMB Z2, Z3, Z3
+	VPTESTMB Z3, Z0, K1, K2
+	VPERMB Z1, Z4, Z4
+	VPERMB Z2, Z5, Z5
+	VPTESTMB Z5, Z4, K1, K3
+	KORTESTQ K2, K3
+	JNE asciipairdirectvbmifounddouble64
+	ADDQ $128, AX
+	ADDQ $128, BX
+	SUBQ $128, DX
+	JMP asciipairdirectvbmidouble64
+asciipairdirectvbmifounddouble64:
+	KMOVQ K2, CX
+	TESTQ CX, CX
+	JNZ asciipairdirectvbmifirststop64
+	KMOVQ K3, CX
+	BSFQ CX, CX
+	ADDQ $64, BX
+	ADDQ CX, BX
+	JMP asciipairdirectvbmidone64
+
+asciipairdirectvbmiloop64:
+	CMPQ DX, $64
+	JL asciipairdirectvbmidone64
+	VMOVDQU8 (AX), K1, Z0
+	VMOVDQU8 (AX)(R8*1), K1, Z3
+	VPERMB Z1, Z0, Z0
+	VPERMB Z2, Z3, Z3
+	VPTESTMB Z3, Z0, K1, K2
+	KTESTQ K2, K2
+	JNE asciipairdirectvbmifirststop64
+	ADDQ $64, AX
+	ADDQ $64, BX
+	SUBQ $64, DX
+	JMP asciipairdirectvbmiloop64
+asciipairdirectvbmifirststop64:
+	KMOVQ K2, CX
+	BSFQ CX, CX
+	ADDQ CX, BX
+asciipairdirectvbmidone64:
+	MOVQ BX, ret+24(FP)
+	VZEROUPPER
+	RET
+
+// asciiPairAnchorVBMISkip64 scans the compiled exact ASCII pair projection.
+// VPERMT2B uses bit six to choose between each pair of 64-byte tables, so it
+// replaces the four Shufti lookups without changing this filter's predicate.
+TEXT ·asciiPairAnchorVBMISkip64(SB), NOSPLIT, $0-32
+	MOVQ ptr+0(FP), AX
+	MOVQ n+8(FP), DX
+	MOVQ filter+16(FP), SI
+	XORQ BX, BX
+	MOVQ $-1, CX
+	KMOVQ CX, K1
+	VMOVDQU8 0(SI), K1, Z1
+	VMOVDQU8 64(SI), K1, Z2
+	VMOVDQU8 128(SI), K1, Z3
+	VMOVDQU8 192(SI), K1, Z4
+
+asciipairanchorvbmiloop64:
+	CMPQ DX, $65
+	JL asciipairanchorvbmidone64
+	VMOVDQU8 (AX), K1, Z0
+	VMOVDQU8 1(AX), K1, Z9
+	VMOVDQA64 Z1, K1, Z10
+	VPERMT2B Z2, Z0, Z10
+	VMOVDQA64 Z3, K1, Z11
+	VPERMT2B Z4, Z9, Z11
+	VPTESTMB Z11, Z10, K1, K2
+	KTESTQ K2, K2
+	JNE asciipairanchorvbmistop64
+	ADDQ $64, AX
+	ADDQ $64, BX
+	SUBQ $64, DX
+	JMP asciipairanchorvbmiloop64
+asciipairanchorvbmistop64:
+	KMOVQ K2, CX
+	BSFQ CX, CX
+	ADDQ CX, BX
+asciipairanchorvbmidone64:
+	MOVQ BX, ret+24(FP)
+	VZEROUPPER
+	RET
+
+// pairPairWordSkip64 compares adjacent raw-byte pairs as words. Separate even
+// and odd source vectors retain every candidate start; BMI2 PDEP interleaves
+// their rare-hit masks only after the block has passed the vector filter.
+TEXT ·pairPairWordSkip64(SB), NOSPLIT, $0-32
+	MOVQ ptr+0(FP), AX
+	MOVQ n+8(FP), DX
+	MOVQ filter+16(FP), SI
+	XORQ BX, BX
+	MOVQ $-1, CX
+	KMOVQ CX, K1
+	MOVWQZX 0(SI), R11
+	VPBROADCASTW R11, K1, Z1
+	MOVWQZX 2(SI), R11
+	VPBROADCASTW R11, K1, Z2
+	MOVWQZX 4(SI), R11
+	VPBROADCASTW R11, K1, Z3
+	MOVWQZX 6(SI), R11
+	VPBROADCASTW R11, K1, Z4
+	MOVBLZX 8(SI), R8
+
+pairpairworddouble64:
+	CMPQ DX, $128
+	JL pairpairwordloop64
+	VMOVDQU8 (AX), K1, Z0
+	VMOVDQU8 1(AX), K1, Z9
+	VMOVDQU8 (AX)(R8*1), K1, Z10
+	VMOVDQU8 1(AX)(R8*1), K1, Z11
+	VMOVDQU8 64(AX), K1, Z12
+	VMOVDQU8 65(AX), K1, Z13
+	VMOVDQU8 64(AX)(R8*1), K1, Z14
+	VMOVDQU8 65(AX)(R8*1), K1, Z15
+
+	// First 64 starts: two primary values, then two confirmation values.
+	VPCMPEQW Z1, Z0, K1, K2
+	VPCMPEQW Z2, Z0, K1, K3
+	KORQ K2, K3, K2
+	VPCMPEQW Z1, Z9, K1, K3
+	VPCMPEQW Z2, Z9, K1, K4
+	KORQ K3, K4, K3
+	VPCMPEQW Z3, Z10, K1, K4
+	VPCMPEQW Z4, Z10, K1, K5
+	KORQ K4, K5, K4
+	KANDQ K2, K4, K2
+	VPCMPEQW Z3, Z11, K1, K4
+	VPCMPEQW Z4, Z11, K1, K5
+	KORQ K4, K5, K4
+	KANDQ K3, K4, K3
+
+	// Second 64 starts are independent, so evaluate them before branching.
+	VPCMPEQW Z1, Z12, K1, K4
+	VPCMPEQW Z2, Z12, K1, K5
+	KORQ K4, K5, K4
+	VPCMPEQW Z1, Z13, K1, K5
+	VPCMPEQW Z2, Z13, K1, K6
+	KORQ K5, K6, K5
+	VPCMPEQW Z3, Z14, K1, K6
+	VPCMPEQW Z4, Z14, K1, K7
+	KORQ K6, K7, K6
+	KANDQ K4, K6, K4
+	VPCMPEQW Z3, Z15, K1, K6
+	VPCMPEQW Z4, Z15, K1, K7
+	KORQ K6, K7, K6
+	KANDQ K5, K6, K5
+	KORTESTQ K2, K3
+	JNE pairpairwordfoundfirstdouble64
+	KORTESTQ K4, K5
+	JNE pairpairwordfoundseconddouble64
+	ADDQ $128, AX
+	ADDQ $128, BX
+	SUBQ $128, DX
+	JMP pairpairworddouble64
+pairpairwordfoundfirstdouble64:
+	KMOVQ K2, CX
+	KMOVQ K3, R11
+	JMP pairpairwordposition64
+pairpairwordfoundseconddouble64:
+	KMOVQ K4, CX
+	KMOVQ K5, R11
+	ADDQ $64, BX
+	JMP pairpairwordposition64
+
+pairpairwordloop64:
+	CMPQ DX, $64
+	JL pairpairworddone64
+	VMOVDQU8 (AX), K1, Z0
+	VMOVDQU8 1(AX), K1, Z9
+	VMOVDQU8 (AX)(R8*1), K1, Z10
+	VMOVDQU8 1(AX)(R8*1), K1, Z11
+	VPCMPEQW Z1, Z0, K1, K2
+	VPCMPEQW Z2, Z0, K1, K3
+	KORQ K2, K3, K2
+	VPCMPEQW Z1, Z9, K1, K3
+	VPCMPEQW Z2, Z9, K1, K4
+	KORQ K3, K4, K3
+	VPCMPEQW Z3, Z10, K1, K4
+	VPCMPEQW Z4, Z10, K1, K5
+	KORQ K4, K5, K4
+	KANDQ K2, K4, K2
+	VPCMPEQW Z3, Z11, K1, K4
+	VPCMPEQW Z4, Z11, K1, K5
+	KORQ K4, K5, K4
+	KANDQ K3, K4, K3
+	KORTESTQ K2, K3
+	JNE pairpairwordfound64
+	ADDQ $64, AX
+	ADDQ $64, BX
+	SUBQ $64, DX
+	JMP pairpairwordloop64
+pairpairwordfound64:
+	KMOVQ K2, CX
+	KMOVQ K3, R11
+
+pairpairwordposition64:
+	// Expand word-lane masks into byte-start positions only after a hit.
+	MOVQ $0x5555555555555555, R8
+	PDEPQ R8, CX, CX
+	MOVQ $0xaaaaaaaaaaaaaaaa, R8
+	PDEPQ R8, R11, R11
+	ORQ R11, CX
+	BSFQ CX, CX
+	ADDQ CX, BX
+pairpairworddone64:
+	MOVQ BX, ret+24(FP)
+	VZEROUPPER
+	RET
+
+// pairPairVBMISkip64 intersects the two raw pair sets with four compiled
+// VPERMB slot tables. The low-six-bit lookup is deliberately conservative;
+// findUnicodePairAnchor confirms every stop through the same decoded plan.
+TEXT ·pairPairVBMISkip64(SB), NOSPLIT, $0-32
+	MOVQ ptr+0(FP), AX
+	MOVQ n+8(FP), DX
+	MOVQ filter+16(FP), SI
+	XORQ BX, BX
+	MOVQ $-1, CX
+	KMOVQ CX, K1
+	VMOVDQU8 0(SI), K1, Z1
+	VMOVDQU8 64(SI), K1, Z2
+	VMOVDQU8 128(SI), K1, Z3
+	VMOVDQU8 192(SI), K1, Z4
+	MOVBLZX 256(SI), R8
+
+pairpairvbmidouble64:
+	CMPQ DX, $128
+	JL pairpairvbmiloop64
+	VMOVDQU8 (AX), K1, Z0
+	VMOVDQU8 1(AX), K1, Z9
+	VMOVDQU8 (AX)(R8*1), K1, Z10
+	VMOVDQU8 1(AX)(R8*1), K1, Z11
+	VMOVDQU8 64(AX), K1, Z12
+	VMOVDQU8 65(AX), K1, Z13
+	VMOVDQU8 64(AX)(R8*1), K1, Z14
+	VMOVDQU8 65(AX)(R8*1), K1, Z15
+
+	VPERMB Z1, Z0, Z0
+	VPERMB Z2, Z9, Z9
+	VPERMB Z3, Z10, Z10
+	VPERMB Z4, Z11, Z11
+	VPTESTMB Z9, Z0, K1, K2
+	VPTESTMB Z11, Z10, K1, K3
+	KANDQ K2, K3, K2
+
+	VPERMB Z1, Z12, Z12
+	VPERMB Z2, Z13, Z13
+	VPERMB Z3, Z14, Z14
+	VPERMB Z4, Z15, Z15
+	VPTESTMB Z13, Z12, K1, K3
+	VPTESTMB Z15, Z14, K1, K4
+	KANDQ K3, K4, K3
+	KORTESTQ K2, K3
+	JNE pairpairvbmifounddouble64
+	ADDQ $128, AX
+	ADDQ $128, BX
+	SUBQ $128, DX
+	JMP pairpairvbmidouble64
+pairpairvbmifounddouble64:
+	KMOVQ K2, CX
+	TESTQ CX, CX
+	JNZ pairpairvbmistop64
+	KMOVQ K3, CX
+	BSFQ CX, CX
+	ADDQ $64, BX
+	ADDQ CX, BX
+	JMP pairpairvbmidone64
+
+pairpairvbmiloop64:
+	CMPQ DX, $64
+	JL pairpairvbmidone64
+	VMOVDQU8 (AX), K1, Z0
+	VMOVDQU8 1(AX), K1, Z9
+	VMOVDQU8 (AX)(R8*1), K1, Z10
+	VMOVDQU8 1(AX)(R8*1), K1, Z11
+	VPERMB Z1, Z0, Z0
+	VPERMB Z2, Z9, Z9
+	VPERMB Z3, Z10, Z10
+	VPERMB Z4, Z11, Z11
+	VPTESTMB Z9, Z0, K1, K2
+	VPTESTMB Z11, Z10, K1, K3
+	KANDQ K2, K3, K2
+	KTESTQ K2, K2
+	JNE pairpairvbmistop64
+	ADDQ $64, AX
+	ADDQ $64, BX
+	SUBQ $64, DX
+	JMP pairpairvbmiloop64
+pairpairvbmistop64:
+	KMOVQ K2, CX
+	BSFQ CX, CX
+	ADDQ CX, BX
+pairpairvbmidone64:
 	MOVQ BX, ret+24(FP)
 	VZEROUPPER
 	RET

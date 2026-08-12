@@ -1,12 +1,9 @@
 // Package casei is an open benchmark arena for UTF-8 case-insensitive
 // substring search.
 //
-// IndexFold below is the function under optimization. It is deliberately the
-// simple, obviously-correct reference form: the tests define the semantics,
-// the benchmarks in bench_test.go define the competition, and CONTEXT.md
-// catalogs every previously known technique. The goal of this repository is
-// an implementation of IndexFold that beats every baseline in the benchmark
-// suite by a wide margin without losing a single test.
+// IndexFold is the function under optimization. The tests define its
+// semantics, the benchmarks in bench_test.go define the competition, and
+// CONTEXT.md catalogs every previously known technique.
 //
 // Semantics — Unicode simple case folding over UTF-8:
 //

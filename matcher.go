@@ -2,13 +2,11 @@ package casei
 
 // Matcher is the multi-needle face of the arena: search for any of a set of
 // patterns under the same Unicode simple-fold semantics as IndexFold.
-// IndexFold is the N=1 special case. Like IndexFold, the implementation
-// below is the deliberately naive reference form — the goal of this
-// repository is a single adaptive engine for which this API and the tests
-// define the contract: per-position sets of UTF-8 encodings under simple
-// folding (elastic-degenerate byte patterns), exact search as the singleton
-// case, multi-needle as the union, one anchoring/verification theory,
-// linear worst case.
+// IndexFold is the N=1 special case. This API and the tests define the
+// contract: per-position sets of UTF-8 encodings under simple folding
+// (elastic-degenerate byte patterns), exact search as the singleton case,
+// multi-needle as the union, one anchoring/verification theory, linear worst
+// case.
 //
 // Contract: Find returns the leftmost match by byte offset; ties at the
 // same offset go to the lowest pattern index (regexp alternation order).
