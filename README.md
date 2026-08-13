@@ -5,9 +5,10 @@ faster than every specialist engine, on every row of an open, reproducible
 benchmark.** `casei.IndexFold` finds one needle; `casei.Matcher` finds many,
 both under Unicode simple case folding (the semantics of `regexp` `(?i)`).
 
-It was not written by hand. It was invented by
-[Perfloop](https://app.perfloop.ai) — an autonomous performance-invention loop
-— pointed at one of the most-executed and worst-served operations in computing.
+It was not written by hand. It was produced by
+[Perfloop](https://app.perfloop.ai) — an autonomous performance optimization
+loop — pointed at one of the most-executed and worst-served operations in
+computing.
 Every candidate it tried, every measurement, and the sealed final proof are
 public: **[the case ↗](https://app.perfloop.ai/t/oss/case_9r9ntnxjd1)**.
 
