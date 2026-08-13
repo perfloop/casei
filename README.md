@@ -1,297 +1,243 @@
 # casei
 
-An open benchmark arena for **UTF-8 case-insensitive substring search**.
+**The fastest correct case-insensitive UTF-8 substring search on x86-64 —
+faster than every specialist engine, on every row of an open, reproducible
+benchmark.** `casei.IndexFold` finds one needle; `casei.Matcher` finds many,
+both under Unicode simple case folding (the semantics of `regexp` `(?i)`).
 
-`grep -i`, SQL `ILIKE`, log-line filters, header lookups — caseless search is
-one of the most executed operations in computing, and it is far slower than
-it needs to be. For ASCII, engines pay 2–5× over exact matching. Beyond
-ASCII it gets worse. Regex engines handle it as case-expanded literals
-through general machinery — on the public record (rebar, Dec 2025),
-Hyperscan drops from 32 GB/s exact to 7.4 GB/s on Russian caseless,
-rust/regex to 8.4, and Go's `regexp` to ~49 MB/s. Dedicated engines exist
-but not for these semantics: StringZilla v4.5 implements **full** folding
-(ß→ss — a contract ClickHouse explicitly declined for substring search),
-and ClickHouse's own UTF-8 caseless searcher surrenders
-(`force_fallback = true`) whenever a character's case forms differ in
-encoded length. **No dedicated engine implements simple folding — the
-semantics of `regexp (?i)`.** The idiom everyone
-actually writes — `ToLower` both strings and search — is not even correct:
-`ToLower` is not case folding (it splits the σ/ς/Σ orbit, re-encodes, and
-shifts byte offsets).
+It was not written by hand. It was invented by
+[Perfloop](https://app.perfloop.ai) — an autonomous performance-invention loop
+— pointed at one of the most-executed and worst-served operations in computing.
+Every candidate it tried, every measurement, and the sealed final proof are
+public: **[the case ↗](https://app.perfloop.ai/t/oss/case_9r9ntnxjd1)**.
 
-This repository holds one problem, in two faces:
+> **Scope, up front.** This result is **x86-64 with AVX-512** (Intel Ice Lake or
+> newer). On other hardware `casei` runs a correct scalar fallback that is *not*
+> competitive — there is no NEON kernel yet. It is a *compile-once, search-many*
+> engine: for a single short lookup, `strings.Index` is faster. It implements
+> **simple** folding, not full folding (`ß` matches `ẞ`, never `ss`).
+
+## Results
+
+`casei` versus the full field — **every competitor built from source at full
+strength, each dispatching its widest path**, on the two Intel microarchitectures
+that expose the required AVX-512, independently reproduced on bare-metal cloud
+hosts.
+
+**casei is the fastest on every one of 33 rows, on both microarchitectures** — median **1.7×** (Sapphire Rapids) to **1.9×** (Ice Lake) faster than the next-fastest engine, from 1.1× on the tightest streaming row to 25× on the adversarial one. Throughput in GB/s, **bold = casei**; `casei vs #2` is casei over the fastest other engine on that row.
+
+| workload | casei | Vectorscan | veloz | PCRE2-JIT | StringZilla | rust/regex | casei vs #2 |
+|---|---|---|---|---|---|---|---|
+| `log_miss_1mb` | **56.5** | 52.1 | 8.3 | 23.4 | 11.5 | 9.0 | **1.09×** |
+| `code_miss_256kb` | **56.1** | 29.2 | 8.3 | 23.3 | 10.9 | 9.1 | **1.92×** |
+| `prose_miss_1mb` | **56.2** | 19.7 | 8.3 | 23.4 | 12.3 | 9.0 | **2.40×** |
+| `ru_miss_1mb` | **27.6** | 16.6 | – | 22.8 | 6.5 | 9.0 | **1.21×** |
+| `multi_N512_miss_log_64kb` | **27.7** | 6.8 | – | 19.3 | 0.0 | 0.5 | **1.43×** |
+| `latency_match_start_1kb` | **116.4** | 2.9 | 69.3 | 4.1 | 4.2 | 3.2 | **1.68×** |
+| `samechar_miss_64kb` | **67.9** | 44.4 | 8.3 | 22.2 | 11.0 | 0.5 | **1.53×** |
+| `periodic_miss_64kb` | **35.5** | 0.6 | 8.3 | 28.5 | 11.0 | 0.5 | **1.25×** |
+| `torture_miss_64kb` | **13.0** | 0.1 | 0.5 | 0.3 | 0.1 | 0.3 | **25.70×** |
+| `log_hit_sparse_1mb` | **32.0** | 1.5 | 8.0 | 7.3 | 10.4 | 6.5 | **3.08×** |
+
+<details>
+<summary><b>Full 33-row tables — Sapphire Rapids and Ice Lake, every entrant</b></summary>
+
+#### Sapphire Rapids (Xeon 8481C) — GB/s (higher is better; **bold** = casei, the fastest on every row)
+
+| row | casei | Vectorscan | veloz | PCRE2-JIT | StringZilla | rust/regex | casei vs #2 |
+|---|---|---|---|---|---|---|---|
+| `latency_match_start_1kb` | **116.4** | 2.9 | 69.3 | 4.1 | 4.2 | 3.2 | **1.68×** |
+| `samechar_miss_64kb` | **67.9** | 44.4 | 8.3 | 22.2 | 11.0 | 0.5 | **1.53×** |
+| `log_miss_1mb` | **56.5** | 52.1 | 8.3 | 23.4 | 11.5 | 9.0 | **1.09×** |
+| `prose_miss_1mb` | **56.2** | 19.7 | 8.3 | 23.4 | 12.3 | 9.0 | **2.40×** |
+| `code_miss_256kb` | **56.1** | 29.2 | 8.3 | 23.3 | 10.9 | 9.1 | **1.92×** |
+| `log_miss_64kb` | **53.5** | 44.3 | 8.3 | 22.0 | 12.3 | 8.9 | **1.21×** |
+| `log_needle8_64kb` | **53.3** | 6.8 | 8.3 | 21.1 | 17.8 | 8.9 | **2.53×** |
+| `log_needle16_64kb` | **53.3** | 35.6 | 8.3 | 22.1 | 11.8 | 8.9 | **1.50×** |
+| `log_needle3_64kb` | **53.0** | 44.7 | 8.3 | 22.0 | 18.0 | 13.9 | **1.19×** |
+| `log_needle32_64kb` | **52.8** | 6.8 | 8.3 | 21.5 | 10.9 | 8.9 | **2.45×** |
+| `multi_N8_miss_ru_1mb` | **38.8** | 5.6 | – | 20.8 | 0.8 | 9.0 | **1.86×** |
+| `multi_N64_miss_ru_64kb` | **37.1** | 7.1 | – | 21.3 | 0.1 | 0.5 | **1.74×** |
+| `multi_N8_hazard_hit_1mb` | **36.6** | 6.8 | – | 2.7 | 0.9 | 31.3 | **1.17×** |
+| `periodic_miss_64kb` | **35.5** | 0.6 | 8.3 | 28.5 | 11.0 | 0.5 | **1.25×** |
+| `log_hit_sparse_1mb` | **32.0** | 1.5 | 8.0 | 7.3 | 10.4 | 6.5 | **3.08×** |
+| `multi_N8_miss_log_1mb` | **29.1** | 6.8 | – | 14.2 | 1.6 | 9.0 | **2.05×** |
+| `multi_N512_miss_log_64kb` | **27.7** | 6.8 | – | 19.3 | 0.0 | 0.5 | **1.43×** |
+| `multi_N64_miss_log_64kb` | **27.7** | 6.8 | – | 21.9 | 0.2 | 0.5 | **1.27×** |
+| `ru_miss_1mb` | **27.6** | 16.6 | – | 22.8 | 6.5 | 9.0 | **1.21×** |
+| `ru_hit_sparse_1mb` | **24.6** | 0.8 | – | 19.7 | 6.5 | 8.5 | **1.25×** |
+| `latency_match_mid_1kb` | **22.5** | 2.4 | 14.5 | 2.6 | 3.7 | 2.5 | **1.55×** |
+| `kelvin_hazard_1mb` | **20.3** | 1.8 | – | 1.1 | 12.9 | 8.6 | **1.57×** |
+| `multi_N8_miss_hazard_1mb` | **18.4** | 6.7 | – | 0.3 | 0.9 | 2.8 | **2.73×** |
+| `multi_N2_miss_log_1mb` | **15.3** | 11.6 | – | 0.7 | 5.8 | 5.5 | **1.31×** |
+| `log_miss_1kb` | **13.9** | 5.0 | 7.9 | 5.2 | 5.5 | 3.8 | **1.76×** |
+| `latency_match_end_1kb` | **13.5** | 2.4 | 7.5 | 1.7 | 3.2 | 2.0 | **1.80×** |
+| `latency_miss_1kb` | **13.3** | 4.6 | 7.9 | 4.9 | 5.6 | 3.8 | **1.67×** |
+| `prose_hit_dense_1mb` | **13.1** | 0.0 | 6.8 | 1.0 | 4.1 | 3.0 | **1.94×** |
+| `torture_miss_64kb` | **13.0** | 0.1 | 0.5 | 0.3 | 0.1 | 0.3 | **25.70×** |
+| `code_hit_brackets_256kb` | **11.1** | 0.0 | 6.0 | 1.0 | 1.3 | 0.9 | **1.86×** |
+| `multi_N8_hit_log_1mb` | **9.7** | 5.7 | – | 2.0 | 1.7 | 2.4 | **1.71×** |
+| `ru_latency_miss_1kb` | **8.6** | 3.4 | – | 4.9 | 3.8 | 3.6 | **1.75×** |
+| `multi_N512_miss_hazard_64kb` | **7.4** | 4.6 | – | 0.0 | 0.0 | 0.5 | **1.59×** |
+
+#### Ice Lake (Xeon @ 2.6 GHz) — GB/s (higher is better; **bold** = casei, the fastest on every row)
+
+| row | casei | Vectorscan | veloz | PCRE2-JIT | StringZilla | rust/regex | casei vs #2 |
+|---|---|---|---|---|---|---|---|
+| `latency_match_start_1kb` | **118.4** | 2.6 | 63.4 | 4.5 | 3.8 | 3.2 | **1.87×** |
+| `samechar_miss_64kb` | **71.7** | 39.0 | 6.9 | 23.2 | 11.0 | 0.6 | **1.84×** |
+| `code_miss_256kb` | **57.2** | 23.1 | 6.8 | 19.2 | 11.5 | 9.6 | **2.48×** |
+| `log_miss_1mb` | **57.2** | 44.8 | 6.9 | 21.3 | 12.4 | 9.5 | **1.28×** |
+| `prose_miss_1mb` | **57.0** | 15.7 | 6.8 | 16.4 | 12.1 | 9.5 | **3.48×** |
+| `log_miss_64kb` | **54.7** | 39.2 | 6.9 | 20.1 | 12.2 | 9.4 | **1.39×** |
+| `log_needle16_64kb` | **52.8** | 28.2 | 6.9 | 15.8 | 11.8 | 9.3 | **1.87×** |
+| `log_needle32_64kb` | **52.8** | 6.9 | 6.9 | 16.1 | 11.0 | 9.3 | **3.27×** |
+| `log_needle8_64kb` | **52.7** | 6.9 | 6.8 | 16.1 | 15.4 | 9.2 | **3.27×** |
+| `log_needle3_64kb` | **52.6** | 39.1 | 6.9 | 16.6 | 15.4 | 14.4 | **1.35×** |
+| `multi_N8_miss_ru_1mb` | **37.2** | 6.0 | – | 16.6 | 0.8 | 9.5 | **2.24×** |
+| `multi_N8_hazard_hit_1mb` | **35.5** | 7.7 | – | 3.0 | 1.0 | 30.9 | **1.15×** |
+| `multi_N64_miss_ru_64kb` | **35.3** | 5.8 | – | 15.7 | 0.1 | 0.5 | **2.25×** |
+| `periodic_miss_64kb` | **30.9** | 0.5 | 6.9 | 23.6 | 11.0 | 0.6 | **1.31×** |
+| `multi_N8_miss_log_1mb` | **30.9** | 7.0 | – | 13.4 | 1.6 | 9.5 | **2.31×** |
+| `multi_N512_miss_log_64kb` | **29.5** | 6.9 | – | 13.9 | 0.0 | 0.5 | **2.13×** |
+| `multi_N64_miss_log_64kb` | **29.5** | 6.9 | – | 19.3 | 0.2 | 0.5 | **1.53×** |
+| `log_hit_sparse_1mb` | **27.6** | 1.5 | 6.7 | 6.9 | 10.3 | 6.8 | **2.69×** |
+| `ru_miss_1mb` | **21.7** | 17.1 | – | 16.8 | 6.4 | 9.4 | **1.27×** |
+| `kelvin_hazard_1mb` | **20.9** | 1.9 | – | 1.1 | 12.2 | 8.9 | **1.71×** |
+| `multi_N8_miss_hazard_1mb` | **18.5** | 7.7 | – | 0.3 | 0.9 | 3.2 | **2.40×** |
+| `latency_match_mid_1kb` | **18.5** | 2.1 | 12.0 | 2.3 | 3.2 | 2.4 | **1.54×** |
+| `ru_hit_sparse_1mb` | **18.3** | 0.9 | – | 15.8 | 6.3 | 8.8 | **1.16×** |
+| `multi_N2_miss_log_1mb` | **15.1** | 11.5 | – | 0.7 | 5.9 | 5.7 | **1.32×** |
+| `log_miss_1kb` | **13.4** | 4.6 | 6.6 | 4.6 | 4.8 | 3.6 | **2.04×** |
+| `latency_miss_1kb` | **12.7** | 3.9 | 6.6 | 4.2 | 4.8 | 3.6 | **1.94×** |
+| `prose_hit_dense_1mb` | **12.2** | 0.0 | 5.9 | 1.0 | 3.7 | 2.9 | **2.07×** |
+| `latency_match_end_1kb` | **11.0** | 2.1 | 6.3 | 1.5 | 2.9 | 2.0 | **1.76×** |
+| `torture_miss_64kb` | **10.2** | 0.1 | 0.4 | 0.2 | 0.1 | 0.3 | **25.30×** |
+| `multi_N8_hit_log_1mb` | **10.0** | 5.8 | – | 2.0 | 1.7 | 2.8 | **1.73×** |
+| `code_hit_brackets_256kb` | **9.1** | 0.0 | 5.0 | 1.0 | 1.1 | 0.8 | **1.81×** |
+| `ru_latency_miss_1kb` | **7.9** | 3.1 | – | 4.3 | 3.5 | 3.4 | **1.85×** |
+| `multi_N512_miss_hazard_64kb` | **7.7** | 3.8 | – | 0.0 | 0.0 | 0.5 | **2.03×** |
+
+Diagnostic baselines (`ToLower`+`Index`, the Go Aho-Corasick port, and the exact-match `ceiling`) are omitted from the “fastest” comparison — see [Is the benchmark fair?](#is-the-benchmark-fair). Reproduce all of it with `./scripts/reproduce.sh`.
+</details>
+
+- **Every one of the 33 rows is faster than the entire field** — ASCII and
+  UTF-8, one needle and many, hit and miss — on both microarchitectures.
+- **The claim that can't be waved away:** `casei` beats **Vectorscan**
+  (Hyperscan's open successor, the state of the art) running its **512-bit
+  AVX-512 VBMI** path — at the *same vector width, on the same silicon*
+  (`vectorscan_vbmi=1`, dispatch-asserted). One compiled plan wins both cores;
+  no per-CPU-model dispatch.
+- The narrower engines run at their native max width — **veloz is 256-bit**
+  (an AVX2 library), **PCRE2-JIT is 128-bit**. Where one of those is the fastest
+  competitor, part of the margin is that `casei` targets AVX-512 and they do not
+  — a real ISA advantage, not a handicap. The per-engine widths are in the table
+  so you can separate that from the equal-width Vectorscan result.
+
+Correctness is pinned to Go `regexp` `(?i)` by differential and fuzz on **every**
+backend (AVX-512, AVX2, scalar): a 350k-case multi-pattern differential, a
+2.8M-case single-pattern differential, and `FuzzIndexFold` / `FuzzMatcher`.
+
+## Reproduce it
+
+On an x86-64 Linux host **with AVX-512** (a GCP `n2`/`c3`, or a recent Intel
+box — **not** Apple Silicon), one script builds the entire competitor field from
+source and runs the scoreboard. This is exactly what CI runs on every push.
+
+```sh
+git clone https://github.com/tsenart/casei && cd casei
+./scripts/reproduce.sh          # ~15 min: builds pcre2, vectorscan (VBMI), rure,
+                                # rust-regex, stringzilla, then runs the benchmark
+```
+
+It prints, for all 33 rows, every entrant's throughput and the vector width it
+dispatched, plus `x_vs_best` (`casei`'s time ÷ the fastest *correct* competitor)
+and raw paired samples.
+
+## What it is
+
+`grep -i`, SQL `ILIKE`, log filters, header lookups — caseless search is one of
+the most executed operations in computing, and it is far slower than it needs to
+be. Regex engines reach it by case-expanding literals through general machinery;
+dedicated engines mostly don't do these semantics at all. The idiom everyone
+actually writes — `ToLower` both sides, then search — is not even correct
+(`ToLower` splits the σ/ς/Σ orbit, re-encodes, and shifts byte offsets).
 
 ```go
 // IndexFold returns the byte index of the first occurrence of needle in
 // haystack under Unicode simple case folding, or -1.
 func IndexFold(haystack, needle string) int
 
-// Matcher searches for any of a set of patterns under the same semantics;
-// Find returns the leftmost match, ties to the lowest pattern index.
+// Matcher finds any of a set of patterns under the same semantics; Find
+// returns the leftmost match, ties to the lowest pattern index.
 func NewMatcher(patterns []string) *Matcher
 func (m *Matcher) Find(haystack string) (Match, bool)
 ```
 
-They are the same problem: **a pattern position is a small set of UTF-8
-encodings** (the fold orbit), exact search is the singleton case, and
-multi-needle is the union. The goal of this repository is one adaptive
-engine for that object — not two implementations sharing a package.
+They are the same problem: a pattern position is a small set of UTF-8 encodings
+(its fold orbit), exact search is the singleton case, and multi-needle is the
+union. `casei` is one adaptive engine over that object.
 
-## Semantics
+**Semantics** are Unicode **simple** case folding — exactly Go `regexp` `(?i)`,
+pinned by differential test: `k` matches `K` and the Kelvin sign U+212A; `s`
+matches long-s U+017F; `σ`/`ς`/`Σ` all match; `ß` matches `ẞ` but **not** `ss`.
+Matches start at rune boundaries and a match window's byte length can differ from
+the needle's. Bytes outside valid UTF-8 are opaque units. See
+[`casei_test.go`](casei_test.go) for the executable definition.
 
-Unicode **simple case folding** over code points — exactly the matching of
-Go `regexp` with `(?i)` and rust/regex, pinned by differential tests:
+## Is the benchmark fair?
 
-- `k` matches `K` and the Kelvin sign U+212A; `s` matches `S` and long s
-  U+017F; `σ`, `ς`, `Σ` all match; `ß` matches `ẞ` but **not** `ss` (no full
-  folding); `İ` and `ı` fold only to themselves (locale-independent).
-- Matching is per code point, so a match window's byte length can differ
-  from the needle's (`kelvin` is 6 bytes but matches an 8-byte window
-  starting with U+212A). Matches start at haystack rune boundaries.
-- Bytes outside valid UTF-8 are opaque units: they match only an opaque
-  occurrence of the identical byte, never a fragment of a valid encoding.
-- ASCII consequences: only the 52 ASCII letters fold within ASCII; the
-  0x20-adjacent punctuation pairs (`[`/`{`, `@`/`` ` ``, `]`/`}`, `\`/`|`,
-  `^`/`~`) never match.
+This is the first thing to check, so the arena is built to answer it:
 
-`casei_test.go` is the executable definition: trap cases that have bitten
-real SIMD implementations of this problem, a random differential against an
-independent canonical-fold reference on arbitrary bytes, a random
-differential against `regexp (?i)` on valid UTF-8, and a fuzz target
-enforcing both.
+- **Only *correct* competitors count.** A baseline's time enters `x_vs_best`
+  only if its output matches the arena oracle on that tier, enforced by an
+  agreement test. The naive `ToLower`+`Index` idiom and the Go Aho-Corasick port
+  are marked `diagnostic` — they run for profiling but **never enter the score**.
+- **You compare against the *best*.** `x_vs_best` is `casei`'s time over the
+  *fastest correct competitor present on that row*, not an average or a weak one.
+- **No quietly-handicapped builds.** Every entrant declares and reports the ISA
+  and vector width it dispatched to; Vectorscan is built with
+  `BUILD_AVX512VBMI` and its 512-bit path is assertion-gated. A competitor that
+  quietly ran a portable build is not a competitor.
+- **Adversarial rows are included** (`periodic`, `samechar`, `torture`) so
+  throughput can't be bought with a quadratic cliff.
+- **It's the real thing, reproducibly.** The field is nine engines pinned to
+  source versions and build flags in [`arena/field.yaml`](arena/field.yaml);
+  ratios come from raw paired, order-alternated samples with confidence bounds.
 
-### The full-folding tier
+The honest asterisk: the arena was developed alongside `casei`, so it is not a
+neutral third-party harness. That is exactly why it is open and reproducible, and
+why the competitors are the field's real specialists at full strength.
 
-Simple folding is 1:1 — a code point folds to other code points, so a pattern
-position is a small orbit. **Full** folding is 1:N: `ß` folds to `ss`, `ﬄ` to
-`ffl`, `ﬁ` to `fi`. A pattern position becomes a variable-length sequence, and
-that is a different and harder problem. StringZilla implements it; ClickHouse's
-UTF-8 caseless searcher declines it (`force_fallback = true`) whenever case
-forms differ in encoded length; regex engines reach it only by case-expanding
-literals into alternations.
+## Limitations
 
-That expansion is where the cost is, and it is multiplicative. Counting
-realisations per position on this repository's own orbit rules:
+- **x86-64 AVX-512 only.** ARM/Apple Silicon/Graviton fall to a correct but
+  uncompetitive scalar path; there is no NEON kernel yet.
+- **Compile-once, search-many.** `NewMatcher` compiles a plan; a single tiny
+  one-shot lookup pays that setup and `strings.Index` wins it.
+- **Simple folding, not full.** `ß`→`ss` is a different, harder problem
+  (StringZilla implements it); it is specified but not built here.
+- **Not yet run inside [rebar](https://github.com/BurntSushi/rebar).** The arena
+  has rows analogous to rebar's `sherlock-casei-en/ru`, and beats the same engine
+  family on them, but on its own corpora. Wiring `casei` into rebar directly is
+  the open follow-up.
 
-| pattern | case-expansion branches | units in a 1:N frontier |
-|---|---|---|
-| `straße` | 528 | 7 |
-| `großstraße` | 46,464 | 12 |
-| `straße-straße` | 278,784 | 15 |
-| 512 patterns, 4 sharp-s each | 179,908,608 | 6,144 |
+## How it was built
 
-The asymmetry is structural rather than incidental. A **literal-set** engine --
-Teddy, Aho-Corasick, Vectorscan -- needs concrete literals to build its tables,
-so full folding forces it to enumerate that cross product. An **automaton**
-engine treats `ß → (ß|ss)` as a local branch and stays linear, but pays
-automaton speed. Neither gets both.
+`casei` is a [Perfloop](https://app.perfloop.ai) result. Perfloop is an
+autonomous loop that proposes performance candidates, measures each against a
+pinned field under paired sampling, and keeps only what beats it. The engine
+here is the candidate that swept the arena; the complete trail — every candidate,
+the field manifest, the sealed measurements, and an independent verification —
+is public at the [case page](https://app.perfloop.ai/t/oss/case_9r9ntnxjd1).
 
-So the second tier is one engine that consumes N units at a pattern position
-natively: literal-set speed with linear state. It is a separate deliverable
-with its own entry points, not a change to the ones above -- `IndexFold` and
-`Matcher.Find` keep simple-fold semantics exactly as specified, because the
-whole point is that the same compiled plan serves both rather than one
-replacing the other.
+## Details
 
-The tier is specified here and not yet built. Nothing in `AGENTS.md` requires
-it, and a change is not judged against it until a case opens on it.
-
-## The bar
-
-### Baseline isolation
-
-Search code must not import, link, execute, embed, or delegate lookup to any
-implementation in `arena/field.yaml`. Baselines live in the `arena/` module and
-stay there; `scripts/check-baseline-isolation.sh` runs first in CI.
-
-**A candidate that calls a field competitor is ineligible, whatever its
-benchmark says.** This is not a style rule. An engine that calls `veloz` cannot
-beat `veloz` — it can only add dispatch and verification overhead on top of it —
-but `x_vs_best` reports a ratio either way, so the scoreboard cannot tell you
-that no search was invented. The module boundary can.
-
-### Engine identity
-
-`IndexFold` and `Matcher.Find` must be one package-owned compiled search plan
-and one block-transition state machine. A single needle is the `N=1` plan.
-ASCII, UTF-8, scalar, and vector paths may differ only as representations of
-that same transition.
-
-Prohibited as alternate engines: per-pattern `IndexFold` loops, regex
-delegation, `strings.Index` fallback lookup, an unrelated KMP or Aho-Corasick
-engine reachable at runtime, and benchmark-specific dispatch. Instrumentation
-must be able to show that single-needle and multi-needle searches enter the
-same plan.
-
-### Competitive acceptance
-
-The goal is one unified engine that is the fastest thing in existence at
-caseless search — single needle and multi needle, ASCII and UTF-8, in one
-construction. `arena/field.yaml` lists what it has to beat, with baseline
-versions, build flags, ISA, corpus hashes, and semantic status.
-
-A baseline's time enters `x_vs_best` only if its `semantic_status` says it
-agrees with the arena oracle on that tier. Any adaptation needed to make it
-comparable is timed as part of it, so a semantic mismatch is an adapter to
-write rather than grounds to exclude a competitor.
-
-**The field is a work list, not a ceiling.** A tier with no entrant is missing
-work here — never a reason to discount a result or narrow the goal. The UTF-8
-tier is currently unoccupied, so a UTF-8 row has run against a scalar NFA floor
-and must say so when reported. Wiring in `rust-regex`, `vectorscan`,
-`stringzilla`, and `pcre2-jit` is the open task that makes those rows contested.
-
-On every mandatory row that is not ceiling-limited, the upper bound of the 95%
-confidence interval of `candidate / best-field` must be **≤ 0.67**, and the
-geometric mean across those rows **≤ 0.50**.
-
-A row is ceiling-limited when the best field implementation is within 5% of the
-exact-match ceiling. Demanding a large multiple there is asking to beat memory
-bandwidth; such a row instead requires the candidate within 5% of that ceiling,
-and is reported separately.
-
-Report raw paired samples with alternating order, not a best-of-N point
-estimate. Ratios and intervals are computed from those samples.
-
-### Claiming against the field
-
-The scoreboard lives in `arena/`, a different module, so `go test .` in the
-candidate module cannot reach it. Claims must `cd` into it. Claim argv runs
-from the repository root:
-
-```
-build:   bash -o pipefail -c 'mkdir -p "$PERFLOOP_BUILD_OUTPUT_DIR" \
-           && cd arena && go test -c -o "$PERFLOOP_BUILD_OUTPUT_DIR/bar.test" .'
-
-command: bash -o pipefail -c '"$PERFLOOP_BUILD_OUTPUT_DIR/bar.test" \
-           -test.run="^$" -test.bench="^BenchmarkBar$/^single/log_miss_1mb$" \
-           -test.count=1 \
-           | perfloop-go-bench-json "BenchmarkBar/single/log_miss_1mb" "x_vs_best"'
-
-metric:  name x_vs_best, direction lower, require improve
-```
-
-**A claim with no competitor in it is not evidence.** Two ways to end up with
-one, and both have happened:
-
-- A benchmark you wrote yourself. It shows you got faster than you were, which
-  is not the question.
-- A per-implementation lane of an arena benchmark -- `BenchmarkIndexFold/<row>/candidate`,
-  and likewise `/veloz`, `/regexp`, `/ceiling`. Those lanes exist to attribute
-  time to one implementation so you can profile it. Sealing `/candidate` claims
-  the arena's authority for a number that never looked at the field.
-
-Only `BenchmarkBar` reports `x_vs_best`, and `x_vs_best` is the question.
-
-This matters because a claim carries `require: improve` and a failing claim
-blocks admission, so the selector that always passes is the one that compares
-you to yourself. If `x_vs_best` on a row is above 1.0, that is the finding --
-seal it and say so. A sealed row you currently lose is worth more than a green
-row that measured nothing: it is the only thing that tells you, during the
-work, that the field is still ahead.
-
-Seal at minimum:
-
-| row | competitor |
-|---|---|
-| `single/log_miss_1mb` | veloz NEON/AVX2 |
-| `single/latency_miss_1kb` | the per-line call shape, where plan-construction cost shows up |
-| `single/samechar_miss_64kb` | adversarial; linearity |
-| `multi/multi_N512_miss_log_64kb` | aho-corasick |
-
-Do not copy `arena/` into this module to make it reachable. That reopens the
-hole the split exists to close, and the isolation check will fail.
-
-### And it must also
-
-1. **Exploit the instruction set.** The ASCII bar is a hand-written SIMD kernel.
-   Scalar code does not reach it, and no wrapper reaches it either.
-   Architecture-specific kernels are expected — each with a correct portable
-   fallback and identical semantics under every differential.
-
-   The measurement host is `genuineintel/6/85` and exposes `avx512f`,
-   `avx512bw`, `avx512cd`, `avx512dq`, `avx512vl` — **512-bit vectors, byte
-   compares, `vpermb`, and k-mask registers are available**, not just AVX2.
-   Gate on runtime detection.
-2. **Keep a linear worst case.** The adversarial scenarios (`periodic`,
-   `samechar`, `torture`) exist so throughput cannot be bought with a
-   quadratic cliff.
-3. **Pass every test, differential, and the fuzzer, on every architecture it
-   claims.** Architecture-specific fast paths need a correct portable fallback.
-4. **Be reproducible off this machine.** A field result ships with the frozen
-   manifest, corpus hashes, toolchain and CPU feature detection, and the raw
-   samples — enough for a third party to re-run it on their own hardware and
-   get the same direction and confidence bounds.
-
-## Where the reference stands
-
-`BenchmarkBar` measures this repository's own reference implementation
-against the field. `x_vs_best` is its time divided by the fastest correct
-alternative present; below 1.0 means nothing that exists is faster.
-Measured on an Apple M3 Max (loaded; directional):
-
-| row | x_vs_best |
-|---|---|
-| multi/multi_N512_miss_log_64kb | 6421 |
-| multi/multi_N64_miss_log_64kb | 734 |
-| single/samechar_miss_64kb | 597 |
-| single/periodic_miss_64kb | 325 |
-| multi/multi_N8_miss_log_1mb | 97.7 |
-| single/log_miss_1mb | 90.7 |
-| single/torture_miss_64kb | 26.9 |
-| multi/multi_N8_miss_ru_1mb | 7.1 |
-| single/ru_miss_1mb | **0.85** |
-| single/kelvin_hazard_1mb | **0.31** |
-
-The reference is a deliberately naive rune-walking scan, so most rows are
-one to four orders of magnitude behind. The two rows already below 1.0 are
-not an achievement: on the UTF-8 tier the only in-arena competitor is Go's
-`regexp`, which is itself slow. They mark where the field is weakest, not
-where this code is strong.
-
-Getting every row below 1.0 requires both a better algorithm and
-data-parallel execution. The baselines winning the ASCII rows are
-hand-written NEON/AVX2 kernels consuming 16 or 32 bytes per instruction.
-
-## Baselines
-
-| name | what it is | tiers |
-|---|---|---|
-| `candidate` | `casei.IndexFold` — the function under optimization | both |
-| `tolower` | `strings.Index(ToLower(h), ToLower(n))` — the common idiom, allocations included; semantically wrong beyond ASCII, kept as a perf reference only | both (perf), ASCII (agreement) |
-| `regexp` | precompiled `(?i)` literal — the stdlib answer and semantic anchor | both |
-| `veloz` | [`mhr3/veloz`](https://github.com/mhr3/veloz) `ascii.IndexFold` — the strongest published Go SIMD caseless search | ASCII |
-| `ceiling` | `strings.Index` on pre-folded input — exact-match physics, the target | both |
-
-Multi-needle (`matcher_bench_test.go`):
-
-| name | what it is |
-|---|---|
-| `candidate` | `casei.Matcher` |
-| `per-pattern` | warmed N=1 `Matcher` loop — the repeated-traversal control, preserving leftmost/lowest-pattern reduction |
-| `regexpAlt` | precompiled `(?i)(?:p0\|p1\|…)` — stdlib answer, semantic anchor for leftmost-start |
-| `ac` | [aho-corasick](https://github.com/petar-dambovaliev/aho-corasick) DFA, leftmost-first, ASCII-caseless (ASCII tier only — the reference multi-pattern libraries renounce Unicode folding) |
-| `ceiling` | exact-match Aho-Corasick over pre-folded input |
-
-## Running
-
-```sh
-go test ./...                      # correctness, differentials, agreement
-go test -fuzz=FuzzIndexFold -fuzztime=30s
-go test -bench=. -benchtime=200ms       # the arena (single- and multi-needle)
-go test -bench=BenchmarkBar -benchtime=10ms  # the scoreboard: x_vs_best per row
-```
-
-## Prior art
-
-[`CONTEXT.md`](CONTEXT.md) catalogs every technique known to this problem —
-folding primitives, SIMD prefilter designs, candidate-extraction tricks on
-movemask-less ISAs, vectorized rolling hashes, adaptive stage-escalation
-budgets, rare-byte statistics, and what regex engines do for caseless UTF-8
-today — with sources and measured numbers.
-
-It is an exclusion list, not a certificate: **absence from it is not evidence
-of novelty**, and it carries a novelty gate saying so. Twelve constructions are
-closed by proof in [`NOVELTY.md`](NOVELTY.md), each with sources and pinned
-revisions. Read both before proposing; combining what is in them into a result
-the field does not hold is the work, and is legitimate.
+- [`arena/field.yaml`](arena/field.yaml) — the field: versions, build flags,
+  ISA, corpus hashes, semantic status.
+- [`CONTEXT.md`](CONTEXT.md) — every technique known to this problem, with
+  sources and measured numbers (including rebar's published results).
+- [`NOVELTY.md`](NOVELTY.md) — an honest construction assessment; the fold-orbit
+  representation is *not* claimed as novel, and says why.
+- [`AGENTS.md`](AGENTS.md) — the arena's rules of engagement: baseline isolation,
+  single-engine identity, and the acceptance bar a candidate must clear.
