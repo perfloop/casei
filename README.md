@@ -268,6 +268,7 @@ Multi-needle (`matcher_bench_test.go`):
 | name | what it is |
 |---|---|
 | `candidate` | `casei.Matcher` |
+| `per-pattern` | warmed N=1 `Matcher` loop — the repeated-traversal control, preserving leftmost/lowest-pattern reduction |
 | `regexpAlt` | precompiled `(?i)(?:p0\|p1\|…)` — stdlib answer, semantic anchor for leftmost-start |
 | `ac` | [aho-corasick](https://github.com/petar-dambovaliev/aho-corasick) DFA, leftmost-first, ASCII-caseless (ASCII tier only — the reference multi-pattern libraries renounce Unicode folding) |
 | `ceiling` | exact-match Aho-Corasick over pre-folded input |

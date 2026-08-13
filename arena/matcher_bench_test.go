@@ -4,6 +4,7 @@ package arena_test
 // Baselines:
 //
 //   candidate  - casei.Matcher (naive reference form, under optimization)
+//   per-pattern - warmed N=1 Matcher loop: the repeated-traversal control
 //   regexpAlt  - precompiled (?i)(?:p0|p1|...): the stdlib answer and the
 //                semantic anchor for leftmost-start
 //   pcre2-jit  - precompiled PCRE2 caseless UTF-8 alternation, with JIT
@@ -53,11 +54,16 @@ func genNeedles(n int, format string) []string {
 
 var multiScenarios = func() []multiScenario {
 	logs1m := buildLogCorpus(1 << 20)
+	prose1m := buildProseCorpus(1 << 20)
 	cyr1m := buildWordCorpus(cyrillicWords, 1<<20)
 
 	hit8 := []string{
 		"fatal panic", "segfault detected", "oom killed", "disk full",
 		"Payment Declined", "quota exceeded", "handshake failed", "watchdog fired",
+	}
+	hazard8 := []string{
+		"щупальце", "kelvin", "zygomorphic", "ſecret",
+		"Zq9xW", "grofse", "ΤΈΛΟΣ", "watchdog",
 	}
 	return []multiScenario{
 		{"multi_N2_miss_log_1mb", logs1m, []string{"fatal panic", "segfault detected"}, false},
@@ -75,10 +81,42 @@ var multiScenarios = func() []multiScenario {
 		{"multi_N8_hit_log_1mb", plant(logs1m, "Payment Declined", 4), hit8, false},
 		{"multi_N8_miss_ru_1mb", cyr1m, genNeedles(8, "щупальце%d"), true},
 		{"multi_N64_miss_ru_64kb", cyr1m[:64<<10], genNeedles(64, "щупальце%d"), true},
-		{"multi_N8_hazard_hit_1mb", plant(buildProseCorpus(1<<20), "Kelvin", 8),
-			[]string{"щупальце", "kelvin", "zygomorphic", "ſecret", "Zq9xW", "grofse", "ΤΈΛΟΣ", "watchdog"}, true},
+		// This is the all-ASCII half of the mixed-fold hazard set. It keeps the
+		// Cyrillic, Kelvin, long-s, and Greek alternatives compiled while making
+		// every candidate a miss, so a shared plan cannot hide repeated root
+		// survivors behind the planted-hit early exit below.
+		{"multi_N8_miss_hazard_1mb", prose1m, hazard8, true},
+		{"multi_N8_hazard_hit_1mb", plant(prose1m, "Kelvin", 8), hazard8, true},
 	}
 }()
+
+// singleMatchers makes the warmed one-pattern control for Matcher. Each
+// element uses the same N=1 plan that powers IndexFold, but keeping it here
+// avoids cache-slot collisions during a repeated per-pattern measurement.
+func singleMatchers(patterns []string) []*casei.Matcher {
+	matchers := make([]*casei.Matcher, len(patterns))
+	for i, pattern := range patterns {
+		matchers[i] = casei.NewMatcher([]string{pattern})
+	}
+	return matchers
+}
+
+// perPatternFind is the repeated single-needle control that Matcher replaces.
+// Its plans are built outside the timed operation while it retains one
+// haystack traversal per pattern.
+func perPatternFind(haystack string, matchers []*casei.Matcher) (casei.Match, bool) {
+	best := casei.Match{Pattern: -1, Start: -1}
+	for pattern, matcher := range matchers {
+		if match, ok := matcher.Find(haystack); ok &&
+			(best.Pattern < 0 || match.Start < best.Start) {
+			best = casei.Match{Pattern: pattern, Start: match.Start}
+		}
+	}
+	if best.Pattern < 0 {
+		return casei.Match{}, false
+	}
+	return best, true
+}
 
 func regexpAltFor(patterns []string) *regexp.Regexp {
 	quoted := make([]string, len(patterns))
@@ -127,6 +165,10 @@ func TestMultiBaselinesAgree(t *testing.T) {
 		got, gotOK := casei.NewMatcher(s.patterns).Find(s.haystack)
 		if gotOK != wantOK || (gotOK && got != want) {
 			t.Errorf("%s/candidate: %+v,%v want %+v,%v", s.name, got, gotOK, want, wantOK)
+		}
+		got, gotOK = perPatternFind(s.haystack, singleMatchers(s.patterns))
+		if gotOK != wantOK || (gotOK && got != want) {
+			t.Errorf("%s/per-pattern: %+v,%v want %+v,%v", s.name, got, gotOK, want, wantOK)
 		}
 		re := regexpAltFor(s.patterns)
 		reStart := -1
@@ -185,6 +227,14 @@ func BenchmarkMatcher(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				_, matcherFound = m.Find(s.haystack)
+			}
+		})
+		singles := singleMatchers(s.patterns)
+		b.Run(s.name+"/per-pattern", func(b *testing.B) {
+			b.SetBytes(int64(len(s.haystack)))
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_, matcherFound = perPatternFind(s.haystack, singles)
 			}
 		})
 		re := regexpAltFor(s.patterns)
