@@ -3,20 +3,20 @@
 # then run the scoreboard. This is what CI runs on every push.
 #
 # Requirements: x86-64 Linux with AVX-512 (Intel Ice Lake or newer). casei's
-# benchmarked result is AVX-512-specific; on other hardware it runs a correct
-# but uncompetitive scalar fallback, so the script refuses rather than print a
-# misleading number.
+# benchmarked result is the AVX-512 path. It also has AVX2 and portable scalar
+# paths, but they are not benchmarked, and the native x86 field only builds on
+# x86-64 — so the script refuses elsewhere rather than print an off-scope number.
 set -euo pipefail
 
 arch="$(uname -m)"
 if [ "$arch" != "x86_64" ]; then
-  echo "casei's result is x86-64 AVX-512 only; this host is '$arch'." >&2
-  echo "casei still runs correctly here via a scalar fallback, but it is not competitive and the field will not build." >&2
+  echo "casei's benchmarked result is the x86-64 AVX-512 path; this host is '$arch'." >&2
+  echo "casei still runs correctly here (portable scalar path — no NEON kernel yet), but that path is not benchmarked and the native x86 field will not build here." >&2
   exit 1
 fi
 if ! grep -qw avx512f /proc/cpuinfo 2>/dev/null; then
   echo "This host has no AVX-512 (need Intel Ice Lake or newer, e.g. a GCP n2/c3)." >&2
-  echo "The field build and the measured result both require it." >&2
+  echo "casei would run its AVX2 path here, but the benchmarked result and the field build both require AVX-512." >&2
   exit 1
 fi
 if ! grep -qw avx512vbmi /proc/cpuinfo 2>/dev/null; then

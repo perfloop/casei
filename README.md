@@ -11,11 +11,13 @@ It was not written by hand. It was invented by
 Every candidate it tried, every measurement, and the sealed final proof are
 public: **[the case ↗](https://app.perfloop.ai/t/oss/case_9r9ntnxjd1)**.
 
-> **Scope, up front.** This result is **x86-64 with AVX-512** (Intel Ice Lake or
-> newer). On other hardware `casei` runs a correct scalar fallback that is *not*
-> competitive — there is no NEON kernel yet. It is a *compile-once, search-many*
-> engine: for a single short lookup, `strings.Index` is faster. It implements
-> **simple** folding, not full folding (`ß` matches `ẞ`, never `ss`).
+> **Scope, up front.** These numbers are the **AVX-512** path (Intel Ice Lake or
+> newer). `casei` also has an **AVX2** path (x86 without AVX-512) and a **portable
+> scalar** path (other architectures — there is no NEON kernel yet); both are
+> correct but **not benchmarked here**, so the result is scoped to AVX-512 and is
+> not claimed for them. It is a *compile-once, search-many* engine: for a single
+> short lookup, `strings.Index` is faster. It implements **simple** folding, not
+> full folding (`ß` matches `ẞ`, never `ss`).
 
 ## Results
 
@@ -211,8 +213,11 @@ why the competitors are the field's real specialists at full strength.
 
 ## Limitations
 
-- **x86-64 AVX-512 only.** ARM/Apple Silicon/Graviton fall to a correct but
-  uncompetitive scalar path; there is no NEON kernel yet.
+- **The result is AVX-512-specific.** On x86 without AVX-512, `casei` dispatches
+  an AVX2 (256-bit) path; on ARM (Apple Silicon, Graviton) it runs a portable
+  scalar path — there is no NEON kernel yet. Those paths are correct but
+  unbenchmarked, so the result is not claimed for them. An ARM vector kernel is
+  the next case.
 - **Compile-once, search-many.** `NewMatcher` compiles a plan; a single tiny
   one-shot lookup pays that setup and `strings.Index` wins it.
 - **Simple folding, not full.** `ß`→`ss` is a different, harder problem
