@@ -6,11 +6,11 @@ benchmark.** `casei.IndexFold` finds one needle; `casei.Matcher` finds many,
 both under Unicode simple case folding (the semantics of `regexp` `(?i)`).
 
 It was not written by hand. It was produced by
-[Perfloop](https://app.perfloop.ai) — an autonomous performance optimization
-loop — pointed at one of the most-executed and worst-served operations in
-computing.
-Every candidate it tried, every measurement, and the sealed final proof are
-public: **[the case ↗](https://app.perfloop.ai/t/oss/case_9r9ntnxjd1)**.
+[Perfloop](https://app.perfloop.ai) — a performance-proving loop, aimed by an
+operator — pointed at one of the most-executed and worst-served operations in
+computing. The operator chose the targets; the loop generated, measured, and
+verified every change. Every candidate tried, every measurement, and the sealed
+proofs are public: **[the engine case ↗](https://app.perfloop.ai/t/oss/case_9r9ntnxjd1)**.
 
 > **Scope, up front.** These numbers are the **AVX-512** path (Intel Ice Lake or
 > newer). `casei` also has an **AVX2** path (x86 without AVX-512) and a **portable
@@ -44,6 +44,12 @@ hosts.
 
 <details>
 <summary><b>Full 33-row tables — Sapphire Rapids and Ice Lake, every entrant</b></summary>
+
+> Measured at the engine as merged in [#1](https://github.com/tsenart/casei/pull/1)
+> (commit `fa0dff6`). Kernel improvements merged since ([#3](https://github.com/tsenart/casei/pull/3),
+> +21.5% on the Shufti kernels) are **not yet reflected** — if you reproduce today
+> you should see casei slightly faster than these tables. A full refresh lands
+> when the current optimization pass completes.
 
 #### Sapphire Rapids (Xeon 8481C) — GB/s (higher is better; **bold** = casei, the fastest on every row)
 
@@ -230,12 +236,22 @@ why the competitors are the field's real specialists at full strength.
 
 ## How it was built
 
-`casei` is a [Perfloop](https://app.perfloop.ai) result. Perfloop is an
-autonomous loop that proposes performance candidates, measures each against a
-pinned field under paired sampling, and keeps only what beats it. The engine
-here is the candidate that swept the arena; the complete trail — every candidate,
-the field manifest, the sealed measurements, and an independent verification —
-is public at the [case page](https://app.perfloop.ai/t/oss/case_9r9ntnxjd1).
+`casei` is a [Perfloop](https://app.perfloop.ai) result, built in Perfloop's
+operator-directed mode: an operator aimed the loop — submitting each hypothesis,
+steering candidates with reviews, auditing the competitor field and the host
+ISA — and Perfloop did the proving: it generated every candidate, measured each
+against the pinned field under paired sampling, verified the winner
+independently, and sealed the receipts. No claim here rests on the operator's
+judgment; every one rests on a sealed measurement.
+
+Three cases so far, each with its full public trail — every candidate, the
+field manifest, the sealed measurements, the verification:
+the [engine itself](https://app.perfloop.ai/t/oss/case_9r9ntnxjd1), a
+[kernel fusion refinement](https://app.perfloop.ai/t/oss/case_hqryrfd6j4)
+(merged as [#3](https://github.com/tsenart/casei/pull/3)), and a third case
+now in progress. The direction of travel: the operator's search method is
+being folded into the loop itself, so future finds of this class need no
+operator at all.
 
 ## Details
 
