@@ -67,5 +67,12 @@ python3 "$root/scripts/verify_benchmarkbar.py" "$bar_output" --samples 3
 
 echo
 echo "==> Per-competitor throughput (BenchmarkIndexFold / BenchmarkMatcher, MB/s per engine)"
-go test -run '^$' -bench '^BenchmarkIndexFold$' -benchtime 100ms -count 3
-go test -run '^$' -bench '^BenchmarkMatcher$'   -benchtime 100ms -count 3
+throughput_output="$native/throughput.txt"
+{
+  go test -run '^$' -bench '^BenchmarkIndexFold$' -benchtime 100ms -count 3
+  go test -run '^$' -bench '^BenchmarkMatcher$'   -benchtime 100ms -count 3
+} | tee "$throughput_output"
+python3 "$root/scripts/verify_throughput.py" "$throughput_output" --samples 3
+
+echo
+echo "==> Raw receipts retained in $native"

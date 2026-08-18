@@ -48,14 +48,44 @@ EXPECTED_ROWS = frozenset(
         "single/torture_miss_64kb",
     }
 )
-REQUIRED_METRICS = (
+UTF8_ROWS = frozenset(
+    {
+        "multi/multi_N512_miss_hazard_64kb",
+        "multi/multi_N64_miss_ru_64kb",
+        "multi/multi_N8_hazard_hit_1mb",
+        "multi/multi_N8_miss_hazard_1mb",
+        "multi/multi_N8_miss_ru_1mb",
+        "single/kelvin_hazard_1mb",
+        "single/ru_hit_sparse_1mb",
+        "single/ru_latency_miss_1kb",
+        "single/ru_miss_1mb",
+    }
+)
+BASE_METRICS = (
     "x_vs_best",
+    "competitors",
     "entrants",
     "candidate_active",
     "candidate_vector_bits",
+    "regexp_active",
+    "regexp_vector_bits",
+    "pcre2_active",
+    "pcre2_vector_bits",
+    "rure_active",
+    "rure_vector_bits",
     "vectorscan_active",
     "vectorscan_vector_bits",
     "vectorscan_vbmi",
+    "stringzilla_active",
+    "stringzilla_vector_bits",
+    "veloz_active",
+    "veloz_vector_bits",
+)
+MULTI_METRICS = (
+    "rustac_active",
+    "rustac_vector_bits",
+    "go_ac_active",
+    "go_ac_vector_bits",
 )
 
 
@@ -67,6 +97,10 @@ def benchmark_name(raw):
     return re.sub(r"-[0-9]+$", "", raw)
 
 
+def is_utf8_row(name):
+    return name in UTF8_ROWS
+
+
 def parse(path):
     rows = defaultdict(list)
     with Path(path).open() as source:
@@ -74,8 +108,10 @@ def parse(path):
             fields = line.split()
             if not fields or not fields[0].startswith(PREFIX):
                 continue
+            name = benchmark_name(fields[0])[len(PREFIX):]
+            metrics = BASE_METRICS + (MULTI_METRICS if name.startswith("multi/") else ())
             sample = {}
-            for metric in REQUIRED_METRICS:
+            for metric in metrics:
                 try:
                     at = fields.index(metric)
                 except ValueError as err:
@@ -97,7 +133,6 @@ def parse(path):
                         f"{path}:{line_number}: non-finite {metric} value"
                     )
                 sample[metric] = value
-            name = benchmark_name(fields[0])[len(PREFIX):]
             rows[name].append(sample)
     return rows
 
@@ -135,15 +170,77 @@ def verify(path, expected_samples=3):
             expected = {
                 "candidate_active": 1,
                 "candidate_vector_bits": 512,
+                "regexp_active": 1,
+                "regexp_vector_bits": 0,
+                "pcre2_active": 1,
+                "pcre2_vector_bits": 128,
                 "vectorscan_active": 1,
                 "vectorscan_vector_bits": 512,
                 "vectorscan_vbmi": 1,
+                "stringzilla_active": 1,
+                "stringzilla_vector_bits": 512,
             }
+            utf8 = is_utf8_row(name)
+            multi = name.startswith("multi/")
+            expected.update(
+                {
+                    "veloz_active": int(not multi and not utf8),
+                    "veloz_vector_bits": 256 if not multi and not utf8 else 0,
+                }
+            )
+            if multi:
+                expected.update(
+                    {
+                        "go_ac_active": int(not utf8),
+                        "go_ac_vector_bits": 0,
+                    }
+                )
+                if utf8:
+                    expected.update(
+                        {
+                            "rustac_active": 0,
+                            "rustac_vector_bits": 0,
+                        }
+                    )
             for metric, want in expected.items():
                 if sample[metric] != want:
                     raise VerificationError(
                         f"{path}: {label} has {metric}={sample[metric]:g}, want {want}"
                     )
+            rure_dispatch = (sample["rure_active"], sample["rure_vector_bits"])
+            if rure_dispatch not in {(0, 0), (1, 256)}:
+                raise VerificationError(
+                    f"{path}: {label} has incoherent rure dispatch "
+                    f"active={rure_dispatch[0]:g}, bits={rure_dispatch[1]:g}"
+                )
+            if multi and not utf8:
+                rustac_dispatch = (
+                    sample["rustac_active"],
+                    sample["rustac_vector_bits"],
+                )
+                if rustac_dispatch not in {(0, 0), (1, 256)}:
+                    raise VerificationError(
+                        f"{path}: {label} has incoherent rustac dispatch "
+                        f"active={rustac_dispatch[0]:g}, bits={rustac_dispatch[1]:g}"
+                    )
+            competitors = 4 + int(sample["rure_active"])
+            if multi:
+                competitors += int(sample["rustac_active"])
+                supplemental = int(sample["go_ac_active"])
+            else:
+                competitors += int(sample["veloz_active"])
+                supplemental = 0
+            if sample["competitors"] != competitors:
+                raise VerificationError(
+                    f"{path}: {label} has competitors={sample['competitors']:g}, "
+                    f"want {competitors} from active eligible engines"
+                )
+            entrants = 1 + competitors + supplemental
+            if sample["entrants"] != entrants:
+                raise VerificationError(
+                    f"{path}: {label} has entrants={sample['entrants']:g}, "
+                    f"want {entrants} from reported dispatch"
+                )
 
     medians = {
         name: median(sample["x_vs_best"] for sample in samples)
@@ -165,7 +262,7 @@ def verify(path, expected_samples=3):
         f"PASS: 33/33 rows; worst median {worst_row}={medians[worst_row]:.4f}; "
         f"worst sample={worst_sample:.4f}; median speedup={median_speedup:.2f}x; "
         f"entrants={min(entrant_counts)}-{max(entrant_counts)}; "
-        "casei=512-bit; Vectorscan=512-bit VBMI"
+        "casei=512-bit; Vectorscan=512-bit VBMI; field dispatch verified"
     )
 
 

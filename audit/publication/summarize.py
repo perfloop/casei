@@ -5,6 +5,13 @@ from collections import defaultdict
 from pathlib import Path
 import re
 from statistics import median
+import sys
+
+
+sys.dont_write_bytecode = True
+SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
+sys.path.insert(0, str(SCRIPTS))
+import verify_benchmarkbar  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parent / "results"
@@ -65,7 +72,12 @@ def ratios(left, right, label):
 
 
 def field_summary(root):
-    rows = metric_rows(root / "benchmarkbar.txt", "x_vs_best", "BenchmarkBar/")
+    transcript = root / "benchmarkbar.txt"
+    try:
+        verify_benchmarkbar.verify(transcript, expected_samples=3)
+    except verify_benchmarkbar.VerificationError as err:
+        raise SystemExit(err) from err
+    rows = metric_rows(transcript, "x_vs_best", "BenchmarkBar/")
     require(rows, 3, f"{root.name}/field")
 
     dispatch = {
