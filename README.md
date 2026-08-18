@@ -72,8 +72,10 @@ it change the answer.
 One needle and many needles use the same fold-token state machine; many needles
 do not mean many scans. AVX-512 amplifies that design with 64-byte blocks, mask
 registers, and VBMI table lookups. The assembly matters: one Shufti scheduling
-change improved its contested row by 21.8%. The larger gain comes from avoiding
-Unicode decoding at positions that cannot match.
+change improved its contested row by 21.8%, while a complete replacement with
+Go's experimental SIMD package passed correctness but slowed a required field
+row. The larger gain still comes from avoiding Unicode decoding at positions
+that cannot match.
 
 [The one-page explanation](HOW_IT_WORKS.md) walks from that mental model to the
 actual plan, kernels, competitor differences, causal measurements, and limits.
@@ -84,7 +86,7 @@ The first-match API was co-measured in randomized order against competitors
 built from pinned source, each dispatching its widest eligible path, on GCP
 hosts exposing Ice Lake and Sapphire Rapids.
 
-Perfloop's sealed runs put **casei first on every one of 33 rows, on both
+Perfloop's verified runs put **casei first on every one of 33 rows, on both
 microarchitectures**. Median throughput was **1.9x** the next-fastest engine on
 Ice Lake and **1.7x** on Sapphire Rapids. The range runs from 1.10x on the
 tightest streaming row to 25.8x on the adversarial one. Throughput is in GB/s;
@@ -236,7 +238,7 @@ git clone https://github.com/tsenart/casei && cd casei
 
 It prints, for all 33 rows, every entrant's local throughput and the vector
 width it dispatched, plus `x_vs_best` (`casei`'s time ÷ the fastest *correct*
-competitor). It reruns the open local board; Perfloop's sealed case contains the
+competitor). It reruns the open local board; Perfloop's public Case contains the
 separate randomized co-measurements behind the published tables.
 
 The [publication audit](audit/publication/README.md) records a fresh three-pass

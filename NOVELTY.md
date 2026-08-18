@@ -10,6 +10,17 @@ folding / case-expanded matching.  No performance or novelty claim should be
 made for that construction unless a later state transition is identified that
 is not equivalent to this quotient.
 
+## How to read a negative assessment
+
+A negative novelty result closes a claim that a state or transition is new. It
+does **not** forbid using the technique. A known component may be implemented,
+adapted, and combined with other known components when that combination is
+aimed at a result the field does not hold. What does not qualify is a port,
+wrapper, or repacking that produces no new measured position or capability.
+
+Accordingly, the decisions below close standalone novelty claims. They remain
+eligible engineering ingredients under the acceptance bar in `AGENTS.md`.
+
 ## Precise construction assessed
 
 For each decoded valid rune `r`, let `q(r)` be the identifier of its
@@ -95,9 +106,9 @@ sources cited above.
 matcher state.**  The proposed scan can avoid constructing a Go `rune` or a
 canonical-fold token, but its states and transitions are exactly a compressed
 case-expanded UTF-8 byte automaton.  It is therefore a different operational
-placement of decoding work, not a distinct search construction.  Per
-`AGENTS.md` §§1 and 3, no implementation or performance experiment follows
-from this assessment.
+placement of decoding work, not a distinct search construction. This closes
+the novelty claim; it does not decide whether the known construction can help a
+combination reach a new result.
 
 ### Construction assessed
 
@@ -181,10 +192,9 @@ the case hypothesis.
 
 ### Decision
 
-This is a documented negative finding, not a candidate optimization.  The
-repository must not add a known-art implementation merely to benchmark its
-decode cost; doing so would violate the invention and negative-result rules in
-`AGENTS.md`.
+This is a documented negative novelty finding. A direct reimplementation with
+no new result would not qualify, but the byte-transition technique remains
+available as one component of a combination tested against the full field.
 
 ## Follow-up assessment: fixed-width lossy projection with survivor verification
 
@@ -269,12 +279,11 @@ transition remained after that comparison.
 
 ### Decision
 
-This is a documented negative finding, not a candidate optimization.  Per
-`AGENTS.md`, the repository must not add a Go port, SIMD scan, or collision
-benchmark merely to measure a published filter/verify construction.  The
-requested Cyrillic and hazard collision-density sweep is therefore not
-performed: it could characterize the known technique's cost, but cannot make
-it an invention.  No performance claim is made.
+This is a documented negative novelty finding. A Go port or SIMD scan would
+not become novel by measuring its collision rate, but the projection may still
+be used in a broader combination if that combination is measured against the
+field and reaches a result no source holds alone. No performance claim is made
+here.
 
 ## Follow-up assessment: raw-byte rolling fingerprint with run-membership correction
 
@@ -453,11 +462,10 @@ hypothesis remains to implement.
 
 ### Decision
 
-This is a documented negative finding, not a candidate optimization.  Per
-`AGENTS.md`, the repository must not add a SIMD/hash implementation or run a
-benchmark merely to measure an operation that either fails the required window
-semantics or reduces to folding inside a rolling hash.  No performance claim
-is made.
+This is a documented negative novelty finding. A SIMD/hash implementation that
+fails the window semantics is unusable; one that reduces to folding inside a
+rolling hash is known art. The latter may still be an ingredient in a
+combination that reaches a new result. No performance claim is made here.
 
 ## Follow-up assessment: prefix-invariant anchor with arithmetic start recovery
 
@@ -470,9 +478,8 @@ a proposed start, and confirm the whole pattern.  It is not a new matcher
 state.  It is a specialization of the published safe-slice-at-an-offset plus
 head/tail confirmation pipeline, combined with the already-rejected raw-byte
 fold alternatives.  The subtraction partially evaluates known start recovery;
-it does not add a transition or remove the required confirmation.
-
-No implementation or benchmark follows from this assessment.
+it does not add a transition or remove the required confirmation. That closes
+the novelty claim, not its possible use in a measured combination.
 
 ### Construction assessed
 
@@ -573,11 +580,11 @@ before performance work.
 
 ### Decision
 
-Do not add a prefix-anchor implementation, AVX2 kernel, portable fallback,
-or benchmark sweep for this construction.  It would be a specialization and
-retuning of known safe-window/filter-and-verify machinery, contrary to
-`AGENTS.md` §§1--3.  A future attempt would need the falsifying block
-transition above, not a different anchor scoring rule or a faster verifier.
+Do not claim a prefix-anchor implementation, AVX2 kernel, or faster verifier as
+a new construction. It is a specialization and retuning of known
+safe-window/filter-and-verify machinery. It may nevertheless be combined and
+measured if the target is a new field result; a future novelty claim would need
+the falsifying block transition above.
 
 ## Follow-up construction sweep: lazy canonical Two-Way
 
@@ -665,15 +672,15 @@ not suffice.
 
 The current glibc source check found the canonical-element parameterization
 rather than a distinct state, and the quotient reduction maps every proposed
-Unicode comparison to that interface.  No output or transition survives the
-materialized-`Q` replay, so this construction is rejected before an
-implementation or benchmark.
+Unicode comparison to that interface. No output or transition survives the
+materialized-`Q` replay, so the construction has no standalone novelty claim.
 
 ### Decision
 
-Do not add a lazy Two-Way path, a separate single-needle engine, or a benchmark
-for it.  It is a known canonical-stream algorithm applied to the already
-closed quotient and would violate `AGENTS.md` §§1, 3, and 5 as a contribution.
+Do not add a separate single-needle engine: that would violate the one-engine
+rule. A lazy Two-Way component inside the shared plan would be known art, not a
+novelty claim, and would qualify only if the resulting one-engine combination
+reached a new field result.
 
 ## Follow-up construction sweep: ASCII-island seam ledger
 
@@ -747,15 +754,15 @@ on ordinary ASCII does not meet that test.
 
 The current .NET source contains the vector-probe/candidate/full-equality
 shape, and current StringZilla contains the more relevant folded-chunk,
-width-alarm, serial-seam, and safe-slice verification shape.  Applying the
+width-alarm, serial-seam, and safe-slice verification shape. Applying the
 required opaque-byte distinction leaves only the two closed representations.
-The seam ledger is rejected without a Go AVX2 implementation or measurement.
+The seam ledger therefore has no standalone novelty claim.
 
 ### Decision
 
-Do not add an ASCII-island fast path, seam cache, AVX2 kernel, or portable
-fallback for this construction.  It would be a retuning of published staged
-search machinery and an encoding of an already closed transition.
+An ASCII-island fast path, seam cache, AVX2 kernel, or portable fallback would
+be a retuning of published staged-search machinery, not a new construction. It
+remains eligible only as part of a combination that reaches a new result.
 
 ## Follow-up construction sweep: width-debt bit-parallel wavefront
 
@@ -827,17 +834,15 @@ length, a lane-parallel update, or a SIMD prefix classifier would not suffice.
 
 No such state remains after attaching the mandatory form-prefix information:
 each `S[d]` bit maps to an expanded path node, and each raw-byte transition is
-its ordinary edge update.  The current regex-automata DFA source independently
+its ordinary edge update. The current regex-automata DFA source independently
 uses transition caching and alphabet equivalence classes for this same
-subset-transition family.  The construction is therefore rejected on the
-state reduction, before implementation or benchmarking.
+subset-transition family. The state reduction closes the novelty claim.
 
 ### Decision
 
-Do not add a Shift-Or wavefront, width-debt tables, SIMD kernels, or a
-multi-pattern benchmark for this construction.  It is a bit packing of a
-known case-expanded byte automaton and violates the negative-result rule if
-implemented merely for speed.
+A Shift-Or wavefront, width-debt tables, and SIMD kernels would be a bit packing
+of a known case-expanded byte automaton, not a new construction. They may be
+tested as components only against the repository's new-result acceptance bar.
 
 ## Follow-up construction sweep: boundary-tagged block transducer
 
@@ -909,15 +914,16 @@ less work is not enough: it must change the state relation.
 
 The inspected current regex-automata source describes cached DFA transition
 and equivalence-class machinery, while current Hyperscan documentation records
-compiled state maintained across blocks.  Applying the direct expansion above
-leaves no irreducible block state or output.  The proposal is rejected before
-an AVX2 implementation, portable fallback, or performance measurement.
+compiled state maintained across blocks. Applying the direct expansion above
+leaves no irreducible block state or output, so the proposal has no standalone
+novelty claim.
 
 ### Decision
 
-Do not add a block-summary matcher for this construction.  It would be a
-repacking of the existing case-expanded byte automaton, contrary to
-`AGENTS.md` §§1--3, even if it made the reference scan much faster.
+A block-summary matcher for this construction would be a repacking of the
+existing case-expanded byte automaton, not a new construction. It may still be
+an engineering component if the resulting one-engine system reaches a new
+measured result.
 
 ## Follow-up construction sweep: elastic-offset anchor lattice
 
@@ -997,16 +1003,17 @@ vectorized intersections, or a better scoring policy would not suffice.
 
 The current StringZilla source check found arbitrary-offset safe-slice probing
 with verification, and the current regex-automata prefilter source documents
-the corresponding deliberate loss of identity.  Lifting the lattice's
+the corresponding deliberate loss of identity. Lifting the lattice's
 lost-content projection to a correct accepting state reconstructs the
-case-expanded paths.  No distinct state survives, so no implementation or
-benchmark follows.
+case-expanded paths. No distinct state survives, so no standalone novelty
+claim follows.
 
 ### Decision
 
-Do not add an elastic-offset lattice, multi-anchor AVX2 filter, or portable
-fallback.  It is either known candidate/confirmation machinery or an annotated
-case-expanded byte automaton, not the required invention.
+An elastic-offset lattice, multi-anchor AVX2 filter, or portable fallback would
+be known candidate/confirmation machinery or an annotated case-expanded byte
+automaton. It remains available as an engineering ingredient, but not as an
+invention claim by itself.
 
 ## Follow-up assessment: synchronization-tagged variable shift
 
@@ -1169,10 +1176,10 @@ claim of novelty immediately.
 
 ### Decision
 
-Do not implement or benchmark synchronization-tagged shifts or the four
-adjacent variants.  They would be a competent extension, combination, or
-repacking of published shift/filter and UTF-8 path machinery, contrary to
-`AGENTS.md` §§1--3.  No performance claim is made.
+Synchronization-tagged shifts and the four adjacent variants are competent
+extensions, combinations, or repackings of published shift/filter and UTF-8
+path machinery. They are not new constructions; they may still be measured as
+ingredients in pursuit of a new result. No performance claim is made here.
 
 
 ## Follow-up assessment: fused classified block frontier
@@ -1188,11 +1195,11 @@ start and pattern ID in that transition.  It would remove both the per-start
 of decoded tokens.
 
 The absence of a materialized token slice is operational, not a new state
-representation.  A lossless classifier produces the already-rejected
+representation. A lossless classifier produces the already-rejected
 fold-orbit quotient with an offset map; a classifier that retains raw-form or
 partial-width distinctions is the already-rejected case-expanded byte graph.
-Adding a leftmost-origin tag is established tagged-automaton state.  No
-implementation or benchmark follows.
+Adding a leftmost-origin tag is established tagged-automaton state. This closes
+the novelty claim, not the engineering route.
 
 ### Construction assessed
 
@@ -1226,7 +1233,7 @@ mixed-width forms and invalid-byte opacity.
 | SIMD UTF-8 validation, transcoding, and character counting | [`simdutf` README](https://raw.githubusercontent.com/simdutf/simdutf/449f6b00ab5529a617bcc7f95fe4f886a847d690/README.md), inspected at commit `449f6b00ab5529a617bcc7f95fe4f886a847d690` | The project supplies the established block-classification/transcoding primitive.  Fusing its output into a matcher changes scheduling, not the information emitted by classification. |
 | SIMD fold/search block with width-hazard routing | StringZilla [`haswell.h`](https://raw.githubusercontent.com/ashvardanian/stringzilla/657f21c5d8c2c2da5da06d4a9ad87c3ef80953d0/include/stringzilla/utf8_uncased/haswell.h), inspected at commit `657f21c5d8c2c2da5da06d4a9ad87c3ef80953d0` | Its AVX2 driver folds one 32-byte block, intersects probe masks, carries chunk-edge hazard state, and routes variable-width forms to a serial handler.  It is not this contract, but it establishes the fused block-plus-hazard control shape. |
 | Unicode-caseless bit-parallel expressions | icgrep/Parabix, cited in `CONTEXT.md` §1d | The transposed-bitstream line natively compiles Unicode-caseless expressions into one block machine.  A dictionary/tie contract is an additional output discipline, not evidence that a classified block transition is new. |
-| Leftmost source-origin tracking | Hyperscan [`compilation.rst`](https://raw.githubusercontent.com/intel/hyperscan/828b4fef341759e05292741a6c89cb66055986f8/doc/dev-reference/compilation.rst), inspected at commit `828b4fef341759e05292741a6c89cb66055986f8,` “Start of Match” | `HS_FLAG_SOM_LEFTMOST` returns the leftmost source start for an accepted end and documents the extra runtime state required to carry potential starts.  Choosing the lowest terminal pattern ID is an ordinary ordered reduction over the same tagged frontier. |
+| Leftmost source-origin tracking | Hyperscan [`compilation.rst`](https://raw.githubusercontent.com/intel/hyperscan/828b4fef341759e05292741a6c89cb66055986f8/doc/dev-reference/compilation.rst), inspected at commit `828b4fef341759e05292741a6c89cb66055986f8`, “Start of Match” | `HS_FLAG_SOM_LEFTMOST` returns the leftmost source start for an accepted end and documents the extra runtime state required to carry potential starts.  Choosing the lowest terminal pattern ID is an ordinary ordered reduction over the same tagged frontier. |
 | Case-expanded UTF-8 paths and fold quotient | The first two assessments in this file; UTS #18, RE2, rust-regex, and regex-automata cited there and in `CONTEXT.md` §1b | These are the two exhaustive representations available after a block has either forgotten or retained the raw encoding form. |
 
 The source inspection also refutes the tempting “fused means unclaimed”
@@ -1307,13 +1314,14 @@ with lexical state, and it must do more than carry a standard origin tag.  It
 would need a proof that the state composes across AVX2 blocks, gives a linear
 adversarial bound, selects leftmost/lowest-ID results, and remains one plan for
 N=1 through N=512.  Evidence of a published state with those properties would
-instead close the claim.  Until then, a faster fused classifier alone is an
-engineering experiment explicitly excluded by `AGENTS.md` §§1--3.
+instead close the claim. Until then, a faster fused classifier alone is known
+engineering, and qualifies only if its combination reaches a new result.
 
 ### Decision
 
-Do not implement or benchmark the fused classified frontier or its adjacent
-variants.  No performance claim is made.
+The fused classified frontier and its adjacent variants are not novel by
+themselves. They remain eligible as components under the measured-result bar.
+No performance claim is made here.
 
 ## Retained implementation transition and evidence
 
@@ -1399,6 +1407,46 @@ layouts merely encode predicates the existing plan already owns, and the
 common plan remains the sole match authority for N=1 and multi-pattern calls.
 The only falsifiable claim is operational and belongs to the arena and semantic
 differentials, not to a new search construction.
+
+### Complete experimental Go SIMD backend: negative result
+
+The complete amd64 vector backend was independently re-expressed with Go's
+experimental `simd/archsimd` package behind `GOEXPERIMENT=simd`, while the
+hand-written assembly remained the control. Both builds kept the same public
+plan and runtime feature gates. Backend digest checks, direct tests, and
+differential fuzzing passed under AVX-512, AVX2, and scalar feature modes.
+
+The replacement failed the performance bar. Six alternating-order Ice Lake
+runs of the ordinary `b.Loop()`-based
+`BenchmarkBar/single/log_miss_1mb` row measured the experimental backend at
+20.8--23.3 µs/op and `0.878--0.913 x_vs_best`; the assembly control measured
+18.4--20.8 µs/op and `0.785--0.797 x_vs_best`. One required regression is
+enough to reject an all-or-nothing backend migration, so a Sapphire Rapids run
+was not needed to falsify it. The complete record is the public
+[archsimd Case](https://app.perfloop.ai/t/oss/case_37sjyc8f94).
+
+The generated code explains the result on that row. Its
+`asciiPairDirectVBMISkip64` hot loop handles one 64-byte block, performs two
+`VPERMB` lookups, materializes their intersection as a vector, converts it to a
+k-mask, and crosses the mask to a general register on every iteration. The
+assembly loop interleaves four independent 64-byte blocks, uses `VPTESTMB` to
+produce four k-masks directly, and tests mask pairs before crossing to a
+general register. The offline opcode table records 3-cycle latency and
+1-per-cycle reciprocal throughput for unmasked ZMM `VPERMB` on Ice Lake, so the
+four-way schedule exposes the independent work needed to hide that latency.
+
+The difference is not limited to one loop. Generated Shufti kernels spill
+wide lookup state into 144- and 512-byte stack frames and reload it in the hot
+loop; their assembly counterparts keep the tables in vector registers with no
+local frame. The attempted migration therefore confirms that the hand-written
+kernels contribute to the measured result rather than merely restating code the
+compiler already emits.
+
+This negative would be falsified by a later compiler/backend that preserves the
+four-way independent schedule, keeps mask arithmetic in k-registers, and avoids
+the wide spills, followed by a complete-backend result that passes the same
+correctness checks and all 33 field rows on both qualifying processors. Until
+then, the assembly backend remains the accepted implementation.
 
 ### Rejected cells
 

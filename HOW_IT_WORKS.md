@@ -125,12 +125,37 @@ true but incomplete.
 | layer | what it buys | evidence that it matters |
 |---|---|---|
 | Work avoidance | Whole blocks are rejected without decoding or advancing the exact plan at every byte. | Bypassing the shape-selected routes made the median row 3.88× slower on Ice Lake and 4.28× slower on Sapphire Rapids. Three rows were unchanged within 1%; the worst Unicode multi-pattern rows were 401× and 424× slower. |
-| Shared construction | One pattern set becomes one transition plan and one traversal instead of `N` separate searches. | The sealed engine case moved the worst full-field row from `x_vs_best=6.718` to `0.9123` while preserving the semantic suite. |
+| Shared construction | One pattern set becomes one transition plan and one traversal instead of `N` separate searches. | The full engine Case moved the worst full-field row from `x_vs_best=6.718` to `0.9123` while preserving the semantic suite. |
 | Wider native transition | AVX-512 BW handles 64 candidate starts and keeps set arithmetic in mask registers; VBMI performs byte-table lookup in registers. | Masking AVX-512 off while retaining the same plans reduced median throughput by 1.72× on Ice Lake and 1.89× on Sapphire Rapids. One Ice Lake row and three Sapphire Rapids rows favored AVX2, mostly short or Unicode verification-heavy cases. |
-| Kernel scheduling | Fewer dependent operations keep the wide sieve fed. | Fusing one four-way Shufti reduction improved its 64 KiB kernel by 21.6% and the field row using it by 21.8%. |
+| Kernel scheduling | Fewer dependent operations keep the wide sieve fed. | Fusing one four-way Shufti reduction improved its 64 KiB kernel by 21.6% and the field row using it by 21.8%. Replacing the complete assembly backend with Go's experimental SIMD package then regressed a required 1 MiB row. |
 
 The AVX2 backend keeps the same plan and semantics. The published field lead is
 specifically the AVX-512 implementation.
+
+### Why the hand-written kernels matter
+
+A 512-bit register can test 64 candidate starts, but width alone does not keep
+the CPU busy. On Ice Lake, the `VPERMB` table lookup used by the hot long-literal
+filter takes three cycles to produce an answer, even though the core can start
+one lookup each cycle. The generated Go SIMD loop starts one 64-byte block and
+then needs that block's answer. The assembly loop starts four independent
+blocks, so the second, third, and fourth lookups occupy the machine while the
+first one finishes.
+
+The assembly also sends lookup results straight into AVX-512 mask registers
+and asks whether any of four masks survived. The generated loop builds another
+vector, converts it to a mask, and moves that mask to a general register on
+every 64-byte block. In larger Shufti kernels, the generated code spills lookup
+tables to 144- and 512-byte stack frames; the assembly keeps them in vector
+registers.
+
+This was tested as a complete backend replacement, not inferred from selected
+instructions. Correctness passed, but six alternating-order Ice Lake runs put
+the experimental backend at 20.8--23.3 µs/op on
+`single/log_miss_1mb`, versus 18.4--20.8 µs/op for assembly. The public
+[archsimd Case](https://app.perfloop.ai/t/oss/case_37sjyc8f94) and the
+[negative-result record](NOVELTY.md#complete-experimental-go-simd-backend-negative-result)
+contain the acceptance decision and falsifier.
 
 ## Where it differs from the field
 
@@ -171,7 +196,7 @@ this contract is what produced the new result.
    rows where the current API loses. Those results narrow the claim instead of
    being excluded from the record.
 
-The sealed measurements are the [engine case](https://app.perfloop.ai/t/oss/case_9r9ntnxjd1)
+The verified measurements are the [engine Case](https://app.perfloop.ai/t/oss/case_9r9ntnxjd1)
 and the [Shufti refinement](https://app.perfloop.ai/t/oss/case_hqryrfd6j4).
 The full local field is reproduced by [`scripts/reproduce.sh`](scripts/reproduce.sh).
 
