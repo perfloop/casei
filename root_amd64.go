@@ -50,8 +50,6 @@ func rootSkip32(ptr *byte, n int, target, fold uint64) int
 func rootSkip64(ptr *byte, n int, target, fold uint64) int
 func literalSkip32(ptr *byte, n int, target, fold uint64) int
 func literalSkip64(ptr *byte, n int, target, fold uint64) int
-func runSkip32(ptr *byte, n int, target, fold uint64) int
-func runSkip64(ptr *byte, n int, target, fold uint64) int
 func runMask32(ptr *byte, target, fold uint64) uint32
 func runMask64(ptr *byte, target, fold uint64) uint64
 func probeSkip32(ptr *byte, n int, probe *asciiProbe) int
@@ -151,47 +149,6 @@ func literalSkipASCII(s string, at int, kind uint8, needle byte) int {
 			value |= 0x20
 		}
 		if value == needle {
-			break
-		}
-		at++
-	}
-	return at - start
-}
-
-// runSkipASCII returns the matching prefix for one ASCII byte class. Unlike
-// rootSkipASCII it stops at a mismatch, which lets a repeated-token plan skip
-// an entire run in one block transition.
-func runSkipASCII(s string, at int, kind uint8, needle byte) int {
-	start := at
-	remaining := len(s) - at
-	target := uint64(needle) * byteOnes
-	fold := uint64(0)
-	if kind == rootASCIIFold {
-		fold = byteCaseBit
-	}
-	if cpu.X86.HasAVX512F && cpu.X86.HasAVX512BW && remaining >= 64 {
-		full := remaining &^ 63
-		ptr := (*byte)(unsafe.Add(unsafe.Pointer(unsafe.StringData(s)), at))
-		skipped := runSkip64(ptr, remaining, target, fold)
-		at += skipped
-		if skipped < full {
-			return at - start
-		}
-	} else if cpu.X86.HasAVX2 && remaining >= 32 {
-		full := remaining &^ 31
-		ptr := (*byte)(unsafe.Add(unsafe.Pointer(unsafe.StringData(s)), at))
-		skipped := runSkip32(ptr, remaining, target, fold)
-		at += skipped
-		if skipped < full {
-			return at - start
-		}
-	}
-	for at < len(s) {
-		value := s[at]
-		if kind == rootASCIIFold {
-			value |= 0x20
-		}
-		if value != needle {
 			break
 		}
 		at++

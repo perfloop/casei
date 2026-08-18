@@ -39,6 +39,27 @@ func TestLiteralSkipASCII(t *testing.T) {
 	}
 }
 
+func TestFindASCIIRunBytes(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		input  string
+		kind   uint8
+		needle byte
+		need   int
+		want   int
+	}{
+		{"folded run crosses block", strings.Repeat("x", 63) + "AaAaA" + strings.Repeat("x", 130), rootASCIIFold, 'a', 5, 63},
+		{"exact run crosses block", strings.Repeat("x", 127) + "!!!!!" + strings.Repeat("x", 65), rootExact, '!', 5, 127},
+		{"miss", strings.Repeat("x", 257), rootASCIIFold, 'a', 4, -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := findASCIIRunBytes(tc.input, tc.kind, tc.needle, tc.need); got != tc.want {
+				t.Fatalf("findASCIIRunBytes = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestTripleFilterKeepsOtherRoots(t *testing.T) {
 	patterns := []string{"~", "aZm]"}
 	plan := newSearchPlan(patterns)
@@ -131,6 +152,55 @@ func TestFilterSkipBytes(t *testing.T) {
 	}
 }
 
+func TestSpecializedTripleSkips(t *testing.T) {
+	filters := []struct {
+		name       string
+		filter     tripleFilter
+		candidates []string
+	}{
+		{
+			name: "shared prefix",
+			filter: tripleFilter{
+				values: [16]rootTriple{
+					{first: 'a', second: 'b', third: 'c', fold: 7},
+					{first: 'a', second: 'b', third: 0xc5, fold: 3},
+				},
+				n: 2,
+			},
+			candidates: []string{"AbC", "aB\xc5"},
+		},
+		{
+			name: "ASCII and UTF-8",
+			filter: tripleFilter{
+				values: [16]rootTriple{
+					{first: 'a', second: 'b', third: 'c', fold: 7},
+					{first: 0xe2, second: 0x84, third: 0xaa},
+				},
+				n: 2,
+			},
+			candidates: []string{"AbC", "K"},
+		},
+	}
+	for _, shape := range filters {
+		t.Run(shape.name, func(t *testing.T) {
+			for _, candidate := range shape.candidates {
+				for _, offset := range []int{0, 1, 63, 64, 65, 127, 128, 191} {
+					stream := strings.Repeat("x", offset) + candidate + strings.Repeat("x", 193)
+					got := tripleSkipBytes(stream, 0, &shape.filter)
+					want := tripleSkipScalar(stream, 0, &shape.filter)
+					if got != want || got != offset {
+						t.Fatalf("candidate %q offset %d: triple skip=%d want %d", candidate, offset, got, want)
+					}
+				}
+			}
+			miss := strings.Repeat("x", 257)
+			if got, want := tripleSkipBytes(miss, 0, &shape.filter), tripleSkipScalar(miss, 0, &shape.filter); got != want {
+				t.Fatalf("triple miss=%d want %d", got, want)
+			}
+		})
+	}
+}
+
 func TestASCIIPairSkip(t *testing.T) {
 	plan := newSearchPlan([]string{"fatal panic"})
 	probe := &plan.asciiPair
@@ -160,6 +230,16 @@ func TestASCIIPairSkip(t *testing.T) {
 	missCandidates := len(miss) - len(plan.asciiNeedle) + 1
 	if got := asciiPairSkipBytes(miss, 0, missCandidates, probe); got != missCandidates {
 		t.Fatalf("all-miss pair skip=%d want %d", got, missCandidates)
+	}
+	if cpu.X86.HasAVX512F && cpu.X86.HasAVX512BW {
+		func() {
+			hasVBMI := cpu.X86.HasAVX512VBMI
+			cpu.X86.HasAVX512VBMI = false
+			defer func() { cpu.X86.HasAVX512VBMI = hasVBMI }()
+			if got := asciiPairSkipBytes(miss, 0, missCandidates, probe); got != missCandidates {
+				t.Fatalf("non-VBMI all-miss pair skip=%d want %d", got, missCandidates)
+			}
+		}()
 	}
 
 	// The light pair transition admits this non-match, then must continue to
@@ -576,6 +656,18 @@ func TestASCIIPairAnchorSkip(t *testing.T) {
 		if got != want {
 			t.Fatalf("random at %d: pair skip=%d want %d", at, got, want)
 		}
+	}
+	if cpu.X86.HasAVX512F && cpu.X86.HasAVX512BW {
+		func() {
+			hasVBMI := cpu.X86.HasAVX512VBMI
+			cpu.X86.HasAVX512VBMI = false
+			defer func() { cpu.X86.HasAVX512VBMI = hasVBMI }()
+			got := asciiPairAnchorSkipBytes(stream, 0, &anchors.filter)
+			want := asciiPairAnchorSkipScalar(stream, 0, &anchors.filter)
+			if got != want {
+				t.Fatalf("non-VBMI random pair skip=%d want %d", got, want)
+			}
+		}()
 	}
 }
 

@@ -68,9 +68,14 @@ row losing by roughly 9× to Hyperscan. Thirteen additional performance rows
 request ASCII-only case matching; they were run and output-verified, but
 `casei` retains stronger Unicode semantics. [`REBAR.md`](REBAR.md) records
 every row, both-host ratios,
-the incompatible `s`/`ſ` behavior check, and the missing iterator work. These
-measurements bound the result here to first-match search; rebar's count-all
-numbers cannot be borrowed in support of it.
+the incompatible `s`/`ſ` behavior check, and the causal diagnosis. Instrumented
+reproduction showed that a stateful one-pass enumerator did not improve the 9×
+row: the five-pattern plan filters on common Cyrillic roots, admits 21.7% of the
+corpus into rune decoding and token-map verification, and never gains the rare
+interior pair-pair anchors selected for a single pattern. The missing iterator
+is therefore an API gap, not the primary performance gap. These measurements
+bound the result here to first-match search; rebar's count-all numbers cannot be
+borrowed in support of it.
 
 **Correction (v2, after a three-way prior-art sweep):** dedicated engines
 DO exist, with different contracts:

@@ -1,9 +1,11 @@
 # Direct rebar audit
 
 > **Yes: the current `casei` API loses relevant rebar workloads.** Rebar times
-> enumeration—count every non-overlapping match—while `casei` is a first-match
+> enumeration, meaning count every non-overlapping match, while `casei` is a first-match
 > engine. The losses are real, they do not contradict the 33-row first-match
-> result, and they identify a missing stateful iterator.
+> result, and the worst one exposes a weak multi-pattern filter choice. A
+> stateful iterator is still a missing API, but a measured streaming version did
+> not repair the loss.
 
 This page records the whole audit so “not yet in rebar” cannot become a way to
 avoid unfavorable cases.
@@ -21,8 +23,8 @@ the complete caseless literal/finite-alternation inventory is:
   simple folding requires the match.
 
 Only five performance rows enable Unicode semantics and therefore ask the same
-folding question as `casei`. Against rebar's three recorded leaders—Hyperscan,
-PCRE2-JIT, and rust/regex—`casei` wins **2/5** and loses **3/5** on both Ice Lake
+folding question as `casei`. Against rebar's three recorded leaders (Hyperscan,
+PCRE2-JIT, and rust/regex), `casei` wins **2/5** and loses **3/5** on both Ice Lake
 and Sapphire Rapids. Its median `time / best-other-time` is 1.27 and 1.28; the
 worst row is roughly 9× slower.
 
@@ -46,7 +48,8 @@ width under simple folding, advances past the non-overlapping match, and
 continues to the end. It supports rebar's `count` and `count-spans` models.
 Nothing is recompiled per hit, but every hit exits and re-enters a first-match
 search. A future iterator should retain the plan's scan state and vector
-continuity across hits.
+continuity across hits. Retaining that state would make a cleaner API. The
+diagnosis below shows that iterator overhead is small on the worst row.
 
 ## Results
 
@@ -85,6 +88,52 @@ Across all 18 stress rows, including those ASCII-only rows, `casei` wins 4/18
 on Ice Lake and 6/18 on Sapphire Rapids. Those counts are deliberately not
 promoted as a product result because 13 rows ask different semantics.
 
+## Why the worst row is 9× slower
+
+The bad row searches a 1,570,556-byte Russian Sherlock Holmes corpus for five
+names and counts 971 matches. It is a particularly clear counterexample to
+`casei`'s usual advantage:
+
+```text
+one Russian pattern    rare interior byte pairs -> about 2,100 candidates
+five Russian patterns  common starting letters -> about 80,000 filter stops
+```
+
+For one pattern, the compiler selects a fused pair-pair anchor from inside the
+literal. The AVX-512 VBMI kernel skips 1,552,007 bytes and asks the exact
+matcher to check 2,134 candidate positions.
+
+For all five patterns, the current compiler cannot combine those interior
+anchors into one shared filter. It falls back to a nine-pair Shufti filter over
+the patterns' first UTF-8 bytes. Several of those starts are common Cyrillic
+letters. Across the full count, the filter is invoked 79,950 times and admits
+193,449 runes, or 21.7% of the corpus, into the exact plan. The plan performs
+175,860 dense state transitions. The CPU profile is consequently dominated by
+UTF-8 decoding and fold-token map lookup, not the AVX-512 filter.
+
+Three controls separate that cause from plausible alternatives:
+
+- A one-pass diagnostic enumerator, using the same plan without returning from
+  `Find` after each hit, took 4.69 ms versus 4.65 to 4.99 ms for repeated `Find`.
+  It returned the same 971 matches. Restarting the API is therefore noise on
+  this row, not the 9× cause.
+- Replacing Shufti with the exact nine-pair AVX-512 filter made the row slower.
+  Disabling AVX-512 made the multi-pattern row roughly 25% to 33% slower. The
+  assembly kernel is helping; it is being given an unselective question.
+- Rebar's Hyperscan runner was rebuilt and checked independently. It returned
+  971 matches with an AVX-512 VBMI database. Enabling start-of-match tracking
+  changed its time by only about 2%, so the result is not explained by its
+  no-start-offset lane. Hyperscan expands the folds at compile time into a
+  byte-level database and scans the five literals continuously, without a Go
+  rune-decoding and hash-map verification loop.
+
+The smaller two losses have the same general shape at lower severity. On the
+single Russian literal, `casei`'s rare interior anchor is effective, but each
+survivor still enters a Go rune decoder and token map while PCRE2-JIT verifies
+in native code (about 2.5×). On the sparse one-match Russian prefilter row,
+that residual verification gap is only about 1.28×. The two wins are the same
+sparse shape against rust/regex rather than PCRE2.
+
 ## Correctness and inventory closure
 
 Every recorded runner invocation returned rebar's expected result on each of
@@ -101,6 +150,9 @@ The remaining case-insensitive rebar definitions were inspected rather than
 silently ignored:
 
 - `curated/03-date/*` and `wild/url/*` are general regex grammars.
+- `curated/13-noseyparker/*` loads a large rule file whose caseless rules also
+  use classes, boundaries, captures, and bounded repetition; its search and
+  compile workloads are general-regex workloads, not finite literal sets.
 - `imported/sherlock/name-alt4-casei` contains a character class and `+`.
 - `wild/ruff`, `reported/p893-hir-case-folding`, and
   `reported/i988-cloudflare-compile` exercise inline flags, classes,
@@ -144,15 +196,16 @@ runner uses the native PCRE2 API, so no compiled search or JIT code changed.
 
 ## Required next work
 
-The next construction is not “add favorable rebar rows.” It is a stateful
-enumeration API—tentatively `Matcher.Scan` or an iterator—that:
+The next construction must:
 
-1. compiles once and keeps one package-owned plan;
-2. preserves exact non-overlapping Unicode simple-fold semantics and byte
-   widths;
-3. retains vector/filter state across hits instead of restarting `Find`;
-4. enters all five Unicode-equivalent rebar performance rows; and
-5. beats the fastest eligible entrant on every one before any count-all claim
-   is made.
+1. compile once and keep one package-owned plan;
+2. combine selective interior anchors from several patterns into one shared
+   byte-level filter instead of unioning common roots;
+3. replace hot-path rune-to-token map lookups with compiled classification where
+   the plan permits it;
+4. expose exact non-overlapping enumeration, tentatively `Matcher.Scan` or an
+   iterator, without introducing a second search engine; and
+5. beat the fastest eligible entrant on all five Unicode-equivalent rows before
+   any count-all performance claim is made.
 
 Until that exists, the public performance claim remains first-match search.

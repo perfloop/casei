@@ -1,0 +1,9 @@
+diff --git a/plan.go b/plan.go
+index 3422f2d..30e93e4 100644
+--- a/plan.go
++++ b/plan.go
+@@ -2250,0 +2251,4 @@ func (p *searchPlan) find(haystack string) (Match, bool) {
++	// Publication-only ablation: retain the compiled plan and exact transition,
++	// but bypass every shape-specific filter selected by find.
++	return p.findUnfiltered(haystack)
++
