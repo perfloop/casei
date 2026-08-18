@@ -5,7 +5,9 @@ raw-byte tests can prove that a match is impossible.
 
 ## Ten seconds
 
-`casei` compiles each pattern set into two parts that agree:
+`casei` wins by refusing to do Unicode work almost everywhere.
+
+It compiles each pattern set into two parts that agree:
 
 ```text
                          exact fold-token plan
@@ -18,10 +20,11 @@ patterns -> compile once                         -> first correct match
 
 The sieve rejects impossible starting positions. It never declares a match.
 Usually it rejects all 64 positions, so the exact Unicode plan does no work for
-that block. If one or more positions survive, the plan checks those positions
-and makes the decision.
+that block. If positions survive, the plan checks them and makes the decision.
 
-This split gives `casei` both properties it needs:
+The sieve can be wrong in only one direction. It may admit a position that
+later fails, which costs time. It may never reject a real match. That split
+gives `casei` both properties it needs:
 
 - **Speed:** most input is handled as raw bytes in wide vectors.
 - **Correctness:** every possible match is decided by the complete Unicode
@@ -111,16 +114,14 @@ index.
 
 ## Where the advantage comes from
 
-Vectorscan and rust/regex have excellent prefilters too. `casei` can co-design
-both halves around one
-narrow answer: literal sets, Unicode simple folding, and the first leftmost
-match. General regex engines must preserve more syntax and match behavior;
-all-match engines must support continued enumeration; ASCII specialists do not
-represent the Unicode relation at all. `casei` spends that saved generality on
-literal-shape-specific sieves and a compact shared verifier.
+Vectorscan, PCRE2, rust/regex, StringZilla, and veloz are fast at their own
+contracts. `casei` has a narrower one. The compiler knows the patterns are
+literals, the matching relation is Unicode simple folding, and the caller wants
+the first leftmost answer. It can choose the raw-byte sieve and exact verifier
+together, then share both across the whole pattern set.
 
-There are four layers. They are useful to separate because “it uses AVX-512” is
-true but incomplete.
+The measured advantage has four layers. “It uses AVX-512” is true but
+incomplete.
 
 | layer | what it buys | evidence that it matters |
 |---|---|---|
@@ -134,13 +135,12 @@ specifically the AVX-512 implementation.
 
 ### Why the hand-written kernels matter
 
-A 512-bit register can test 64 candidate starts, but width alone does not keep
-the CPU busy. On Ice Lake, the `VPERMB` table lookup used by the hot long-literal
-filter takes three cycles to produce an answer, even though the core can start
-one lookup each cycle. The generated Go SIMD loop starts one 64-byte block and
-then needs that block's answer. The assembly loop starts four independent
-blocks, so the second, third, and fourth lookups occupy the machine while the
-first one finishes.
+A 512-bit register gives the kernel 64 lanes. It does not hide latency. On Ice
+Lake, the `VPERMB` lookup used by the hot long-literal filter takes three cycles
+to produce an answer, although the core can start one lookup each cycle. The
+generated Go SIMD loop starts one 64-byte block and then waits on that block's
+answer. The assembly loop starts four independent blocks, keeping the lookup
+unit busy while the first answer arrives.
 
 The assembly also sends lookup results straight into AVX-512 mask registers
 and asks whether any of four masks survived. The generated loop builds another

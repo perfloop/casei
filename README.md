@@ -1,21 +1,20 @@
 # casei
 
-`casei` is a Go package for case-insensitive UTF-8 substring search. It finds
-one literal with `IndexFold`, or the leftmost of many literals with one compiled
-`Matcher`. Matching follows Unicode simple case folding.
+`casei` searches UTF-8 text without lowercasing it first. `IndexFold` finds one
+literal. A compiled `Matcher` finds the leftmost of many literals in one scan.
+Both use Unicode simple case folding, the same relation as Go's `regexp (?i)`
+on valid UTF-8.
 
-I built it because lowercasing both strings before searching does unnecessary
-work and gives the wrong answer for some Unicode text. It also became a hard,
-self-contained test for [Perfloop](https://app.perfloop.ai). I chose the problem
-and the constraints. Perfloop generated candidates, measured them against the
-field, and independently checked the survivor. [The full engine case](https://app.perfloop.ai/t/oss/case_9r9ntnxjd1)
+On Intel Ice Lake and Sapphire Rapids with AVX-512F/BW/VBMI, `casei` finished
+first on all 33 rows of its open first-match benchmark. The median speedup over
+the fastest correct alternative was 1.9x on Ice Lake and 1.7x on Sapphire
+Rapids. That claim covers the AVX-512 path only.
+
+I built the engine as a hard, self-contained test for
+[Perfloop](https://app.perfloop.ai). I supplied the problem and constraints;
+Perfloop generated candidates, measured them against the field, and checked the
+survivor. [The full engine Case](https://app.perfloop.ai/t/oss/case_9r9ntnxjd1)
 is public.
-
-On Intel Ice Lake and Sapphire Rapids with AVX-512F/BW/VBMI, `casei` won all 33
-rows of its open first-match benchmark. Median throughput was 1.9x the
-next-fastest eligible engine on Ice Lake and 1.7x on Sapphire Rapids. The
-measured lead covers the AVX-512 path. AVX2 and scalar performance are outside
-this claim. The API implements simple folding and returns the first match.
 
 ## Use it
 
@@ -56,26 +55,27 @@ every other platform runs the portable path, which returns identical results
 
 ## Why it is fast
 
-Most bytes never enter the Unicode matcher. Compilation produces two views of
-the same patterns:
+The shortest useful explanation is that `casei` spends most of its time proving
+where a match cannot start.
+
+Compilation produces two views of the same patterns:
 
 ```text
 patterns -> complete simple-fold plan -> exact answer
         \-> conservative byte filters -> 64 starts at once -> survivors only
 ```
 
-The byte filters reject 64 impossible starts at a time. A surviving bit is only
-a “maybe”: the complete fold plan still decides Unicode equivalence, offsets,
-leftmost order, and pattern ties. This keeps the shortcut cheap without letting
-it change the answer.
+The byte sieve rejects 64 impossible starts at a time. A surviving bit means
+only “maybe.” The complete fold plan still decides Unicode equivalence, byte
+offsets, leftmost order, and pattern ties. The sieve may admit junk and cost
+time; it may never discard a real match.
 
-One needle and many needles use the same fold-token state machine; many needles
-do not mean many scans. AVX-512 amplifies that design with 64-byte blocks, mask
-registers, and VBMI table lookups. The assembly matters: one Shufti scheduling
-change improved its contested row by 21.8%, while a complete replacement with
-Go's experimental SIMD package passed correctness but slowed a required field
-row. The larger gain still comes from avoiding Unicode decoding at positions
-that cannot match.
+One needle and many needles use the same fold-token state machine, so many
+needles do not mean many scans. AVX-512 runs the sieve over 64 starts at once.
+The hand-written kernels matter too: one Shufti scheduling change improved its
+contested row by 21.8%, while a complete replacement with Go's experimental
+SIMD package passed correctness but slowed a required field row. The larger
+gain still comes from keeping impossible positions out of the Unicode matcher.
 
 [The one-page explanation](HOW_IT_WORKS.md) walks from that mental model to the
 actual plan, kernels, competitor differences, causal measurements, and limits.
