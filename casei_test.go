@@ -67,34 +67,6 @@ func reference(haystack, needle string) int {
 	return -1
 }
 
-// asciiLower folds only 'A'..'Z'; used by the ASCII-tier ceiling benchmark.
-func asciiLower(s string) string {
-	b := []byte(s)
-	for i, c := range b {
-		if 'A' <= c && c <= 'Z' {
-			b[i] = c + 0x20
-		}
-	}
-	return string(b)
-}
-
-// canonFoldString rebuilds a string in canonical fold form (UTF-8 tier
-// ceiling: what caseless search costs if folding were free).
-func canonFoldString(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	for i := 0; i < len(s); {
-		r, size := utf8.DecodeRuneInString(s[i:])
-		if r == utf8.RuneError && size == 1 {
-			b.WriteByte(s[i])
-		} else {
-			b.WriteRune(orbitMin(r))
-		}
-		i += size
-	}
-	return b.String()
-}
-
 // ---- trap table --------------------------------------------------------------
 
 var trapCases = []struct {
