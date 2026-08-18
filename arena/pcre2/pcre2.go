@@ -74,7 +74,7 @@ type matchData struct {
 var empty = [1]byte{}
 
 // VectorBits reports the generic x86-64 PCRE2 JIT width. In the pinned
-// PCRE2 10.46 JIT source, the fast-forward AVX2 path is explicitly disabled;
+// PCRE2 10.47 JIT source, the fast-forward AVX2 path is explicitly disabled;
 // its x86 vector baseline is SSE2, which is mandatory on this target. It is
 // therefore not counted as an AVX2 or AVX-512 entrant.
 func VectorBits() int { return 128 }

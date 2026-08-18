@@ -7,21 +7,21 @@ package stringzilla
 #include <stringzilla/stringzilla.h>
 
 static int casei_stringzilla_has_ice(void) {
-	return (sz_capabilities() & sz_cap_ice_k) != 0;
+	return (sz_capabilities() & sz_cap_icelake_k) != 0;
 }
 
 static int casei_stringzilla_prepare(const char *needle, size_t needle_length,
-		sz_utf8_case_insensitive_needle_metadata_t *metadata) {
+		sz_utf8_uncased_needle_metadata_t *metadata) {
 	sz_size_t matched_length = 0;
-	return sz_utf8_case_insensitive_find(needle, needle_length, needle,
+	return sz_utf8_uncased_search(needle, needle_length, needle,
 		needle_length, metadata, &matched_length) != NULL;
 }
 
 static int casei_stringzilla_find(const char *haystack, size_t haystack_length,
 		const char *needle, size_t needle_length,
-		sz_utf8_case_insensitive_needle_metadata_t *metadata, size_t *offset) {
+		sz_utf8_uncased_needle_metadata_t *metadata, size_t *offset) {
 	sz_size_t matched_length = 0;
-	sz_cptr_t found = sz_utf8_case_insensitive_find(haystack, haystack_length,
+	sz_cptr_t found = sz_utf8_uncased_search(haystack, haystack_length,
 		needle, needle_length, metadata, &matched_length);
 	if (found == NULL) {
 		return 0;
@@ -48,7 +48,7 @@ import (
 // arena contract, so it is part of the timed baseline.
 type Matcher struct {
 	needle   string
-	metadata C.sz_utf8_case_insensitive_needle_metadata_t
+	metadata C.sz_utf8_uncased_needle_metadata_t
 }
 
 // Alternation is a reduction over independently compiled StringZilla needles.

@@ -82,7 +82,7 @@ baselines:
   - name: stringzilla
     tier: [ascii, utf8]
     semantic_status: exact
-    what: StringZilla v4.5.0 caseless UTF-8 search with runtime-dispatched
+    what: StringZilla v5.1.2 caseless UTF-8 search with runtime-dispatched
           Ice Lake AVX-512 required. It is excluded before native calls when
           that path is unavailable, never silently downgraded. The arena
           compiles each literal once, verifies full-fold candidates with simple
@@ -111,7 +111,7 @@ baselines:
   - name: vectorscan
     tier: [ascii, utf8]
     semantic_status: exact
-    what: Source-built Vectorscan 5.4.11 fat runtime with AVX2, AVX-512, and
+    what: Source-built Vectorscan 5.4.12 fat runtime with AVX2, AVX-512, and
           AVX-512 VBMI targets enabled. Each database is explicitly compiled
           for the process's audited AVX-512-VBMI or AVX2 target and its
           hs_database_info feature string is checked before timing. The arena
