@@ -225,11 +225,12 @@ contract.
 
 ## Reproduce it
 
-On an x86-64 Linux host **with AVX-512 VBMI** (pin a GCP `n2` to Ice Lake, use
-`c3` for Sapphire Rapids, or use equivalent recent Intel hardware), one script
-builds the entire competitor field from source and runs the scoreboard. Apple
-Silicon does not meet this performance-host contract. CI rebuilds and checks
-the same pinned field for correctness on every push.
+With Go 1.24+ on an x86-64 Linux host **with AVX2 and AVX-512F/BW/VBMI** (pin a
+GCP `n2` to Ice Lake, use `c3` for Sapphire Rapids, or use equivalent recent
+Intel hardware), one script builds the entire competitor field from source and
+runs the scoreboard. Apple Silicon does not meet this performance-host
+contract. CI rebuilds and checks the same pinned field for correctness on every
+push.
 
 ```sh
 git clone https://github.com/tsenart/casei && cd casei

@@ -3,7 +3,8 @@
 # then run the scoreboard. CI builds and correctness-checks the same pinned
 # field on every push; the performance board requires the host contract below.
 #
-# Requirements: x86-64 Linux with AVX-512 VBMI (Intel Ice Lake or newer).
+# Requirements: Go 1.24+ on x86-64 Linux with AVX2 and AVX-512F/BW/VBMI
+# (Intel Ice Lake or newer).
 # casei's benchmarked result is the AVX-512 path, and VBMI is required so
 # Vectorscan can enter at full strength. casei also has AVX2 and portable
 # scalar paths, but they are not benchmarked, and the native x86 field only
@@ -11,20 +12,33 @@
 # off-scope number.
 set -euo pipefail
 
+if ! command -v go >/dev/null 2>&1; then
+  echo "Go 1.24 or newer is required." >&2
+  exit 1
+fi
+go_version="$(go env GOVERSION)"
+if [[ ! "$go_version" =~ ^go([0-9]+)\.([0-9]+) ]] ||
+  (( BASH_REMATCH[1] < 1 || (BASH_REMATCH[1] == 1 && BASH_REMATCH[2] < 24) )); then
+  echo "Go 1.24 or newer is required; found '$go_version'." >&2
+  exit 1
+fi
+
 arch="$(uname -m)"
 if [ "$arch" != "x86_64" ]; then
   echo "casei's benchmarked result is the x86-64 AVX-512 path; this host is '$arch'." >&2
   echo "casei still runs correctly here (portable scalar path — no NEON kernel yet), but that path is not benchmarked and the native x86 field will not build here." >&2
   exit 1
 fi
-if ! grep -qw avx512f /proc/cpuinfo 2>/dev/null; then
-  echo "This host has no AVX-512 (need Intel Ice Lake or newer, e.g. a GCP n2/c3)." >&2
-  echo "casei would run its AVX2 path here, but the benchmarked result and the field build both require AVX-512." >&2
-  exit 1
-fi
-if ! grep -qw avx512vbmi /proc/cpuinfo 2>/dev/null; then
-  echo "This host has no AVX-512 VBMI, so Vectorscan cannot dispatch its strongest path." >&2
+missing=()
+for feature in avx2 avx512f avx512bw avx512vbmi; do
+  if ! grep -qw "$feature" /proc/cpuinfo 2>/dev/null; then
+    missing+=("$feature")
+  fi
+done
+if [ "${#missing[@]}" -ne 0 ]; then
+  echo "This host is missing required CPU features: ${missing[*]}." >&2
   echo "Use Intel Ice Lake or newer (for example, pin a GCP n2 to Ice Lake or use c3)." >&2
+  echo "casei may run another backend here, but this script reproduces only the published AVX-512 result." >&2
   exit 1
 fi
 
