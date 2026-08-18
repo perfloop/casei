@@ -220,11 +220,11 @@ local board with `./scripts/reproduce.sh`.
   shared filter choice, not iterator overhead. [The complete rebar audit](REBAR.md)
   lists every applicable row and the causal controls.
 
-On valid UTF-8, correctness is pinned to Go `regexp` `(?i)` by differential and
-fuzz on **every** backend (AVX-512, AVX2, scalar): a 350k-case multi-pattern
-differential, a 2.8M-case single-pattern differential, and `FuzzIndexFold` /
-`FuzzMatcher`. Invalid-byte inputs are checked against the separate opaque-unit
-contract.
+On valid UTF-8, correctness is pinned to Go `regexp` `(?i)` by deterministic
+single- and multi-pattern differentials. The suite runs under AVX-512, AVX2,
+and scalar dispatch, with tens of thousands of randomized searches and two
+exhaustive 65,536-pair filter checks. `FuzzIndexFold` and `FuzzMatcher` run
+separately. Invalid-byte inputs are checked against the opaque-unit contract.
 
 ## Reproduce it
 

@@ -181,9 +181,10 @@ this contract is what produced the new result.
 
 ## The evidence ladder
 
-1. **Semantics:** millions of single- and multi-pattern differential cases plus
-   fuzzing compare every backend with Go `regexp (?i)` on valid UTF-8 and the
-   opaque-byte oracle on invalid input.
+1. **Semantics:** seeded single- and multi-pattern differentials and exhaustive
+   byte-pair filter checks compare each dispatch mode with Go `regexp (?i)` on
+   valid UTF-8 and the opaque-byte oracle on invalid input. Separate fuzz
+   targets exercise the same oracles.
 2. **Mechanism:** the filter-route and ISA ablations measure work avoidance and
    vector width separately; the Shufti case isolates one assembly change. The
    [raw two-host audit](audit/publication/README.md) includes every sample, the
