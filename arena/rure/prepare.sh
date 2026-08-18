@@ -12,8 +12,9 @@ out=$1
 root="$out/root"
 source_copy="$out/rure-source"
 memchr_copy="$out/memchr-source"
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-cargo_home=${CARGO_HOME:-"$HOME/.cargo"}
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+cargo_home=${CARGO_HOME:-"$out/cargo-home"}
+export CARGO_HOME="$cargo_home"
 mkdir -p "$root/usr/include" "$root/usr/lib/x86_64-linux-gnu/pkgconfig"
 
 # Fetch the exact registry sources through Cargo so its checksums remain the
