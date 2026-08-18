@@ -126,7 +126,7 @@ incomplete.
 | layer | what it buys | evidence that it matters |
 |---|---|---|
 | Work avoidance | Whole blocks are rejected without decoding or advancing the exact plan at every byte. | Bypassing the shape-selected routes made the median row 3.88× slower on Ice Lake and 4.28× slower on Sapphire Rapids. Three rows were unchanged within 1%; the worst Unicode multi-pattern rows were 401× and 424× slower. |
-| Shared construction | One pattern set becomes one transition plan and one traversal instead of `N` separate searches. | The full engine Case moved the worst full-field row from `x_vs_best=6.718` to `0.9123` while preserving the semantic suite. |
+| Shared construction | One pattern set becomes one transition plan and one traversal instead of `N` separate searches. | Ten paired measurements compared the shared-plan candidate with the earlier per-pattern `IndexFold` loop. The median maximum `x_vs_best` across the 33 rows fell from 6.718 to 0.9123 while the semantic suite stayed green. |
 | Wider native transition | AVX-512 BW handles 64 candidate starts and keeps set arithmetic in mask registers; VBMI performs byte-table lookup in registers. | Masking AVX-512 off while retaining the same plans reduced median throughput by 1.72× on Ice Lake and 1.89× on Sapphire Rapids. One Ice Lake row and three Sapphire Rapids rows favored AVX2, mostly short or Unicode verification-heavy cases. |
 | Kernel scheduling | Fewer dependent operations keep the wide sieve fed. | Fusing one four-way Shufti reduction improved its 64 KiB kernel by 21.6% and the field row using it by 21.8%. Replacing the complete assembly backend with Go's experimental SIMD package then regressed a required 1 MiB row. |
 
