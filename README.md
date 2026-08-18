@@ -88,8 +88,8 @@ hosts exposing Ice Lake and Sapphire Rapids.
 
 Perfloop's verified runs put **casei first on every one of 33 rows, on both
 microarchitectures**. Median throughput was **1.9x** the next-fastest engine on
-Ice Lake and **1.7x** on Sapphire Rapids. The range runs from 1.10x on the
-tightest streaming row to 25.8x on the adversarial one. Throughput is in GB/s;
+Ice Lake and **1.7x** on Sapphire Rapids. The narrowest lead was 1.07x and the
+widest was 25.8x. Throughput is in GB/s;
 **bold = casei**. Values are rounded to one decimal, so `0.0` means below 0.05
 GB/s. `casei vs #2` is casei over the fastest other engine on that row.
 

@@ -1,7 +1,7 @@
 # Publication verification
 
 This directory contains the fresh hardware checks used for the August 2026
-publication review. They are separate from Perfloop's sealed randomized
+publication review. They are separate from Perfloop's public randomized
 co-measurements behind the tables in the top-level README. The purpose of this
 run was to rebuild the field, check that every row still passes, and isolate
 the two main speed mechanisms with the same compiled plans.
