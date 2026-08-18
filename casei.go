@@ -21,7 +21,7 @@
 // competing implementations built from source, and CONTEXT.md catalogs the
 // known techniques.
 //
-// Semantics — Unicode simple case folding over UTF-8:
+// Semantics: Unicode simple case folding over UTF-8:
 //
 //   - Two code points match when they belong to the same simple case-folding
 //     orbit (unicode.SimpleFold). On valid UTF-8, this is exactly the matching

@@ -87,11 +87,12 @@ built from pinned source, each dispatching its widest eligible path, on GCP
 hosts exposing Ice Lake and Sapphire Rapids.
 
 Perfloop's verified runs put **casei first on every one of 33 rows, on both
-microarchitectures**. Median throughput was **1.9x** the next-fastest engine on
-Ice Lake and **1.7x** on Sapphire Rapids. The narrowest lead was 1.07x and the
-widest was 25.8x. Throughput is in GB/s;
-**bold = casei**. Values are rounded to one decimal, so `0.0` means below 0.05
-GB/s. `casei vs #2` is casei over the fastest other engine on that row.
+microarchitectures**. The median speedup over the fastest correct alternative
+was **1.9x** on Ice Lake and **1.7x** on Sapphire Rapids. The narrowest lead was
+1.07x and the widest was 25.8x. The short table below shows selected Sapphire
+Rapids rows; both complete tables follow. Throughput is in GB/s; **bold =
+casei**. Values are rounded to one decimal, so `0.0` means below 0.05 GB/s.
+`casei vs #2` is casei over the fastest other engine on that row.
 
 | row | casei | Vectorscan | veloz | PCRE2-JIT | StringZilla | rust/regex | casei vs #2 |
 |---|---|---|---|---|---|---|---|
@@ -285,8 +286,8 @@ can be challenged and reproduced.
 
 - **The result is AVX-512-specific.** On x86 without AVX-512, `casei` dispatches
   an AVX2 (256-bit) path. On ARM (Apple Silicon, Graviton) it runs a portable
-  scalar path; there is no NEON kernel yet. Those paths are correct but
-  unbenchmarked, so the result is not claimed for them.
+  scalar path; there is no NEON kernel yet. Those paths run the same correctness
+  suite, but no performance lead is claimed for them.
 - **Compile-once, search-many.** `NewMatcher` compiles a plan; a single tiny
   one-shot lookup pays that setup and `strings.Index` wins it.
 - **Simple folding, not full.** `ß`→`ss` is a different, harder problem
