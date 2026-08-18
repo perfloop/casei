@@ -85,9 +85,13 @@ actual plan, kernels, competitor differences, causal measurements, and limits.
 
 ## Results
 
-The first-match API was co-measured in randomized order against competitors
-built from pinned source, each dispatching its widest eligible path, on GCP
-hosts exposing Ice Lake and Sapphire Rapids.
+`BenchmarkBar` timed `casei` and every eligible competitor built from pinned
+source in the same benchmark process, with each entrant dispatching its widest
+eligible path. The complete tables below come from three fresh passes on each
+GCP host, one exposing Ice Lake and one exposing Sapphire Rapids. Perfloop also
+ran ten co-measured pairs of the pre-engine and final source, choosing the two
+source arms' order randomly inside each pair; that public Case used the worst
+`x_vs_best` across all 33 rows as its acceptance metric.
 
 Perfloop's verified runs put **casei first on every one of 33 rows, on both
 microarchitectures**. The median speedup over the fastest correct alternative
@@ -243,8 +247,9 @@ git clone https://github.com/tsenart/casei && cd casei
 
 It prints, for all 33 rows, every entrant's local throughput and the vector
 width it dispatched, plus `x_vs_best` (`casei`'s time ÷ the fastest *correct*
-competitor). It reruns the open local board; Perfloop's public Case contains the
-separate randomized co-measurements behind the published tables.
+competitor). It reruns the open local board. Perfloop's public Case separately
+records ten co-measured pre-engine/final-source pairs, with random source-arm
+order, for the board's worst `x_vs_best`.
 
 The [publication audit](audit/publication/README.md) records a fresh three-pass
 acceptance run on both CPU models, the work-avoidance and AVX-512 ablations,
@@ -276,9 +281,12 @@ The arena enforces these rules:
   separately rather than borrowed as support for this claim.
 - **The field is reproducible.** Nine engines are pinned to
   source versions and build flags in [`arena/field.yaml`](arena/field.yaml).
-  Published ratios come from Perfloop's raw co-measured samples with randomized
-  entrant order and confidence bounds; `reproduce.sh` separately rebuilds that
-  field and reruns the local `BenchmarkBar` board.
+  The published per-row ratios come from the checked three-pass run on each
+  pinned host. Perfloop's public engine Case independently records ten
+  co-measured source-revision pairs, with each pair's arm order chosen randomly,
+  and reports a confidence interval for the change in the worst `x_vs_best`.
+  `reproduce.sh` rebuilds the same field and reruns the local `BenchmarkBar`
+  board.
 
 The arena was developed alongside `casei`, so it is not a neutral third-party
 harness. Its source, field, workloads, and measurements are open so the result

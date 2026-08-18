@@ -40,7 +40,7 @@ stress tests, not semantic equivalents.
 | answer | first byte offset; or leftmost match, tie to lowest pattern ID | count or total span of every non-overlapping match |
 | search state | one `IndexFold`/`Find` call | one compiled engine repeatedly enumerates until end of input |
 | folding | Unicode simple folding on every row | Unicode on 5 rows, ASCII-only on 13 |
-| measurement | randomized co-measurement through Perfloop for the published result | [rebar's sequential runner protocol](https://github.com/BurntSushi/rebar/blob/463d00f31887e84c38467805b9e3122c314b9521/METHODOLOGY.md), three independent passes here |
+| measurement | in-process field timing, with three publication passes on each pinned host; Perfloop separately co-measured the engine's source revisions | [rebar's sequential runner protocol](https://github.com/BurntSushi/rebar/blob/463d00f31887e84c38467805b9e3122c314b9521/METHODOLOGY.md), three independent passes here |
 
 The audit adapter compiles `NewMatcher` outside the timed region. Inside each
 iteration it calls `Find` on the remaining suffix, verifies the matched byte
