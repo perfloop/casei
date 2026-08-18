@@ -35,6 +35,7 @@ jobs:
       - run: go test ./...
       - run: go test -race ./...
       - run: python3 audit/rebar/prepare_test.py
+      - run: python3 scripts/verify_benchmarkbar_test.py
 
   arena:
     runs-on: ubuntu-latest

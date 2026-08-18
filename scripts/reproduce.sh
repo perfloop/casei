@@ -61,7 +61,9 @@ export PKG_CONFIG_SYSROOT_DIR="$native/root"
 export LD_LIBRARY_PATH="$native/root/usr/lib/x86_64-linux-gnu"
 
 echo "==> Running the scoreboard (BenchmarkBar: x_vs_best per row, with per-entrant dispatched width)"
-go test -run '^$' -bench '^BenchmarkBar$' -benchtime 30x -count 3
+bar_output="$native/benchmarkbar.txt"
+go test -run '^$' -bench '^BenchmarkBar$' -benchtime 30x -count 3 | tee "$bar_output"
+python3 "$root/scripts/verify_benchmarkbar.py" "$bar_output" --samples 3
 
 echo
 echo "==> Per-competitor throughput (BenchmarkIndexFold / BenchmarkMatcher, MB/s per engine)"
