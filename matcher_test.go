@@ -106,6 +106,30 @@ func TestMatcherPatternsAreIsolated(t *testing.T) {
 	}
 }
 
+func TestMatcherLongVariableWidthPatterns(t *testing.T) {
+	validPattern := strings.Repeat("щ", 257) + "!"
+	validPatterns := []string{validPattern, "short"}
+	validHaystack := strings.Repeat("x", 37) + strings.Repeat("Щ", 257) + "!"
+	validMatcher := NewMatcher(validPatterns)
+	if validMatcher.plan.maxUnits <= 256 {
+		t.Fatalf("valid maxUnits = %d, want more than inline ring", validMatcher.plan.maxUnits)
+	}
+	if got, ok := validMatcher.Find(validHaystack); !ok || got != (Match{Pattern: 0, Start: 37}) {
+		t.Fatalf("valid long Find = %+v,%t, want {Pattern:0 Start:37},true", got, ok)
+	}
+
+	opaquePattern := "\x80" + strings.Repeat("щ", 256)
+	opaquePatterns := []string{opaquePattern, "short"}
+	opaqueHaystack := strings.Repeat("x", 41) + "\x80" + strings.Repeat("Щ", 256)
+	opaqueMatcher := NewMatcher(opaquePatterns)
+	if !opaqueMatcher.plan.opaqueContinuation || opaqueMatcher.plan.maxUnits <= 256 {
+		t.Fatalf("opaque plan: continuation=%t maxUnits=%d", opaqueMatcher.plan.opaqueContinuation, opaqueMatcher.plan.maxUnits)
+	}
+	if got, ok := opaqueMatcher.Find(opaqueHaystack); !ok || got != (Match{Pattern: 0, Start: 41}) {
+		t.Fatalf("opaque long Find = %+v,%t, want {Pattern:0 Start:41},true", got, ok)
+	}
+}
+
 func TestMatcherConcurrentFirstFind(t *testing.T) {
 	patterns := []string{"first needle", "second needle"}
 	haystack := strings.Repeat("x", 80)
