@@ -2,6 +2,25 @@ name: ci
 on: [push, pull_request]
 
 jobs:
+  minimum-go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version: '1.22.x'}
+      - run: go test ./...
+      # Exercise the scalar fallback on amd64 rather than merely compiling it.
+      - run: GODEBUG=cpu.avx512f=off,cpu.avx2=off go test ./...
+
+  portable-arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version: '1.22.x'}
+      # Execute root_other.go on native hardware, not just a cross-compiler.
+      - run: go test ./...
+
   candidate:
     runs-on: ubuntu-latest
     steps:
@@ -14,6 +33,7 @@ jobs:
       - run: gofmt -l . | (! grep .)
       - run: go vet ./...
       - run: go test ./...
+      - run: go test -race ./...
 
   arena:
     runs-on: ubuntu-latest
@@ -31,9 +51,11 @@ jobs:
           ./rure/prepare.sh "$native"
           ./rustac/prepare.sh "$native"
           ./stringzilla/prepare.sh "$native"
-          echo "PKG_CONFIG_PATH=$native/root/usr/lib/x86_64-linux-gnu/pkgconfig" >> "$GITHUB_ENV"
-          echo "PKG_CONFIG_SYSROOT_DIR=$native/root" >> "$GITHUB_ENV"
-          echo "LD_LIBRARY_PATH=$native/root/usr/lib/x86_64-linux-gnu" >> "$GITHUB_ENV"
+          printf '%s\n' \
+            "PKG_CONFIG_PATH=$native/root/usr/lib/x86_64-linux-gnu/pkgconfig" \
+            "PKG_CONFIG_SYSROOT_DIR=$native/root" \
+            "LD_LIBRARY_PATH=$native/root/usr/lib/x86_64-linux-gnu" \
+            >> "$GITHUB_ENV"
       - run: go vet ./...
         working-directory: arena
       # The agreement tests are the gate that keeps a baseline honest: every
