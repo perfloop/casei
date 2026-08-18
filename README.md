@@ -7,7 +7,7 @@ on valid UTF-8.
 
 On Intel Ice Lake and Sapphire Rapids with AVX-512F/BW/VBMI, `casei` finished
 first on all 33 rows of its open first-match benchmark. The median speedup over
-the fastest correct alternative was 1.9x on Ice Lake and 1.7x on Sapphire
+the fastest correct alternative was 1.9x on Ice Lake and 1.6x on Sapphire
 Rapids. That claim covers the AVX-512 path only.
 
 I built the engine as a hard, self-contained test for
@@ -95,11 +95,12 @@ source arms' order randomly inside each pair; that public Case used the worst
 
 Perfloop's verified runs put **casei first on every one of 33 rows, on both
 microarchitectures**. The median speedup over the fastest correct alternative
-was **1.9x** on Ice Lake and **1.7x** on Sapphire Rapids. The narrowest lead was
-1.07x and the widest was 25.8x. The short table below shows selected Sapphire
-Rapids rows; both complete tables follow. Throughput is in GB/s; **bold =
-casei**. Values are rounded to one decimal, so `0.0` means below 0.05 GB/s.
-`casei vs #2` is casei over the fastest other engine on that row.
+was **1.9x** on Ice Lake and **1.6x** on Sapphire Rapids, using the median
+`1 / x_vs_best` across the 33 acceptance rows. The narrowest median lead was
+1.08x and the widest was 25.7x. The short table below comes from the separate
+per-engine throughput lanes on Sapphire Rapids; both complete displays follow.
+Throughput is in GB/s. Values are rounded to one decimal, so `0.0` means below
+0.05 GB/s. `casei vs #2` uses those display lanes.
 
 | row | casei | Vectorscan | veloz | PCRE2-JIT | StringZilla | rust/regex | casei vs #2 |
 |---|---|---|---|---|---|---|---|
@@ -120,8 +121,9 @@ casei**. Values are rounded to one decimal, so `0.0` means below 0.05 GB/s.
 
 The visible columns show the six engines with lanes on all or most rows;
 `rust/regex` is the rure adapter. Go `regexp` and Rust Aho-Corasick are omitted
-from this display, but both are timed and enter `x_vs_best` wherever eligible.
-The ratio therefore still includes every eligible scoring entrant.
+from this display. Both still enter the acceptance row's `x_vs_best` wherever
+eligible. The display ratio and acceptance score are kept separate because
+they come from different benchmark surfaces.
 
 #### Sapphire Rapids (Xeon 8481C), GB/s (higher is better; **bold** = casei)
 
