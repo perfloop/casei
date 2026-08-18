@@ -352,3 +352,29 @@ func TestContainsFold(t *testing.T) {
 		})
 	}
 }
+
+func TestBoundedSearchesAllocateNothing(t *testing.T) {
+	haystack := strings.Repeat("payment accepted ", 64)
+	needle := "payment declined"
+
+	// Warm the direct-mapped single-pattern cache before measuring its hot path.
+	if got := IndexFold(haystack, needle); got != -1 {
+		t.Fatalf("IndexFold warmup = %d, want -1", got)
+	}
+	if got := testing.AllocsPerRun(100, func() {
+		if at := IndexFold(haystack, needle); at != -1 {
+			t.Fatalf("IndexFold = %d, want -1", at)
+		}
+	}); got != 0 {
+		t.Fatalf("cache-hit IndexFold allocations = %g, want 0", got)
+	}
+
+	matcher := NewMatcher([]string{"payment declined", "fatal panic", "oom killed"})
+	if got := testing.AllocsPerRun(100, func() {
+		if match, ok := matcher.Find(haystack); ok {
+			t.Fatalf("Find = %+v,true, want no match", match)
+		}
+	}); got != 0 {
+		t.Fatalf("bounded Matcher.Find allocations = %g, want 0", got)
+	}
+}

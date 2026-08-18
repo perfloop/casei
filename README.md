@@ -40,8 +40,11 @@ if match, ok := m.Find(line); ok {
 ```
 
 `NewMatcher` compiles the pattern set once. Reuse the `*Matcher` across searches
-and share it freely; `Find` is safe for concurrent use. `Find` and cache-hit
-`IndexFold` calls allocate nothing. Compiling a new plan can allocate.
+and share it freely; `Find` is safe for concurrent use. Every published
+benchmark path allocates nothing after compilation, including cache-hit
+`IndexFold`. Compiling a plan can allocate. A generic Unicode plan whose longest
+pattern exceeds the 256-entry inline offset ring can also allocate that ring
+during a search.
 
 On valid UTF-8, matching is Unicode **simple** case folding, identical to Go's
 `regexp` with `(?i)`: `k` matches the Kelvin sign U+212A, `ſ` matches `s`,

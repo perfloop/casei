@@ -1,5 +1,5 @@
 // Package casei searches UTF-8 text case-insensitively under Unicode simple
-// case folding, with allocation-free searches after plan compilation.
+// case folding, with allocation-free hot paths after plan compilation.
 //
 // It answers two shapes of the same question. IndexFold finds one needle;
 // Matcher finds any of a pattern set and reports the leftmost match. Both run
@@ -55,8 +55,7 @@ func IndexFold(haystack, needle string) int {
 
 // ContainsFold reports whether needle occurs in haystack under Unicode simple
 // case folding. It is IndexFold(haystack, needle) >= 0, and exists because it
-// is the shape most callers want: the correct, cache-hit allocation-free
-// replacement for
+// is the shape most callers want: the correct replacement for
 // strings.Contains(strings.ToLower(haystack), strings.ToLower(needle)).
 func ContainsFold(haystack, needle string) bool {
 	return IndexFold(haystack, needle) >= 0
