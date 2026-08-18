@@ -34,6 +34,8 @@ sudo apt-get install -y -qq cargo cmake curl libboost-dev pkg-config python3-pip
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 native="$(mktemp -d)"
+export GOPATH="${GOPATH:-$native/go}"
+export GOCACHE="${GOCACHE:-$native/go-build}"
 cd "$root/arena"
 for dep in pcre2 vectorscan rure rustac stringzilla; do
   echo "==> Building competitor from source: $dep"
