@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: {go-version: '1.24'}
+        with: {go-version: '1.26.x'}
       # Isolation runs first. A candidate that reaches a competitor is
       # ineligible, so there is no point measuring it.
       - run: ./scripts/check-baseline-isolation.sh
@@ -41,7 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: {go-version: '1.24'}
+        with: {go-version: '1.26.x'}
       - run: sudo apt-get update && sudo apt-get install -y cargo cmake curl libboost-dev pkg-config python3-pip
       - name: prepare pinned native field
         working-directory: arena
