@@ -1,14 +1,11 @@
 # How casei works
 
-> **Casei does not make Unicode matching cheap. It avoids doing Unicode
-> matching on almost every byte.**
-
-That is the competitive advantage. The rest of this page adds resolution to
-that sentence without changing it.
+Most of the speed comes from one decision: do not decode Unicode where a few
+raw-byte tests can prove that a match is impossible.
 
 ## Ten seconds
 
-`casei` compiles each pattern set into two views of the same truth:
+`casei` compiles each pattern set into two parts that agree:
 
 ```text
                          exact fold-token plan
@@ -34,13 +31,13 @@ This split gives `casei` both properties it needs:
 
 Imagine looking for `fatal panic` without case sensitivity.
 
-A conventional exact matcher can begin work at one input position, compare the
-pattern, fail, move one byte, and try again. A regex engine can compile more
-powerful machinery, but it still has to represent the case alternatives and
-the rest of its regex contract.
+Any matcher that checks every possible start will spend time on positions that
+could never match. Fast search engines use filters to avoid that work. `casei`
+can build its filters around a narrower promise than a general regex engine:
+literal strings, Unicode simple folding, and one leftmost answer.
 
 `casei` knows at compile time that this is a literal. It can choose several
-useful byte positions in the pattern—for example, positions far enough apart
+useful byte positions in the pattern. It might pick positions far enough apart
 that an accidental alignment is rare. On AVX-512 it loads those positions for
 64 possible starts at once, compares their case-normalized bytes, and intersects
 the resulting 64-bit masks.
@@ -90,8 +87,8 @@ Raw-byte filters are then derived only where they are safe:
 - A route is disabled when the compiler cannot prove that its filter covers
   every possible start.
 
-This is the correctness firewall: **the filter may say “maybe” too often, but
-it may never say “impossible” about a real match.**
+That rule keeps the sieve safe: **the filter may say “maybe” too often, but it
+may never say “impossible” about a real match.**
 
 ## Why many patterns do not mean many scans
 
@@ -114,8 +111,8 @@ index.
 
 ## Where the advantage comes from
 
-The advantage is not merely “casei has a prefilter.” Vectorscan and rust/regex
-have excellent prefilters too. `casei` can co-design both halves around one
+Vectorscan and rust/regex have excellent prefilters too. `casei` can co-design
+both halves around one
 narrow answer: literal sets, Unicode simple folding, and the first leftmost
 match. General regex engines must preserve more syntax and match behavior;
 all-match engines must support continued enumeration; ASCII specialists do not
@@ -127,16 +124,15 @@ true but incomplete.
 
 | layer | what it buys | evidence that it matters |
 |---|---|---|
-| Work avoidance | Whole blocks are rejected without decoding or advancing the exact plan at every byte. | In a same-plan ablation, forcing representative rows through the unfiltered exact transition was 5.6× to 571× slower. The filter is the dominant mechanism, not decorative preprocessing. |
+| Work avoidance | Whole blocks are rejected without decoding or advancing the exact plan at every byte. | Bypassing the shape-selected routes made the median row 3.88× slower on Ice Lake and 4.28× slower on Sapphire Rapids. Three rows were unchanged within 1%; the worst Unicode multi-pattern rows were 401× and 424× slower. |
 | Shared construction | One pattern set becomes one transition plan and one traversal instead of `N` separate searches. | The sealed engine case moved the worst full-field row from `x_vs_best=6.718` to `0.9123` while preserving the semantic suite. |
-| Wider native transition | AVX-512 BW handles 64 candidate starts and keeps set arithmetic in mask registers; VBMI performs byte-table lookup in registers. | Masking AVX-512 off while retaining the same plans reduced median throughput by about 1.75× on Ice Lake and 1.89× on Sapphire Rapids across the 33-row board. |
+| Wider native transition | AVX-512 BW handles 64 candidate starts and keeps set arithmetic in mask registers; VBMI performs byte-table lookup in registers. | Masking AVX-512 off while retaining the same plans reduced median throughput by 1.72× on Ice Lake and 1.89× on Sapphire Rapids. One Ice Lake row and three Sapphire Rapids rows favored AVX2, mostly short or Unicode verification-heavy cases. |
 | Kernel scheduling | Fewer dependent operations keep the wide sieve fed. | Fusing one four-way Shufti reduction improved its 64 KiB kernel by 21.6% and the field row using it by 21.8%. |
 
-The first two layers are the construction advantage. The last two amplify it.
-An AVX2 implementation of the same idea remains correct and useful; the
-published field lead is specifically the AVX-512 implementation.
+The AVX2 backend keeps the same plan and semantics. The published field lead is
+specifically the AVX-512 implementation.
 
-## What the competitors do—and what this proves
+## Where it differs from the field
 
 Every scoring implementation was built, profiled, and read at the level where
 its answer lives: source, generated code, or hot disassembly. The detailed
@@ -152,20 +148,21 @@ adopted technique is in [`NOVELTY.md`](NOVELTY.md).
 | veloz | Excellent hand-written AVX2 ASCII single-literal search. | It does not answer Unicode simple-fold or multi-pattern queries. Against it, both specialization and `casei`'s wider ISA contribute, so the benchmark does not pretend to separate them. |
 | Rust Aho-Corasick | Strong ASCII multi-pattern DFA with a Teddy prefilter. | `casei` extends the shared-plan shape to Unicode fold orbits, variable UTF-8 widths, opaque invalid bytes, and 512-bit filters. |
 
-This comparison supports a precise claim: **the winning result comes from a
-complete Unicode plan hidden behind shape-specific raw-byte rejection, shared
-across the pattern set and amplified by AVX-512 kernels.** It does not support a
-claim that every component is new. Shufti, Teddy, rare anchors, tries, failure
-links, `VPERMB`, and confirmation after a candidate are known techniques. The
-new result is their measured combination under this contract.
+The measured result comes from a complete Unicode plan behind shape-specific
+raw-byte rejection, shared across the pattern set and accelerated by AVX-512
+kernels. Shufti, Teddy, rare anchors, tries, failure links, `VPERMB`, and
+confirmation after a candidate are known techniques. Their combination under
+this contract is what produced the new result.
 
 ## The evidence ladder
 
 1. **Semantics:** millions of single- and multi-pattern differential cases plus
    fuzzing compare every backend with Go `regexp (?i)` on valid UTF-8 and the
    opaque-byte oracle on invalid input.
-2. **Mechanism:** the unfiltered-plan and ISA ablations measure work avoidance
-   and vector width separately; the Shufti case isolates one assembly change.
+2. **Mechanism:** the filter-route and ISA ablations measure work avoidance and
+   vector width separately; the Shufti case isolates one assembly change. The
+   [raw two-host audit](audit/publication/README.md) includes every sample, the
+   exact ablation, file hashes, and a recomputation script.
 3. **Field result:** every native entrant is rebuilt from pinned source and
    checked for its actual dispatched width before it can enter `x_vs_best`.
 4. **Two CPUs:** all 33 first-match rows lead on both Ice Lake and Sapphire
@@ -178,19 +175,23 @@ The sealed measurements are the [engine case](https://app.perfloop.ai/t/oss/case
 and the [Shufti refinement](https://app.perfloop.ai/t/oss/case_hqryrfd6j4).
 The full local field is reproduced by [`scripts/reproduce.sh`](scripts/reproduce.sh).
 
-## Where this advantage ends
+## Limits
 
-- **Counting every match:** `Find` returns one leftmost match and does not
-  preserve scan state for the next call. Rebar's count-all workloads reveal
-  real losses. An iterator is missing, not merely a benchmark row.
+- **Counting every match:** `Find` returns one leftmost match; there is no public
+  iterator yet. More importantly, rebar's worst count-all row exposes a
+  multi-pattern plan that filters on common Cyrillic starts instead of rare
+  interior pairs. A measured one-pass enumerator did not improve it. See
+  [`REBAR.md`](REBAR.md) for the counters, profiles, and controls.
 - **Tiny one-shot searches:** compiling a plan costs more than
   `strings.Index` on a single short lookup.
 - **Other CPUs:** AVX2 and scalar paths are correct, but the published lead is
   not claimed for them. There is no NEON kernel yet.
 - **Full folding:** expansions such as `ß -> ss` are outside the relation.
-- **Bad filters:** adversarial data can create many survivors. The exact plan
-  keeps correctness and linearity, but throughput falls; the arena includes
-  periodic, same-byte, and torture rows to make that visible.
+- **Bad filters:** adversarial data, or a pattern set whose useful anchors are
+  not yet expressible in one shared filter, can create many survivors. The exact
+  plan keeps correctness and linearity, but throughput falls; the arena includes
+  periodic, same-byte, and torture rows, while rebar contributes a real Russian
+  multi-pattern counterexample.
 
 ## Map from the model to the code
 

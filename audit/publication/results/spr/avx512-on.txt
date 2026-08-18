@@ -1,0 +1,190 @@
+goos: linux
+goarch: amd64
+pkg: github.com/tsenart/casei/arena
+cpu: Intel(R) Xeon(R) Platinum 8481C CPU @ 2.70GHz
+BenchmarkIndexFold/log_miss_1kb/candidate         	 4741971	        75.69 ns/op	13528.77 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_miss_64kb/candidate        	  289051	      1238 ns/op	52945.36 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_miss_1mb/candidate         	   19359	     18583 ns/op	56427.07 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/prose_miss_1mb/candidate       	   19364	     18582 ns/op	56429.71 MB/s	       1 B/op	       0 allocs/op
+BenchmarkIndexFold/code_miss_256kb/candidate      	   76830	      4697 ns/op	55807.31 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_needle3_64kb/candidate     	  289508	      1237 ns/op	52998.13 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_needle8_64kb/candidate     	  289008	      1236 ns/op	53015.24 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_needle16_64kb/candidate    	  289664	      1236 ns/op	53017.67 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_needle32_64kb/candidate    	  289272	      1236 ns/op	53035.57 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_hit_sparse_1mb/candidate   	   10000	     33063 ns/op	31726.76 MB/s	       3 B/op	       0 allocs/op
+BenchmarkIndexFold/prose_hit_dense_1mb/candidate  	    4372	     78809 ns/op	13305.23 MB/s	       2 B/op	       0 allocs/op
+BenchmarkIndexFold/code_hit_brackets_256kb/candidate         	   15195	     23713 ns/op	11054.85 MB/s	       1 B/op	       0 allocs/op
+BenchmarkIndexFold/latency_match_start_1kb/candidate         	36325076	        10.35 ns/op	98964.28 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/latency_match_mid_1kb/candidate           	 7996486	        44.81 ns/op	22850.86 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/latency_match_end_1kb/candidate           	 4584206	        78.47 ns/op	13023.96 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/latency_miss_1kb/candidate                	 4419309	        82.32 ns/op	12439.42 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/ru_miss_1mb/candidate                     	    9135	     37971 ns/op	27615.06 MB/s	       2 B/op	       0 allocs/op
+BenchmarkIndexFold/ru_hit_sparse_1mb/candidate               	    8154	     42729 ns/op	24548.53 MB/s	       2 B/op	       0 allocs/op
+BenchmarkIndexFold/kelvin_hazard_1mb/candidate               	    6792	     51610 ns/op	20319.79 MB/s	       2 B/op	       0 allocs/op
+BenchmarkIndexFold/ru_latency_miss_1kb/candidate             	 2894881	       125.0 ns/op	8191.12 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/periodic_miss_64kb/candidate              	  192992	      1862 ns/op	35188.77 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/samechar_miss_64kb/candidate              	  367399	       971.6 ns/op	67453.76 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/torture_miss_64kb/candidate               	   72966	      4937 ns/op	13273.75 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N2_miss_log_1mb/candidate             	    5210	     68069 ns/op	15404.71 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_miss_log_1mb/candidate             	    9976	     35698 ns/op	29373.92 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N64_miss_log_64kb/candidate           	  153163	      2352 ns/op	27865.02 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N512_miss_log_64kb/candidate          	  152968	      2351 ns/op	27871.59 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N512_miss_hazard_64kb/candidate       	   53365	      6743 ns/op	9718.80 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_hit_log_1mb/candidate              	    3315	    108561 ns/op	9659.45 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_miss_ru_1mb/candidate              	   13302	     27065 ns/op	38742.87 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N64_miss_ru_64kb/candidate            	  201404	      1776 ns/op	36906.28 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_miss_hazard_1mb/candidate          	    5491	     61229 ns/op	17125.34 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_hazard_hit_1mb/candidate           	   12591	     28607 ns/op	36656.54 MB/s	       0 B/op	       0 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/tsenart/casei/arena
+cpu: Intel(R) Xeon(R) Platinum 8481C CPU @ 2.70GHz
+BenchmarkIndexFold/log_miss_1kb/candidate         	 4707645	        76.38 ns/op	13407.28 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_miss_64kb/candidate        	  288326	      1245 ns/op	52640.57 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_miss_1mb/candidate         	   19375	     18578 ns/op	56441.71 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/prose_miss_1mb/candidate       	   19351	     18592 ns/op	56399.41 MB/s	       1 B/op	       0 allocs/op
+BenchmarkIndexFold/code_miss_256kb/candidate      	   76351	      4702 ns/op	55747.46 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_needle3_64kb/candidate     	  289645	      1238 ns/op	52951.07 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_needle8_64kb/candidate     	  289696	      1237 ns/op	52996.11 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_needle16_64kb/candidate    	  290014	      1237 ns/op	52980.03 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_needle32_64kb/candidate    	  288628	      1237 ns/op	52991.91 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_hit_sparse_1mb/candidate   	   10000	     32886 ns/op	31898.31 MB/s	       3 B/op	       0 allocs/op
+BenchmarkIndexFold/prose_hit_dense_1mb/candidate  	    4411	     78642 ns/op	13333.54 MB/s	       2 B/op	       0 allocs/op
+BenchmarkIndexFold/code_hit_brackets_256kb/candidate         	   15140	     23764 ns/op	11031.15 MB/s	       1 B/op	       0 allocs/op
+BenchmarkIndexFold/latency_match_start_1kb/candidate         	32834366	        10.34 ns/op	98999.42 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/latency_match_mid_1kb/candidate           	 7945258	        44.96 ns/op	22776.01 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/latency_match_end_1kb/candidate           	 4585946	        78.41 ns/op	13034.12 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/latency_miss_1kb/candidate                	 4409026	        82.15 ns/op	12464.41 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/ru_miss_1mb/candidate                     	    9115	     37978 ns/op	27609.78 MB/s	       2 B/op	       0 allocs/op
+BenchmarkIndexFold/ru_hit_sparse_1mb/candidate               	    8103	     42711 ns/op	24559.19 MB/s	       2 B/op	       0 allocs/op
+BenchmarkIndexFold/kelvin_hazard_1mb/candidate               	    6766	     51725 ns/op	20274.52 MB/s	       2 B/op	       0 allocs/op
+BenchmarkIndexFold/ru_latency_miss_1kb/candidate             	 2896464	       124.6 ns/op	8219.60 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/periodic_miss_64kb/candidate              	  191439	      1863 ns/op	35184.67 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/samechar_miss_64kb/candidate              	  367640	       971.7 ns/op	67443.72 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/torture_miss_64kb/candidate               	   72781	      4961 ns/op	13209.38 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N2_miss_log_1mb/candidate             	    5101	     68478 ns/op	15312.59 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_miss_log_1mb/candidate             	    9952	     36035 ns/op	29098.54 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N64_miss_log_64kb/candidate           	  152726	      2355 ns/op	27827.48 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N512_miss_log_64kb/candidate          	  152814	      2368 ns/op	27680.68 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N512_miss_hazard_64kb/candidate       	   53193	      6769 ns/op	9681.12 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_hit_log_1mb/candidate              	    3318	    108635 ns/op	9652.92 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_miss_ru_1mb/candidate              	   13304	     27053 ns/op	38760.24 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N64_miss_ru_64kb/candidate            	  201128	      1776 ns/op	36897.19 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_miss_hazard_1mb/candidate          	    6188	     62331 ns/op	16822.76 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_hazard_hit_1mb/candidate           	   12601	     28559 ns/op	36718.10 MB/s	       0 B/op	       0 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/tsenart/casei/arena
+cpu: Intel(R) Xeon(R) Platinum 8481C CPU @ 2.70GHz
+BenchmarkIndexFold/log_miss_1kb/candidate         	 3805083	        93.76 ns/op	10921.58 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_miss_64kb/candidate        	  289860	      1239 ns/op	52878.66 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_miss_1mb/candidate         	   19333	     18618 ns/op	56321.98 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/prose_miss_1mb/candidate       	   19318	     18627 ns/op	56294.04 MB/s	       1 B/op	       0 allocs/op
+BenchmarkIndexFold/code_miss_256kb/candidate      	   76285	      4702 ns/op	55748.89 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_needle3_64kb/candidate     	  289006	      1238 ns/op	52931.32 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_needle8_64kb/candidate     	  289562	      1238 ns/op	52955.82 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_needle16_64kb/candidate    	  289069	      1237 ns/op	52964.77 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_needle32_64kb/candidate    	  288512	      1237 ns/op	52973.42 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_hit_sparse_1mb/candidate   	   10000	     32925 ns/op	31860.22 MB/s	       3 B/op	       0 allocs/op
+BenchmarkIndexFold/prose_hit_dense_1mb/candidate  	    4437	     77912 ns/op	13458.43 MB/s	       2 B/op	       0 allocs/op
+BenchmarkIndexFold/code_hit_brackets_256kb/candidate         	   15124	     23799 ns/op	11014.90 MB/s	       1 B/op	       0 allocs/op
+BenchmarkIndexFold/latency_match_start_1kb/candidate         	34084885	        10.15 ns/op	100899.49 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/latency_match_mid_1kb/candidate           	 7901739	        45.36 ns/op	22577.40 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/latency_match_end_1kb/candidate           	 4572294	        78.84 ns/op	12963.10 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/latency_miss_1kb/candidate                	 4392223	        81.74 ns/op	12527.79 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/ru_miss_1mb/candidate                     	    9128	     38005 ns/op	27590.79 MB/s	       2 B/op	       0 allocs/op
+BenchmarkIndexFold/ru_hit_sparse_1mb/candidate               	    8127	     42919 ns/op	24440.33 MB/s	       2 B/op	       0 allocs/op
+BenchmarkIndexFold/kelvin_hazard_1mb/candidate               	    6711	     51749 ns/op	20265.38 MB/s	       2 B/op	       0 allocs/op
+BenchmarkIndexFold/ru_latency_miss_1kb/candidate             	 2891740	       124.5 ns/op	8224.71 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/periodic_miss_64kb/candidate              	  192626	      1861 ns/op	35216.89 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/samechar_miss_64kb/candidate              	  367009	       971.7 ns/op	67444.68 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/torture_miss_64kb/candidate               	   72909	      4948 ns/op	13244.76 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N2_miss_log_1mb/candidate             	    5131	     69141 ns/op	15165.71 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_miss_log_1mb/candidate             	    9946	     35715 ns/op	29359.70 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N64_miss_log_64kb/candidate           	  152683	      2351 ns/op	27874.97 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N512_miss_log_64kb/candidate          	  152700	      2352 ns/op	27866.88 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N512_miss_hazard_64kb/candidate       	   53272	      6732 ns/op	9734.40 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_hit_log_1mb/candidate              	    3314	    108550 ns/op	9660.40 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_miss_ru_1mb/candidate              	   13293	     27075 ns/op	38728.62 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N64_miss_ru_64kb/candidate            	  201139	      1778 ns/op	36853.49 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_miss_hazard_1mb/candidate          	    6200	     62664 ns/op	16733.18 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_hazard_hit_1mb/candidate           	   12584	     28590 ns/op	36677.73 MB/s	       0 B/op	       0 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/tsenart/casei/arena
+cpu: Intel(R) Xeon(R) Platinum 8481C CPU @ 2.70GHz
+BenchmarkIndexFold/log_miss_1kb/candidate         	 4583683	        77.87 ns/op	13150.31 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_miss_64kb/candidate        	  288672	      1243 ns/op	52729.02 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_miss_1mb/candidate         	   19399	     18549 ns/op	56529.83 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/prose_miss_1mb/candidate       	   19392	     18581 ns/op	56432.85 MB/s	       1 B/op	       0 allocs/op
+BenchmarkIndexFold/code_miss_256kb/candidate      	   76330	      4698 ns/op	55794.82 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_needle3_64kb/candidate     	  288799	      1237 ns/op	52960.52 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_needle8_64kb/candidate     	  287656	      1238 ns/op	52947.40 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_needle16_64kb/candidate    	  289822	      1237 ns/op	52968.19 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_needle32_64kb/candidate    	  288682	      1237 ns/op	52990.67 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_hit_sparse_1mb/candidate   	   10000	     33088 ns/op	31703.20 MB/s	       3 B/op	       0 allocs/op
+BenchmarkIndexFold/prose_hit_dense_1mb/candidate  	    4238	     78096 ns/op	13426.83 MB/s	       3 B/op	       0 allocs/op
+BenchmarkIndexFold/code_hit_brackets_256kb/candidate         	   15175	     23717 ns/op	11052.98 MB/s	       1 B/op	       0 allocs/op
+BenchmarkIndexFold/latency_match_start_1kb/candidate         	33557497	        10.68 ns/op	95916.16 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/latency_match_mid_1kb/candidate           	 7895335	        45.42 ns/op	22545.66 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/latency_match_end_1kb/candidate           	 4569691	        78.87 ns/op	12958.00 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/latency_miss_1kb/candidate                	 4399136	        82.57 ns/op	12401.01 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/ru_miss_1mb/candidate                     	    9126	     38039 ns/op	27566.13 MB/s	       2 B/op	       0 allocs/op
+BenchmarkIndexFold/ru_hit_sparse_1mb/candidate               	    8145	     42784 ns/op	24517.03 MB/s	       2 B/op	       0 allocs/op
+BenchmarkIndexFold/kelvin_hazard_1mb/candidate               	    6788	     51690 ns/op	20288.24 MB/s	       2 B/op	       0 allocs/op
+BenchmarkIndexFold/ru_latency_miss_1kb/candidate             	 2876053	       124.8 ns/op	8204.88 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/periodic_miss_64kb/candidate              	  193862	      1860 ns/op	35243.63 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/samechar_miss_64kb/candidate              	  369312	       971.8 ns/op	67437.86 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/torture_miss_64kb/candidate               	   72860	      4934 ns/op	13281.32 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N2_miss_log_1mb/candidate             	    5139	     69200 ns/op	15152.78 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_miss_log_1mb/candidate             	    9866	     35734 ns/op	29343.59 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N64_miss_log_64kb/candidate           	  152684	      2353 ns/op	27847.66 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N512_miss_log_64kb/candidate          	  152733	      2354 ns/op	27845.50 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N512_miss_hazard_64kb/candidate       	   53160	      6735 ns/op	9731.29 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_hit_log_1mb/candidate              	    3088	    106725 ns/op	9825.67 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_miss_ru_1mb/candidate              	   13288	     27082 ns/op	38719.17 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N64_miss_ru_64kb/candidate            	  202082	      1779 ns/op	36836.35 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_miss_hazard_1mb/candidate          	    6194	     58410 ns/op	17951.97 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_hazard_hit_1mb/candidate           	   12570	     28629 ns/op	36627.46 MB/s	       0 B/op	       0 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/tsenart/casei/arena
+cpu: Intel(R) Xeon(R) Platinum 8481C CPU @ 2.70GHz
+BenchmarkIndexFold/log_miss_1kb/candidate         	 4774618	        75.88 ns/op	13494.81 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_miss_64kb/candidate        	  289412	      1240 ns/op	52847.00 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_miss_1mb/candidate         	   19352	     18596 ns/op	56387.11 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/prose_miss_1mb/candidate       	   19332	     18608 ns/op	56351.63 MB/s	       1 B/op	       0 allocs/op
+BenchmarkIndexFold/code_miss_256kb/candidate      	   76398	      4701 ns/op	55762.26 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_needle3_64kb/candidate     	  286376	      1238 ns/op	52918.14 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_needle8_64kb/candidate     	  289473	      1239 ns/op	52914.23 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_needle16_64kb/candidate    	  288012	      1238 ns/op	52917.61 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_needle32_64kb/candidate    	  288811	      1238 ns/op	52950.00 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/log_hit_sparse_1mb/candidate   	   10000	     32928 ns/op	31857.42 MB/s	       3 B/op	       0 allocs/op
+BenchmarkIndexFold/prose_hit_dense_1mb/candidate  	    4177	     78745 ns/op	13316.04 MB/s	       3 B/op	       0 allocs/op
+BenchmarkIndexFold/code_hit_brackets_256kb/candidate         	   15156	     23728 ns/op	11047.95 MB/s	       1 B/op	       0 allocs/op
+BenchmarkIndexFold/latency_match_start_1kb/candidate         	33721476	        10.49 ns/op	97617.65 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/latency_match_mid_1kb/candidate           	 7903461	        45.38 ns/op	22564.97 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/latency_match_end_1kb/candidate           	 4584838	        78.53 ns/op	13014.52 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/latency_miss_1kb/candidate                	 4439894	        81.84 ns/op	12512.11 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/ru_miss_1mb/candidate                     	    9110	     38009 ns/op	27587.34 MB/s	       2 B/op	       0 allocs/op
+BenchmarkIndexFold/ru_hit_sparse_1mb/candidate               	    8052	     42924 ns/op	24436.94 MB/s	       2 B/op	       0 allocs/op
+BenchmarkIndexFold/kelvin_hazard_1mb/candidate               	    6783	     51735 ns/op	20270.68 MB/s	       2 B/op	       0 allocs/op
+BenchmarkIndexFold/ru_latency_miss_1kb/candidate             	 2881132	       124.7 ns/op	8208.69 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/periodic_miss_64kb/candidate              	  191692	      1863 ns/op	35170.70 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/samechar_miss_64kb/candidate              	  367795	       972.4 ns/op	67398.75 MB/s	       0 B/op	       0 allocs/op
+BenchmarkIndexFold/torture_miss_64kb/candidate               	   72700	      4942 ns/op	13261.91 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N2_miss_log_1mb/candidate             	    5137	     69161 ns/op	15161.40 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_miss_log_1mb/candidate             	    9984	     35729 ns/op	29348.40 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N64_miss_log_64kb/candidate           	  152770	      2368 ns/op	27675.47 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N512_miss_log_64kb/candidate          	  152664	      2359 ns/op	27777.24 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N512_miss_hazard_64kb/candidate       	   53181	      6750 ns/op	9708.65 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_hit_log_1mb/candidate              	    3318	    108765 ns/op	9641.31 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_miss_ru_1mb/candidate              	   13287	     27084 ns/op	38716.36 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N64_miss_ru_64kb/candidate            	  200892	      1779 ns/op	36834.90 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_miss_hazard_1mb/candidate          	    6192	     57095 ns/op	18365.49 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMatcher/multi_N8_hazard_hit_1mb/candidate           	   12600	     28565 ns/op	36710.65 MB/s	       0 B/op	       0 allocs/op
+PASS

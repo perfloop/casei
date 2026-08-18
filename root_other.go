@@ -62,21 +62,6 @@ func literalSkipASCII(s string, at int, kind uint8, needle byte) int {
 	return at - start
 }
 
-func runSkipASCII(s string, at int, kind uint8, needle byte) int {
-	start := at
-	for at < len(s) {
-		value := s[at]
-		if kind == rootASCIIFold {
-			value |= 0x20
-		}
-		if value != needle {
-			break
-		}
-		at++
-	}
-	return at - start
-}
-
 func probeSkipBytes(s string, at, candidates int, probe *asciiProbe) int {
 	start := at
 	for at-start < candidates {
