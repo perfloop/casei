@@ -1,24 +1,25 @@
-# Direct rebar audit
+# Direct Rebar audit
 
-`casei` loses three of the five rebar workloads that ask the same Unicode
+`casei` loses three of the five Rebar workloads that ask the same Unicode
 folding question. Rebar counts every non-overlapping match. The 33-row arena
-asks for the first leftmost match. On rebar's worst row, a weak multi-pattern
-filter sends too much text into the exact Unicode plan. A measured streaming
-version left that cost in place.
+contains 28 first-match operations and five overlap-allowed single-needle
+counts. It has no multi-pattern enumeration row. On Rebar's worst row, a weak
+multi-pattern filter sends too much text into the exact Unicode plan. A measured
+streaming version left that cost in place.
 
 The audit below includes every caseless literal or finite-alternation workload
 that `casei` can represent.
 
 ## The answer in 30 seconds
 
-At rebar commit
+At Rebar commit
 [`463d00f`](https://github.com/BurntSushi/rebar/commit/463d00f31887e84c38467805b9e3122c314b9521),
 the inventory contains 18 performance workloads and three behavior checks.
 `casei` passed the two checks that use compatible Unicode semantics. The third
 asks `s` to miss `ſ`, which conflicts with Unicode simple folding.
 
 Only five performance rows enable Unicode semantics and therefore ask the same
-folding question as `casei`. Against rebar's three recorded leaders (Hyperscan,
+folding question as `casei`. Against Rebar's three recorded leaders (Hyperscan,
 PCRE2-JIT, and rust/regex), `casei` wins **2/5** and loses **3/5** on both Ice Lake
 and Sapphire Rapids. Its median `time / best-other-time` is 1.27 and 1.28; the
 worst row is roughly 9× slower.
@@ -28,14 +29,36 @@ The remaining 13 performance rows request ASCII-only case insensitivity.
 stronger Unicode relation. Their timings remain useful as stress tests under
 that contract.
 
+## Why the original gym missed these losses
+
+The arena's scenario list had five single-needle count rows during the original
+engine build. Its competitive bar mistakenly ignored their `count` flag and
+timed only the first match. Commit
+[`c4392e7`](https://github.com/tsenart/casei/commit/c4392e7e6bbdaa8cd263059d5a041b29bd57e9ae)
+corrected that wiring before the publication runs. `casei` won those five rows
+in the corrected 33-row result.
+
+The corrected arena still counts by repeatedly calling a single-needle search.
+It has no row that enumerates a compiled multi-pattern plan, and its synthetic
+Unicode count rows do not cover the dense Russian corpus or the Rebar prefilter
+shape measured here. The original Perfloop objective never asked it to win on
+these paths.
+
+The missing coverage let the losses survive. The measurements below identify
+their direct causes: weak shared filtering on the five-pattern row and costly
+native confirmation on the two single-pattern rows. The 33 arena rows remain
+regression gates, and the five Unicode-equivalent Rebar rows are the acceptance
+target for the open work.
+
 ## Why this is a different benchmark contract
 
-| | casei arena | rebar rows on this page |
+| | casei arena | Rebar rows on this page |
 |---|---|---|
-| answer | first byte offset; or leftmost match, tie to lowest pattern ID | count or total span of every non-overlapping match |
-| search state | one `IndexFold`/`Find` call | one compiled engine repeatedly enumerates until end of input |
+| answer | first byte offset or leftmost match on 28 rows; overlap-allowed count on 5 single-needle rows | count or total span of every non-overlapping match |
+| search state | one `IndexFold`/`Find` call, repeated from the next byte on the 5 count rows | one compiled engine repeatedly enumerates from the end of each match |
+| pattern sets | multi-pattern rows stop at the first leftmost answer | both single-pattern and multi-pattern rows enumerate to the end |
 | folding | Unicode simple folding on every row | Unicode on 5 rows, ASCII-only on 13 |
-| measurement | in-process field timing, with three publication passes on each pinned host; Perfloop separately co-measured the engine's source revisions | [rebar's sequential runner protocol](https://github.com/BurntSushi/rebar/blob/463d00f31887e84c38467805b9e3122c314b9521/METHODOLOGY.md), three independent passes here |
+| measurement | in-process field timing, with three publication passes on each pinned host; Perfloop separately co-measured the engine's source revisions | [Rebar's sequential runner protocol](https://github.com/BurntSushi/rebar/blob/463d00f31887e84c38467805b9e3122c314b9521/METHODOLOGY.md), three independent passes here |
 
 The audit adapter compiles `NewMatcher` outside the timed region. Each iteration
 calls `Find` on successive suffixes until it reaches the end. The adapter checks
@@ -179,6 +202,31 @@ PCRE2 10.47 snapshot contains `pcre2posix.c` but not its unused
 `pcre2posix.h`. The audit omitted that POSIX wrapper from the build; rebar's
 runner uses the native PCRE2 API, so no compiled search or JIT code changed.
 
+## Public work on the losses
+
+Perfloop records four public Cases around these losses. Three cover the
+remaining performance hypotheses:
+
+- [Compile shared interior UTF-8 anchors for multi-pattern plans](https://app.perfloop.ai/t/oss/case_jws72csfa9)
+  targets the roughly 9x loss. The existing shared filter admits common
+  Cyrillic starts instead of combining the selective interior pairs available
+  inside each pattern.
+- [Compile dispersed width-stable Unicode byte probes](https://app.perfloop.ai/t/oss/case_b2m0dmh5wa)
+  targets the two single-pattern losses by rejecting more survivors before
+  decoded confirmation.
+- [Compile width-stable Unicode byte confirmations](https://app.perfloop.ai/t/oss/case_tgkp9bs0r6)
+  tests whether eligible literals can confirm survivors from compiled raw-byte
+  classes while preserving the complete decoded fallback.
+
+A fourth Case, [Carry the confirmed end into repeated matching](https://app.perfloop.ai/t/oss/case_1jg4we7k3s),
+tested a narrower API explanation. Its measurements did not close the gap; the
+one-pass control and repeated `Find` remained effectively tied on the worst
+row.
+
+Any change accepted into `casei` must beat all five Unicode-equivalent Rebar
+rows on Ice Lake and Sapphire Rapids, preserve the one-engine design and full
+correctness contract, and keep all 33 arena rows below 1.0 `x_vs_best`.
+
 ## Required next work
 
 The next construction must:
@@ -193,4 +241,5 @@ The next construction must:
 5. beat the fastest eligible entrant on all five Unicode-equivalent rows before
    any count-all performance claim is made.
 
-The public performance claim therefore covers first-match search.
+The public performance claim therefore covers the 33-row arena contract. It
+does not claim leadership for non-overlapping enumeration.

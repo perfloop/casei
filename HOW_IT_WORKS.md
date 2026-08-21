@@ -175,9 +175,10 @@ this contract is what produced the new result.
    exact ablation, file hashes, and a recomputation script.
 3. Every native entrant is rebuilt from pinned source and
    checked for its actual dispatched width before it can enter `x_vs_best`.
-4. The 33 first-match rows run on both Ice Lake and Sapphire Rapids.
-5. The direct rebar integration exposes the count-all rows where the current
-   API loses and keeps those results in the record.
+4. The 33 arena rows, including five overlap-allowed single-needle counts, run
+   on both Ice Lake and Sapphire Rapids.
+5. The direct Rebar integration exposes the non-overlapping enumeration rows
+   where the current API loses and keeps those results in the record.
 
 The verified measurements are the [engine Case](https://app.perfloop.ai/t/oss/case_9r9ntnxjd1)
 and the [Shufti refinement](https://app.perfloop.ai/t/oss/case_hqryrfd6j4).

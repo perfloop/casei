@@ -6,15 +6,45 @@ Both use Unicode simple case folding, the same relation as Go's `regexp (?i)`
 on valid UTF-8.
 
 On Intel Ice Lake and Sapphire Rapids with AVX-512F/BW/VBMI, `casei` finished
-first on all 33 rows of its open first-match benchmark. The median speedup over
-the fastest correct alternative was 1.9x on Ice Lake and 1.6x on Sapphire
-Rapids. That claim covers the AVX-512 path only.
+first on all 33 rows of its open arena. The median speedup over the fastest
+correct alternative was 1.9x on Ice Lake and 1.6x on Sapphire Rapids. The arena
+covers first-match search plus five single-needle rows that count
+overlap-allowed matches through repeated `IndexFold` calls. The result covers
+the AVX-512 path only.
+
+Rebar asks a broader enumeration question, and `casei` does not lead it yet. I
+later wired `casei` into every Rebar workload that can be expressed as one
+literal or a finite set of literals. Rebar counts every non-overlapping match.
+On the five rows with the same Unicode folding contract, `casei` wins two and
+loses three on both hosts. Its worst loss is 9.86x on Ice Lake and 9.18x on
+Sapphire Rapids.
+
+| measured question | Ice Lake | Sapphire Rapids |
+|---|---:|---:|
+| casei arena, 33 rows | 33/33 wins; 1.9x median lead | 33/33 wins; 1.6x median lead |
+| Unicode-equivalent Rebar rows | 2/5 wins; worst loss 9.86x | 2/5 wins; worst loss 9.18x |
+
+Those losses exposed a hole in the original gym. Five single-needle count rows
+were present, but the competitive bar mistakenly timed their first match during
+the engine's original build. That wiring was corrected before the publication
+runs, and `casei` still won all five. The arena still had no multi-pattern
+enumeration rows and none of Rebar's real count/count-spans workloads. Perfloop
+optimized the board I supplied. It was never asked to win on those paths. The
+[Rebar audit](REBAR.md) records the complete inventory, measurements, and root
+causes.
 
 I built the engine as a hard, self-contained test for
 [Perfloop](https://app.perfloop.ai). I supplied the problem and constraints;
 Perfloop generated candidates and measured them against the field. An independent
 verifier then tried to break the survivor. [The full engine Case](https://app.perfloop.ai/t/oss/case_9r9ntnxjd1)
 is public.
+
+Three public Perfloop Cases are open on the measured gaps. They cover
+[shared interior anchors for multi-pattern Unicode search](https://app.perfloop.ai/t/oss/case_jws72csfa9),
+[dispersed byte probes for the two single-pattern losses](https://app.perfloop.ai/t/oss/case_b2m0dmh5wa),
+and [raw-byte confirmation after a surviving anchor](https://app.perfloop.ai/t/oss/case_tgkp9bs0r6).
+Any change accepted into `casei` must win all five comparable Rebar rows on
+both processors while keeping every arena row below 1.0 `x_vs_best`.
 
 ## Use it
 
@@ -207,18 +237,19 @@ exact-match `ceiling`) are omitted from the “fastest” comparison. The
 local board with `./scripts/reproduce.sh`.
 </details>
 
-All 33 rows cover first-match search. They include ASCII and UTF-8 workloads,
-with one needle or many, on both processors. Vectorscan used its 512-bit
-AVX-512 VBMI path on the same machines. This gives the field an equal-width
-control alongside narrower engines such as AVX2 veloz and 128-bit PCRE2-JIT.
-Every benchmark row reports the width each entrant used.
+The 33 rows include 28 first-match operations and five overlap-allowed
+single-needle count operations. They cover ASCII and UTF-8 workloads, with one
+needle or many, on both processors. Vectorscan used its 512-bit AVX-512 VBMI
+path on the same machines. This gives the field an equal-width control alongside
+narrower engines such as AVX2 veloz and 128-bit PCRE2-JIT. Every benchmark row
+reports the width each entrant used.
 
-Rebar measures `count` and `count-spans`. On the five performance rows that
-share `casei`'s Unicode contract, the loop-over-`Find` adapter wins two and
-loses three on both hosts. The worst row spends its time behind a weak shared
-filter choice; a stateful enumerator left that cost in place. The
-[complete rebar audit](REBAR.md) lists every applicable row and the controls
-used to trace those losses.
+Rebar measures non-overlapping `count` and `count-spans`. On the five
+performance rows that share `casei`'s Unicode contract, the loop-over-`Find`
+adapter wins two and loses three on both hosts. The worst row spends its time
+behind a weak shared filter choice; a stateful enumerator left that cost in
+place. The [complete Rebar audit](REBAR.md) lists every applicable row, the
+original benchmark coverage gap, and the controls used to trace the losses.
 
 On valid UTF-8, correctness is pinned to Go `regexp` `(?i)` by deterministic
 single- and multi-pattern differentials. The suite runs under both x86 vector
@@ -269,9 +300,10 @@ The arena applies the following rules:
   with `BUILD_AVX512VBMI`, and the arena checks that its 512-bit path ran.
 - The workload set includes `periodic`, `samechar`, and `torture` inputs that
   expose data-dependent cliffs.
-- The measured answer is a first byte offset, or a leftmost match with ties
-  resolved by pattern order. An entrant with an enumeration API performs that
-  reduction inside its timed operation.
+- Twenty-eight rows measure a first byte offset or a leftmost match with ties
+  resolved by pattern order. Five single-needle rows repeatedly request the
+  first offset and count every overlap-allowed match. An entrant with an
+  enumeration API performs the required reduction inside its timed operation.
 - [`arena/field.yaml`](arena/field.yaml) pins nine engines to source versions
   and build flags. Perfloop's engine Case records ten co-measured source pairs.
   `reproduce.sh` rebuilds the field and runs the local board.
@@ -302,8 +334,9 @@ and audited the field and host ISA; Perfloop generated candidates and killed or
 kept them by measurement. The public trails cover the
 [engine](https://app.perfloop.ai/t/oss/case_9r9ntnxjd1) and a later
 [kernel-scheduling refinement](https://app.perfloop.ai/t/oss/case_hqryrfd6j4).
+The Rebar audit then widened the gym and exposed the three open losses above.
 The repository contains the resulting source, field manifest, correctness
-tests, and reproduction scripts.
+tests, measurements, and reproduction scripts.
 
 ## Details
 
