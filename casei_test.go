@@ -67,34 +67,6 @@ func reference(haystack, needle string) int {
 	return -1
 }
 
-// asciiLower folds only 'A'..'Z'; used by the ASCII-tier ceiling benchmark.
-func asciiLower(s string) string {
-	b := []byte(s)
-	for i, c := range b {
-		if 'A' <= c && c <= 'Z' {
-			b[i] = c + 0x20
-		}
-	}
-	return string(b)
-}
-
-// canonFoldString rebuilds a string in canonical fold form (UTF-8 tier
-// ceiling: what caseless search costs if folding were free).
-func canonFoldString(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	for i := 0; i < len(s); {
-		r, size := utf8.DecodeRuneInString(s[i:])
-		if r == utf8.RuneError && size == 1 {
-			b.WriteByte(s[i])
-		} else {
-			b.WriteRune(orbitMin(r))
-		}
-		i += size
-	}
-	return b.String()
-}
-
 // ---- trap table --------------------------------------------------------------
 
 var trapCases = []struct {
@@ -378,5 +350,31 @@ func TestContainsFold(t *testing.T) {
 				t.Errorf("ContainsFold(%q, %q) = %v, disagrees with IndexFold >= 0 (%v)", tc.haystack, tc.needle, got, want)
 			}
 		})
+	}
+}
+
+func TestBoundedSearchesAllocateNothing(t *testing.T) {
+	haystack := strings.Repeat("payment accepted ", 64)
+	needle := "payment declined"
+
+	// Warm the direct-mapped single-pattern cache before measuring its hot path.
+	if got := IndexFold(haystack, needle); got != -1 {
+		t.Fatalf("IndexFold warmup = %d, want -1", got)
+	}
+	if got := testing.AllocsPerRun(100, func() {
+		if at := IndexFold(haystack, needle); at != -1 {
+			t.Fatalf("IndexFold = %d, want -1", at)
+		}
+	}); got != 0 {
+		t.Fatalf("cache-hit IndexFold allocations = %g, want 0", got)
+	}
+
+	matcher := NewMatcher([]string{"payment declined", "fatal panic", "oom killed"})
+	if got := testing.AllocsPerRun(100, func() {
+		if match, ok := matcher.Find(haystack); ok {
+			t.Fatalf("Find = %+v,true, want no match", match)
+		}
+	}); got != 0 {
+		t.Fatalf("bounded Matcher.Find allocations = %g, want 0", got)
 	}
 }

@@ -1,62 +1,77 @@
-# Direct rebar audit
+# Direct Rebar audit
 
-> **Yes: the current `casei` API loses relevant rebar workloads.** Rebar times
-> enumeration, meaning count every non-overlapping match, while `casei` is a first-match
-> engine. The losses are real, they do not contradict the 33-row first-match
-> result, and the worst one exposes a weak multi-pattern filter choice. A
-> stateful iterator is still a missing API, but a measured streaming version did
-> not repair the loss.
+`casei` loses three of the five Rebar workloads that ask the same Unicode
+folding question. Rebar counts every non-overlapping match. The 33-row arena
+contains 28 first-match operations and five overlap-allowed single-needle
+counts. It has no multi-pattern enumeration row. On Rebar's worst row, a weak
+multi-pattern filter sends too much text into the exact Unicode plan. A measured
+streaming version left that cost in place.
 
-This page records the whole audit so “not yet in rebar” cannot become a way to
-avoid unfavorable cases.
+The audit below includes every caseless literal or finite-alternation workload
+that `casei` can represent.
 
 ## The answer in 30 seconds
 
-At rebar commit
+At Rebar commit
 [`463d00f`](https://github.com/BurntSushi/rebar/commit/463d00f31887e84c38467805b9e3122c314b9521),
-the complete caseless literal/finite-alternation inventory is:
-
-- **18 performance workloads**, all wired to `casei` and verified;
-- **2 compatible Unicode behavior checks**, both passed;
-- **1 deliberately incompatible ASCII-only behavior check**, which `casei`
-  fails for the correct reason: rebar asks `s` not to match `ſ`, while Unicode
-  simple folding requires the match.
+the inventory contains 18 performance workloads and three behavior checks.
+`casei` passed the two checks that use compatible Unicode semantics. The third
+asks `s` to miss `ſ`, which conflicts with Unicode simple folding.
 
 Only five performance rows enable Unicode semantics and therefore ask the same
-folding question as `casei`. Against rebar's three recorded leaders (Hyperscan,
+folding question as `casei`. Against Rebar's three recorded leaders (Hyperscan,
 PCRE2-JIT, and rust/regex), `casei` wins **2/5** and loses **3/5** on both Ice Lake
 and Sapphire Rapids. Its median `time / best-other-time` is 1.27 and 1.28; the
 worst row is roughly 9× slower.
 
 The remaining 13 performance rows request ASCII-only case insensitivity.
-`casei` was run anyway and produced the expected answers on those corpora, but
-it always retains the stronger Unicode relation. Their timings are useful
-stress tests, not semantic equivalents.
+`casei` produced the expected answers on those corpora while retaining its
+stronger Unicode relation. Their timings remain useful as stress tests under
+that contract.
+
+## Why the original gym missed these losses
+
+The arena's scenario list had five single-needle count rows during the original
+engine build. Its competitive bar mistakenly ignored their `count` flag and
+timed only the first match. Commit
+[`c4392e7`](https://github.com/tsenart/casei/commit/c4392e7e6bbdaa8cd263059d5a041b29bd57e9ae)
+corrected that wiring before the publication runs. `casei` won those five rows
+in the corrected 33-row result.
+
+The corrected arena still counts by repeatedly calling a single-needle search.
+It has no row that enumerates a compiled multi-pattern plan, and its synthetic
+Unicode count rows do not cover the dense Russian corpus or the Rebar prefilter
+shape measured here. The original Perfloop objective never asked it to win on
+these paths.
+
+The missing coverage let the losses survive. The measurements below identify
+their direct causes: weak shared filtering on the five-pattern row and costly
+native confirmation on the two single-pattern rows. The 33 arena rows remain
+regression gates, and the five Unicode-equivalent Rebar rows are the acceptance
+target for the open work.
 
 ## Why this is a different benchmark contract
 
-| | casei arena | rebar rows on this page |
+| | casei arena | Rebar rows on this page |
 |---|---|---|
-| answer | first byte offset; or leftmost match, tie to lowest pattern ID | count or total span of every non-overlapping match |
-| search state | one `IndexFold`/`Find` call | one compiled engine repeatedly enumerates until end of input |
+| answer | first byte offset or leftmost match on 28 rows; overlap-allowed count on 5 single-needle rows | count or total span of every non-overlapping match |
+| search state | one `IndexFold`/`Find` call, repeated from the next byte on the 5 count rows | one compiled engine repeatedly enumerates from the end of each match |
+| pattern sets | multi-pattern rows stop at the first leftmost answer | both single-pattern and multi-pattern rows enumerate to the end |
 | folding | Unicode simple folding on every row | Unicode on 5 rows, ASCII-only on 13 |
-| measurement | randomized co-measurement through Perfloop for the published result | [rebar's sequential runner protocol](https://github.com/BurntSushi/rebar/blob/463d00f31887e84c38467805b9e3122c314b9521/METHODOLOGY.md), three independent passes here |
+| measurement | in-process field timing, with three publication passes on each pinned host; Perfloop separately co-measured the engine's source revisions | [Rebar's sequential runner protocol](https://github.com/BurntSushi/rebar/blob/463d00f31887e84c38467805b9e3122c314b9521/METHODOLOGY.md), three independent passes here |
 
-The audit adapter compiles `NewMatcher` outside the timed region. Inside each
-iteration it calls `Find` on the remaining suffix, verifies the matched byte
-width under simple folding, advances past the non-overlapping match, and
-continues to the end. It supports rebar's `count` and `count-spans` models.
-Nothing is recompiled per hit, but every hit exits and re-enters a first-match
-search. A future iterator should retain the plan's scan state and vector
-continuity across hits. Retaining that state would make a cleaner API. The
-diagnosis below shows that iterator overhead is small on the worst row.
+The audit adapter compiles `NewMatcher` outside the timed region. Each iteration
+calls `Find` on successive suffixes until it reaches the end. The adapter checks
+the matched byte width under simple folding before advancing. It supports
+rebar's `count` and `count-spans` models, with the same compiled plan reused for
+every hit. A future iterator could retain scan state and vector continuity. The
+diagnosis below measures how much that would change the worst row.
 
 ## Results
 
 `casei / best` is median casei time divided by the fastest selected competitor
-on the same row and pass, then the median across three passes. **Below 1.0 is a
-win; above 1.0 is a loss.** The named competitor is the fastest by its
-three-pass median.
+on the same row and pass, then the median across three passes. Values below 1.0
+are wins. The named competitor is the fastest by its three-pass median.
 
 | rebar row | requested folding | Ice Lake `casei / best` | Sapphire Rapids `casei / best` |
 |---|---|---:|---:|
@@ -81,18 +96,18 @@ three-pass median.
 
 `*` Rebar disables Unicode-aware case folding. `casei` cannot disable it, so it
 does more work and would also match Unicode fold mates not present in these
-particular corpora. These rows passed output verification but are not
-contract-equivalent.
+particular corpora. These rows passed output verification on the recorded text.
+Their requested relation is ASCII-only, so they stay outside the
+contract-equivalent result.
 
 Across all 18 stress rows, including those ASCII-only rows, `casei` wins 4/18
-on Ice Lake and 6/18 on Sapphire Rapids. Those counts are deliberately not
-promoted as a product result because 13 rows ask different semantics.
+on Ice Lake and 6/18 on Sapphire Rapids. The product comparison uses the five
+rows with the same Unicode contract.
 
 ## Why the worst row is 9× slower
 
 The bad row searches a 1,570,556-byte Russian Sherlock Holmes corpus for five
-names and counts 971 matches. It is a particularly clear counterexample to
-`casei`'s usual advantage:
+names and counts 971 matches:
 
 ```text
 one Russian pattern    rare interior byte pairs -> about 2,100 candidates
@@ -108,31 +123,30 @@ anchors into one shared filter. It falls back to a nine-pair Shufti filter over
 the patterns' first UTF-8 bytes. Several of those starts are common Cyrillic
 letters. Across the full count, the filter is invoked 79,950 times and admits
 193,449 runes, or 21.7% of the corpus, into the exact plan. The plan performs
-175,860 dense state transitions. The CPU profile is consequently dominated by
-UTF-8 decoding and fold-token map lookup, not the AVX-512 filter.
+175,860 dense state transitions. The CPU profile attributes most of the time to
+UTF-8 decoding and fold-token map lookup. The AVX-512 filter is a smaller part
+of the row.
 
-Three controls separate that cause from plausible alternatives:
+A one-pass diagnostic enumerator took 4.69 ms, compared with 4.65 to 4.99 ms for
+repeated `Find`. Both returned 971 matches. The API restart cost is within the
+noise on this row.
 
-- A one-pass diagnostic enumerator, using the same plan without returning from
-  `Find` after each hit, took 4.69 ms versus 4.65 to 4.99 ms for repeated `Find`.
-  It returned the same 971 matches. Restarting the API is therefore noise on
-  this row, not the 9× cause.
-- Replacing Shufti with the exact nine-pair AVX-512 filter made the row slower.
-  Disabling AVX-512 made the multi-pattern row roughly 25% to 33% slower. The
-  assembly kernel is helping; it is being given an unselective question.
-- Rebar's Hyperscan runner was rebuilt and checked independently. It returned
-  971 matches with an AVX-512 VBMI database. Enabling start-of-match tracking
-  changed its time by only about 2%, so the result is not explained by its
-  no-start-offset lane. Hyperscan expands the folds at compile time into a
-  byte-level database and scans the five literals continuously, without a Go
-  rune-decoding and hash-map verification loop.
+Replacing Shufti with the exact nine-pair AVX-512 filter made the row slower.
+Disabling AVX-512 added roughly 25% to 33%. Those measurements put the cost in
+the selectivity of the compiled question reaching the kernel.
+
+Rebar's Hyperscan runner was rebuilt and checked independently. It returned 971
+matches with an AVX-512 VBMI database. Start-of-match tracking changed its time
+by about 2%. Hyperscan expands the folds at compile time into a byte-level
+database and scans the five literals continuously. Its verification path avoids
+the Go rune decoder and token map used here.
 
 The smaller two losses have the same general shape at lower severity. On the
-single Russian literal, `casei`'s rare interior anchor is effective, but each
-survivor still enters a Go rune decoder and token map while PCRE2-JIT verifies
-in native code (about 2.5×). On the sparse one-match Russian prefilter row,
-that residual verification gap is only about 1.28×. The two wins are the same
-sparse shape against rust/regex rather than PCRE2.
+single Russian literal, `casei`'s rare interior anchor is effective. Each
+survivor still enters a Go rune decoder and token map. PCRE2-JIT verifies in
+native code and leads by about 2.5×. On the sparse one-match Russian prefilter
+row, that residual verification gap is about 1.28×. The two wins compare the
+same sparse shape with rust/regex.
 
 ## Correctness and inventory closure
 
@@ -146,8 +160,7 @@ rebar with unicode=false: 0 matches
 casei Unicode simple fold: 1 match
 ```
 
-The remaining case-insensitive rebar definitions were inspected rather than
-silently ignored:
+The audit also inspected the remaining case-insensitive rebar definitions:
 
 - `curated/03-date/*` and `wild/url/*` are general regex grammars.
 - `curated/13-noseyparker/*` loads a large rule file whose caseless rules also
@@ -170,29 +183,49 @@ ratio calculator are checked in under
 `python3 audit/rebar/summarize.py` reproduces this page's table and summaries
 from those receipts.
 
-- **casei source:** tree
-  `d1f73802d35c29009a433eaaf9c2b51113ab5c95` (the tree merged as
-  [`3954dbe`](https://github.com/tsenart/casei/commit/3954dbe40e8e21c4c7b2e2716f22647dd7cd880c))
-- **rebar source:** `463d00f31887e84c38467805b9e3122c314b9521`
-- **selected field:** Hyperscan 5.4.2, PCRE2 10.47 JIT, rust/regex 1.12.4
-- **hosts:** GenuineIntel family 6/model 106 Ice Lake and family 6/model 143
-  Sapphire Rapids; both exposed AVX-512F, AVX-512BW, and AVX-512VBMI
-- **passes:** three per host; per benchmark, up to 100 warmups/200 ms and 1,000
-  measured iterations/500 ms
-- **plan setup:** outside rebar's timed iteration, as for the other engines
-- **entrants per row:** three or four including `casei`, depending on which of
-  the selected engines the upstream definition admits
+| item | recorded value |
+|---|---|
+| casei source | tree `d1f73802d35c29009a433eaaf9c2b51113ab5c95`, merged as [`3954dbe`](https://github.com/tsenart/casei/commit/3954dbe40e8e21c4c7b2e2716f22647dd7cd880c) |
+| rebar source | `463d00f31887e84c38467805b9e3122c314b9521` |
+| selected field | Hyperscan 5.4.2, PCRE2 10.47 JIT, rust/regex 1.12.4 |
+| hosts | GenuineIntel family 6/model 106 Ice Lake and family 6/model 143 Sapphire Rapids, both with AVX-512F/BW/VBMI |
+| passes | three per host, with up to 100 warmups/200 ms and 1,000 measured iterations/500 ms per benchmark |
+| plan setup | outside rebar's timed iteration, matching the other engines |
+| entrants | three or four per row including `casei`, as selected by each upstream definition |
 
-These three competitors were selected because they are the leaders in rebar's
-own published/current records for these literal rows. This was not a rebuild of
-every general regex engine in rebar, so a displayed “win” is only against that
-leader set; an unmeasured entrant could make a ratio worse, never repair a
-reported loss.
+The selected field contains the three leaders in rebar's published records for
+these literal rows. A displayed win is scoped to that leader set. Any unmeasured
+entrant could only make the ratio worse.
 
 One upstream build detail is recorded for reproducibility: rebar's vendored
 PCRE2 10.47 snapshot contains `pcre2posix.c` but not its unused
 `pcre2posix.h`. The audit omitted that POSIX wrapper from the build; rebar's
 runner uses the native PCRE2 API, so no compiled search or JIT code changed.
+
+## Public work on the losses
+
+Perfloop records four public Cases around these losses. Three cover the
+remaining performance hypotheses:
+
+- [Compile shared interior UTF-8 anchors for multi-pattern plans](https://app.perfloop.ai/t/oss/case_jws72csfa9)
+  targets the roughly 9x loss. The existing shared filter admits common
+  Cyrillic starts instead of combining the selective interior pairs available
+  inside each pattern.
+- [Compile dispersed width-stable Unicode byte probes](https://app.perfloop.ai/t/oss/case_b2m0dmh5wa)
+  targets the two single-pattern losses by rejecting more survivors before
+  decoded confirmation.
+- [Compile width-stable Unicode byte confirmations](https://app.perfloop.ai/t/oss/case_tgkp9bs0r6)
+  tests whether eligible literals can confirm survivors from compiled raw-byte
+  classes while preserving the complete decoded fallback.
+
+A fourth Case, [Carry the confirmed end into repeated matching](https://app.perfloop.ai/t/oss/case_1jg4we7k3s),
+tested a narrower API explanation. Its measurements did not close the gap; the
+one-pass control and repeated `Find` remained effectively tied on the worst
+row.
+
+Any change accepted into `casei` must beat all five Unicode-equivalent Rebar
+rows on Ice Lake and Sapphire Rapids, preserve the one-engine design and full
+correctness contract, and keep all 33 arena rows below 1.0 `x_vs_best`.
 
 ## Required next work
 
@@ -200,7 +233,7 @@ The next construction must:
 
 1. compile once and keep one package-owned plan;
 2. combine selective interior anchors from several patterns into one shared
-   byte-level filter instead of unioning common roots;
+   byte-level filter;
 3. replace hot-path rune-to-token map lookups with compiled classification where
    the plan permits it;
 4. expose exact non-overlapping enumeration, tentatively `Matcher.Scan` or an
@@ -208,4 +241,5 @@ The next construction must:
 5. beat the fastest eligible entrant on all five Unicode-equivalent rows before
    any count-all performance claim is made.
 
-Until that exists, the public performance claim remains first-match search.
+The public performance claim therefore covers the 33-row arena contract. It
+does not claim leadership for non-overlapping enumeration.

@@ -11,9 +11,9 @@ fi
 
 out=${1:?usage: prepare.sh OUTPUT_DIR}
 root="$out/root"
-archive="$out/vectorscan_5.4.11.orig.tar.gz"
+archive="$out/vectorscan-5.4.12.tar.gz"
 ragel_deb="$out/ragel_6.10-4_amd64.deb"
-source="$out/vectorscan-5.4.11"
+source="$out/vectorscan-vectorscan-5.4.12"
 build="$out/vectorscan-build"
 ragel_root="$out/ragel"
 
@@ -27,13 +27,13 @@ fetch() {
   printf '%s  %s\n' "$digest" "$file" | sha256sum --check --status
 }
 
-# Debian's source archive is a stable, independently checksummed release
-# artifact.  Ragel is unpacked rather than installed so preparation remains
-# unprivileged and leaves the host toolchain untouched.
+# The official signed release tag is pinned by content digest. Ragel is
+# unpacked rather than installed so preparation remains unprivileged and
+# leaves the host toolchain untouched.
 fetch \
-  https://deb.debian.org/debian/pool/main/v/vectorscan/vectorscan_5.4.11.orig.tar.gz \
+  https://github.com/VectorCamp/vectorscan/archive/refs/tags/vectorscan/5.4.12.tar.gz \
   "$archive" \
-  163835d9a73d2705c6030ea551e866f36b5feb4a4800a94266589351928eca0d
+  1ac4f3c038ac163973f107ac4423a6b246b181ffd97fdd371696b2517ec9b3ed
 fetch \
   https://deb.debian.org/debian/pool/main/r/ragel/ragel_6.10-4_amd64.deb \
   "$ragel_deb" \

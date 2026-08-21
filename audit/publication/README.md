@@ -1,10 +1,12 @@
 # Publication verification
 
 This directory contains the fresh hardware checks used for the August 2026
-publication review. They are separate from Perfloop's sealed randomized
-co-measurements behind the tables in the top-level README. The purpose of this
-run was to rebuild the field, check that every row still passes, and isolate
-the two main speed mechanisms with the same compiled plans.
+publication review. These three-pass runs on each pinned host are the source of
+the per-row tables in the top-level README. Perfloop's public Case is separate:
+it co-measured the pre-engine and final source in ten pairs with random
+source-arm order, using the worst `x_vs_best` across all 33 rows as its metric.
+The purpose of this run was to rebuild the field, check that every row still
+passes, and isolate the two main speed mechanisms with the same compiled plans.
 
 The search source was commit
 `781eb8c36413f9a23c2d1f279ad9ef6554cac8bf`. The publication review then
@@ -31,9 +33,9 @@ built by its checked-in `arena/*/prepare.sh` script. Vectorscan reported its
 | Ice Lake | `single/ru_hit_sparse_1mb`, 0.8021 | 0.8463 | 1.92x |
 | Sapphire Rapids | `single/log_miss_1mb`, 0.9281 | 0.9289 | 1.58x |
 
-These local-board medians are not substitutes for the published 1.9x and 1.7x
-randomized co-measurements. They are an independent acceptance rerun with a
-different measurement procedure.
+These local-board medians and raw rows support the published two-host tables.
+The public Perfloop Case answers a different question: how the board's worst
+row changed from the pre-engine source to the final engine under co-measurement.
 
 ## Work-avoidance ablation
 

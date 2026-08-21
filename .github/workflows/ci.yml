@@ -2,25 +2,48 @@ name: ci
 on: [push, pull_request]
 
 jobs:
+  minimum-go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version: '1.22.x'}
+      - run: go test ./...
+      # Exercise the scalar fallback on amd64 rather than merely compiling it.
+      - run: GODEBUG=cpu.avx512f=off,cpu.avx2=off go test ./...
+
+  portable-arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version: '1.22.x'}
+      # Execute root_other.go on native hardware, not just a cross-compiler.
+      - run: go test ./...
+
   candidate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: {go-version: '1.24'}
+        with: {go-version: '1.26.6'}
       # Isolation runs first. A candidate that reaches a competitor is
       # ineligible, so there is no point measuring it.
       - run: ./scripts/check-baseline-isolation.sh
       - run: gofmt -l . | (! grep .)
       - run: go vet ./...
       - run: go test ./...
+      - run: go test -race ./...
+      - run: python3 audit/rebar/prepare_test.py
+      - run: python3 scripts/verify_benchmarkbar_test.py
+      - run: python3 scripts/verify_throughput_test.py
 
   arena:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: {go-version: '1.24'}
+        with: {go-version: '1.26.6'}
       - run: sudo apt-get update && sudo apt-get install -y cargo cmake curl libboost-dev pkg-config python3-pip
       - name: prepare pinned native field
         working-directory: arena
@@ -31,9 +54,11 @@ jobs:
           ./rure/prepare.sh "$native"
           ./rustac/prepare.sh "$native"
           ./stringzilla/prepare.sh "$native"
-          echo "PKG_CONFIG_PATH=$native/root/usr/lib/x86_64-linux-gnu/pkgconfig" >> "$GITHUB_ENV"
-          echo "PKG_CONFIG_SYSROOT_DIR=$native/root" >> "$GITHUB_ENV"
-          echo "LD_LIBRARY_PATH=$native/root/usr/lib/x86_64-linux-gnu" >> "$GITHUB_ENV"
+          printf '%s\n' \
+            "PKG_CONFIG_PATH=$native/root/usr/lib/x86_64-linux-gnu/pkgconfig" \
+            "PKG_CONFIG_SYSROOT_DIR=$native/root" \
+            "LD_LIBRARY_PATH=$native/root/usr/lib/x86_64-linux-gnu" \
+            >> "$GITHUB_ENV"
       - run: go vet ./...
         working-directory: arena
       # The agreement tests are the gate that keeps a baseline honest: every

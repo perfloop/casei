@@ -1,21 +1,50 @@
 # casei
 
-`casei` is a Go package for case-insensitive UTF-8 substring search. It finds
-one literal with `IndexFold`, or the leftmost of many literals with one compiled
-`Matcher`. Matching follows Unicode simple case folding.
+`casei` searches UTF-8 text without lowercasing it first. `IndexFold` finds one
+literal. A compiled `Matcher` finds the leftmost of many literals in one scan.
+Both use Unicode simple case folding, the same relation as Go's `regexp (?i)`
+on valid UTF-8.
 
-I built it because lowercasing both strings before searching does unnecessary
-work and gives the wrong answer for some Unicode text. It also became a hard,
-self-contained test for [Perfloop](https://app.perfloop.ai). I chose the problem
-and the constraints. Perfloop generated candidates, measured them against the
-field, and independently checked the survivor. [The full engine case](https://app.perfloop.ai/t/oss/case_9r9ntnxjd1)
+On Intel Ice Lake and Sapphire Rapids with AVX-512F/BW/VBMI, `casei` finished
+first on all 33 rows of its open arena. The median speedup over the fastest
+correct alternative was 1.9x on Ice Lake and 1.6x on Sapphire Rapids. The arena
+covers first-match search plus five single-needle rows that count
+overlap-allowed matches through repeated `IndexFold` calls. The result covers
+the AVX-512 path only.
+
+Rebar asks a broader enumeration question, and `casei` does not lead it yet. I
+later wired `casei` into every Rebar workload that can be expressed as one
+literal or a finite set of literals. Rebar counts every non-overlapping match.
+On the five rows with the same Unicode folding contract, `casei` wins two and
+loses three on both hosts. Its worst loss is 9.86x on Ice Lake and 9.18x on
+Sapphire Rapids.
+
+| measured question | Ice Lake | Sapphire Rapids |
+|---|---:|---:|
+| casei arena, 33 rows | 33/33 wins; 1.9x median lead | 33/33 wins; 1.6x median lead |
+| Unicode-equivalent Rebar rows | 2/5 wins; worst loss 9.86x | 2/5 wins; worst loss 9.18x |
+
+Those losses exposed a hole in the original gym. Five single-needle count rows
+were present, but the competitive bar mistakenly timed their first match during
+the engine's original build. That wiring was corrected before the publication
+runs, and `casei` still won all five. The arena still had no multi-pattern
+enumeration rows and none of Rebar's real count/count-spans workloads. Perfloop
+optimized the board I supplied. It was never asked to win on those paths. The
+[Rebar audit](REBAR.md) records the complete inventory, measurements, and root
+causes.
+
+I built the engine as a hard, self-contained test for
+[Perfloop](https://app.perfloop.ai). I supplied the problem and constraints;
+Perfloop generated candidates and measured them against the field. An independent
+verifier then tried to break the survivor. [The full engine Case](https://app.perfloop.ai/t/oss/case_9r9ntnxjd1)
 is public.
 
-On Intel Ice Lake and Sapphire Rapids with AVX-512F/BW/VBMI, `casei` won all 33
-rows of its open first-match benchmark. Median throughput was 1.9x the
-next-fastest eligible engine on Ice Lake and 1.7x on Sapphire Rapids. The
-measured lead covers the AVX-512 path. AVX2 and scalar performance are outside
-this claim. The API implements simple folding and returns the first match.
+Three public Perfloop Cases are open on the measured gaps. They cover
+[shared interior anchors for multi-pattern Unicode search](https://app.perfloop.ai/t/oss/case_jws72csfa9),
+[dispersed byte probes for the two single-pattern losses](https://app.perfloop.ai/t/oss/case_b2m0dmh5wa),
+and [raw-byte confirmation after a surviving anchor](https://app.perfloop.ai/t/oss/case_tgkp9bs0r6).
+Any change accepted into `casei` must win all five comparable Rebar rows on
+both processors while keeping every arena row below 1.0 `x_vs_best`.
 
 ## Use it
 
@@ -41,8 +70,11 @@ if match, ok := m.Find(line); ok {
 ```
 
 `NewMatcher` compiles the pattern set once. Reuse the `*Matcher` across searches
-and share it freely; `Find` is safe for concurrent use. `Find` and cache-hit
-`IndexFold` calls allocate nothing. Compiling a new plan can allocate.
+and share it freely; `Find` is safe for concurrent use. Every published
+benchmark path allocates nothing after compilation, including cache-hit
+`IndexFold`. Compiling a plan can allocate. During a search, the generic Unicode
+plan allocates an offset ring only when its longest pattern needs more than the
+256 entries kept inline.
 
 On valid UTF-8, matching is Unicode **simple** case folding, identical to Go's
 `regexp` with `(?i)`: `k` matches the Kelvin sign U+212A, `ſ` matches `s`,
@@ -56,40 +88,49 @@ every other platform runs the portable path, which returns identical results
 
 ## Why it is fast
 
-Most bytes never enter the Unicode matcher. Compilation produces two views of
-the same patterns:
+`casei` gets most of its speed by proving where a match cannot start.
+
+Compilation produces two views of the same patterns:
 
 ```text
 patterns -> complete simple-fold plan -> exact answer
         \-> conservative byte filters -> 64 starts at once -> survivors only
 ```
 
-The byte filters reject 64 impossible starts at a time. A surviving bit is only
-a “maybe”: the complete fold plan still decides Unicode equivalence, offsets,
-leftmost order, and pattern ties. This keeps the shortcut cheap without letting
-it change the answer.
+The byte sieve rejects 64 impossible starts at a time. A surviving bit means
+only “maybe.” The complete fold plan checks every survivor and decides Unicode
+equivalence, byte offsets, leftmost order, and pattern ties, so a false positive
+only adds work.
 
-One needle and many needles use the same fold-token state machine; many needles
-do not mean many scans. AVX-512 amplifies that design with 64-byte blocks, mask
-registers, and VBMI table lookups. The assembly matters: one Shufti scheduling
-change improved its contested row by 21.8%. The larger gain comes from avoiding
-Unicode decoding at positions that cannot match.
+Both APIs use the same fold-token state machine. A multi-needle matcher walks
+the haystack once, and AVX-512 runs its sieve over 64 possible starts at a time.
+A scheduling change in one hand-written Shufti kernel improved its contested
+row by 21.8%. Replacing the complete backend with Go's experimental SIMD
+package passed correctness and slowed a required field row. Across all 33 rows,
+bypassing the shape-selected filters made the median row 3.88x slower on Ice
+Lake and 4.28x slower on Sapphire Rapids.
 
 [The one-page explanation](HOW_IT_WORKS.md) walks from that mental model to the
 actual plan, kernels, competitor differences, causal measurements, and limits.
 
 ## Results
 
-The first-match API was co-measured in randomized order against competitors
-built from pinned source, each dispatching its widest eligible path, on GCP
-hosts exposing Ice Lake and Sapphire Rapids.
+`BenchmarkBar` timed `casei` and every eligible competitor built from pinned
+source in the same benchmark process, with each entrant dispatching its widest
+eligible path. The complete tables below come from three fresh passes on each
+GCP host, one exposing Ice Lake and one exposing Sapphire Rapids. Perfloop also
+ran ten co-measured pairs of the pre-engine and final source, choosing the two
+source arms' order randomly inside each pair; that public Case used the worst
+`x_vs_best` across all 33 rows as its acceptance metric.
 
-Perfloop's sealed runs put **casei first on every one of 33 rows, on both
-microarchitectures**. Median throughput was **1.9x** the next-fastest engine on
-Ice Lake and **1.7x** on Sapphire Rapids. The range runs from 1.10x on the
-tightest streaming row to 25.8x on the adversarial one. Throughput is in GB/s;
-**bold = casei**. Values are rounded to one decimal, so `0.0` means below 0.05
-GB/s. `casei vs #2` is casei over the fastest other engine on that row.
+Perfloop's verified runs put **casei first on every one of 33 rows, on both
+microarchitectures**. The median speedup over the fastest correct alternative
+was **1.9x** on Ice Lake and **1.6x** on Sapphire Rapids, using the median
+`1 / x_vs_best` across the 33 acceptance rows. The narrowest median lead was
+1.08x and the widest was 25.7x. The short table below comes from the separate
+per-engine throughput lanes on Sapphire Rapids; both complete displays follow.
+Throughput is in GB/s. Values are rounded to one decimal, so `0.0` means below
+0.05 GB/s. `casei vs #2` uses those display lanes.
 
 | row | casei | Vectorscan | veloz | PCRE2-JIT | StringZilla | rust/regex | casei vs #2 |
 |---|---|---|---|---|---|---|---|
@@ -110,8 +151,9 @@ GB/s. `casei vs #2` is casei over the fastest other engine on that row.
 
 The visible columns show the six engines with lanes on all or most rows;
 `rust/regex` is the rure adapter. Go `regexp` and Rust Aho-Corasick are omitted
-from this display, but both are timed and enter `x_vs_best` wherever eligible.
-The ratio therefore still includes every eligible scoring entrant.
+from this display. Both still enter the acceptance row's `x_vs_best` wherever
+eligible. The display ratio and acceptance score are kept separate because
+they come from different benchmark surfaces.
 
 #### Sapphire Rapids (Xeon 8481C), GB/s (higher is better; **bold** = casei)
 
@@ -195,38 +237,35 @@ exact-match `ceiling`) are omitted from the “fastest” comparison. The
 local board with `./scripts/reproduce.sh`.
 </details>
 
-- `casei` was fastest on every one of the 33 rows: ASCII and UTF-8, one needle
-  and many, hit and miss, on both microarchitectures.
-- Vectorscan ran its 512-bit AVX-512 VBMI path on the same machines. That
-  equal-width comparison separates the engine result from register width. One
-  compiled casei plan was used on both CPU models.
-- The narrower engines run at their native max width. **veloz is 256-bit**
-  (an AVX2 library), **PCRE2-JIT is 128-bit**. Where one of those is the fastest
-  competitor, part of the margin is that `casei` targets AVX-512 and they do not
-  have that target. The benchmark output reports every
-  entrant's dispatched width so you can separate that from the equal-width
-  Vectorscan result.
-- This is a first-match result. A separate direct integration with rebar's
-  `count`/`count-spans` models found real losses: on the five performance rows
-  with the same Unicode contract, the current loop-over-`Find` adapter wins two
-  and loses three on both hosts. That is a different API and an open piece of
-  work, not part of the 33-row claim. The worst loss is now traced to a weak
-  shared filter choice, not iterator overhead. [The complete rebar audit](REBAR.md)
-  lists every applicable row and the causal controls.
+The 33 rows include 28 first-match operations and five overlap-allowed
+single-needle count operations. They cover ASCII and UTF-8 workloads, with one
+needle or many, on both processors. Vectorscan used its 512-bit AVX-512 VBMI
+path on the same machines. This gives the field an equal-width control alongside
+narrower engines such as AVX2 veloz and 128-bit PCRE2-JIT. Every benchmark row
+reports the width each entrant used.
 
-On valid UTF-8, correctness is pinned to Go `regexp` `(?i)` by differential and
-fuzz on **every** backend (AVX-512, AVX2, scalar): a 350k-case multi-pattern
-differential, a 2.8M-case single-pattern differential, and `FuzzIndexFold` /
-`FuzzMatcher`. Invalid-byte inputs are checked against the separate opaque-unit
-contract.
+Rebar measures non-overlapping `count` and `count-spans`. On the five
+performance rows that share `casei`'s Unicode contract, the loop-over-`Find`
+adapter wins two and loses three on both hosts. The worst row spends its time
+behind a weak shared filter choice; a stateful enumerator left that cost in
+place. The [complete Rebar audit](REBAR.md) lists every applicable row, the
+original benchmark coverage gap, and the controls used to trace the losses.
+
+On valid UTF-8, correctness is pinned to Go `regexp` `(?i)` by deterministic
+single- and multi-pattern differentials. The suite runs under both x86 vector
+paths. The portable scalar dispatch runs it too. It includes tens of thousands
+of randomized searches and two exhaustive 65,536-pair filter checks.
+`FuzzIndexFold` and `FuzzMatcher` run separately. Invalid-byte inputs are checked
+against the opaque-unit contract.
 
 ## Reproduce it
 
-On an x86-64 Linux host **with AVX-512 VBMI** (pin a GCP `n2` to Ice Lake, use
-`c3` for Sapphire Rapids, or use equivalent recent Intel hardware), one script
-builds the entire competitor field from source and runs the scoreboard. Apple
-Silicon does not meet this performance-host contract. CI rebuilds and checks
-the same pinned field for correctness on every push.
+With Go 1.24+ on an x86-64 Linux host **with AVX2 and AVX-512F/BW/VBMI** (pin a
+GCP `n2` to Ice Lake, use `c3` for Sapphire Rapids, or use equivalent recent
+Intel hardware), one script builds the entire competitor field from source and
+runs the scoreboard. Apple Silicon does not meet this performance-host
+contract. CI rebuilds and checks the same pinned field for correctness on every
+push.
 
 ```sh
 git clone https://github.com/tsenart/casei && cd casei
@@ -236,8 +275,11 @@ git clone https://github.com/tsenart/casei && cd casei
 
 It prints, for all 33 rows, every entrant's local throughput and the vector
 width it dispatched, plus `x_vs_best` (`casei`'s time ÷ the fastest *correct*
-competitor). It reruns the open local board; Perfloop's sealed case contains the
-separate randomized co-measurements behind the published tables.
+competitor). It then fails unless all three samples of every row are below 1,
+every row has at least two entrants, and both `casei` and Vectorscan report
+512-bit dispatch with Vectorscan's VBMI path active. Perfloop's public Case
+separately records ten co-measured pre-engine/final-source pairs, with random
+source-arm order, for the board's worst `x_vs_best`.
 
 The [publication audit](audit/publication/README.md) records a fresh three-pass
 acceptance run on both CPU models, the work-avoidance and AVX-512 ablations,
@@ -248,56 +290,42 @@ raw samples, and the script that recomputes their summaries.
 <details>
 <summary><b>Read the field, scoring, and measurement rules</b></summary>
 
-The arena enforces these rules:
+The arena applies the following rules:
 
-- **Only *correct* competitors count.** A baseline's time enters `x_vs_best`
-  only if its output matches the arena oracle on that tier, enforced by an
-  agreement test. The naive `ToLower`+`Index` idiom and the Go Aho-Corasick port
-  are marked `diagnostic`. They run for profiling but **never enter the score**.
-- **You compare against the *best*.** `x_vs_best` is `casei`'s time over the
-  *fastest correct competitor present on that row*, not an average or a weak one.
-- **No quietly-handicapped builds.** Every entrant declares and reports the ISA
-  and vector width it dispatched to; Vectorscan is built with
-  `BUILD_AVX512VBMI` and its 512-bit path is assertion-gated. A competitor that
-  quietly ran a portable build is not a competitor.
-- **Adversarial rows are included.** The `periodic`, `samechar`, and `torture`
-  rows check for data-dependent or quadratic cliffs.
-- **The result contract is explicit.** The arena asks for the first byte offset,
-  or the leftmost/lowest-pattern match. Entrants that naturally enumerate
-  matches perform the timed reduction required to answer that question. Rebar
-  asks a different question, counting every non-overlapping match, and is reported
-  separately rather than borrowed as support for this claim.
-- **The field is reproducible.** Nine engines are pinned to
-  source versions and build flags in [`arena/field.yaml`](arena/field.yaml).
-  Published ratios come from Perfloop's raw co-measured samples with randomized
-  entrant order and confidence bounds; `reproduce.sh` separately rebuilds that
-  field and reruns the local `BenchmarkBar` board.
+- A baseline enters `x_vs_best` after its output passes the agreement tests for
+  that tier. `ToLower` plus `Index` and the Go Aho-Corasick port remain
+  diagnostic lanes.
+- Each row is scored against its fastest eligible competitor.
+- Entrants report the ISA and vector width they dispatched. Vectorscan is built
+  with `BUILD_AVX512VBMI`, and the arena checks that its 512-bit path ran.
+- The workload set includes `periodic`, `samechar`, and `torture` inputs that
+  expose data-dependent cliffs.
+- Twenty-eight rows measure a first byte offset or a leftmost match with ties
+  resolved by pattern order. Five single-needle rows repeatedly request the
+  first offset and count every overlap-allowed match. An entrant with an
+  enumeration API performs the required reduction inside its timed operation.
+- [`arena/field.yaml`](arena/field.yaml) pins nine engines to source versions
+  and build flags. Perfloop's engine Case records ten co-measured source pairs.
+  `reproduce.sh` rebuilds the field and runs the local board.
 
-The arena was developed alongside `casei`, so it is not a neutral third-party
-harness. Its source, field, workloads, and measurements are open so the result
-can be challenged and reproduced.
+I wrote the arena alongside `casei`. Its source, workloads, field manifest, and
+measurements are open for independent runs.
 
 </details>
 
 ## Limitations
 
-- **The result is AVX-512-specific.** On x86 without AVX-512, `casei` dispatches
-  an AVX2 (256-bit) path. On ARM (Apple Silicon, Graviton) it runs a portable
-  scalar path; there is no NEON kernel yet. Those paths are correct but
-  unbenchmarked, so the result is not claimed for them.
-- **Compile-once, search-many.** `NewMatcher` compiles a plan; a single tiny
-  one-shot lookup pays that setup and `strings.Index` wins it.
-- **Simple folding, not full.** `ß`→`ss` is a different, harder problem
-  (StringZilla implements it); it is specified but not built here.
-- **First match, not all matches.** `casei` has no iterator or count API yet.
-  We wired it into every applicable caseless literal/alternation workload in
-  [rebar](https://github.com/BurntSushi/rebar): its loop-over-`Find` adapter is
-  correct, but loses three of the five Unicode-equivalent performance rows on
-  both measured hosts. A measured stateful enumerator did not close the worst
-  loss; the required construction is a more selective shared multi-pattern
-  filter and cheaper exact classification. See [`REBAR.md`](REBAR.md), including
-  the ASCII-only rows that deliberately ask weaker semantics than `casei`
-  implements.
+- The measured performance result covers AVX-512. Other x86 machines use the
+  AVX2 path. ARM uses the portable scalar path, with no NEON kernel yet. All
+  three dispatch modes run the correctness suite.
+- `NewMatcher` is meant to be reused. On a tiny one-shot lookup, plan setup
+  gives `strings.Index` the advantage.
+- The contract is Unicode simple folding. Full-fold expansions such as
+  `ß` to `ss` are outside it.
+- The public API returns the first match. The rebar adapter enumerates by
+  calling `Find` again on each suffix and loses three of five comparable rows
+  on both measured hosts. [`REBAR.md`](REBAR.md) includes those results and the
+  ASCII-only rows that ask for weaker folding semantics.
 
 ## How it was built
 
@@ -306,8 +334,9 @@ and audited the field and host ISA; Perfloop generated candidates and killed or
 kept them by measurement. The public trails cover the
 [engine](https://app.perfloop.ai/t/oss/case_9r9ntnxjd1) and a later
 [kernel-scheduling refinement](https://app.perfloop.ai/t/oss/case_hqryrfd6j4).
+The Rebar audit then widened the gym and exposed the three open losses above.
 The repository contains the resulting source, field manifest, correctness
-tests, and reproduction scripts.
+tests, measurements, and reproduction scripts.
 
 ## Details
 

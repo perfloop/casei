@@ -57,8 +57,6 @@ def main():
 def add_engine(rebar, runner):
     path = rebar / "benchmarks/engines.toml"
     text = path.read_text()
-    if re.search(r'^\s*name\s*=\s*"casei"\s*$', text, flags=re.M):
-        return
     cwd = Path(os.path.relpath(runner, path.parent)).as_posix()
     block = f'''[[engine]]
   name = "casei"
@@ -73,6 +71,17 @@ def add_engine(rebar, runner):
     args = ["build", "-o", "casei-rebar", "."]
 
 '''
+    parts = re.split(r"(?=^\[\[engine\]\]\s*$)", text, flags=re.M)
+    existing = [
+        i for i, part in enumerate(parts)
+        if re.search(r'^\s*name\s*=\s*"casei"\s*$', part, flags=re.M)
+    ]
+    if len(existing) > 1:
+        raise SystemExit(f"{path}: multiple casei engine definitions")
+    if existing:
+        parts[existing[0]] = block
+        path.write_text("".join(parts))
+        return
     marker = "[[engine]]\n"
     if marker not in text:
         raise SystemExit(f"{path}: no engine insertion point")

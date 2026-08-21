@@ -30,11 +30,12 @@ libdir="$root/usr/lib/x86_64-linux-gnu"
 pcdir="$libdir/pkgconfig"
 build_source="$out/rustac-source"
 memchr_source="$out/rustac-memchr-source"
+cargo_home=${CARGO_HOME:-"$out/cargo-home"}
+export CARGO_HOME="$cargo_home"
 
 # Fetch from a manifest without the local patch first, so a cold Cargo cache
 # can still stage the exact registry source that the locked build audits.
 cargo fetch --manifest-path "$source_dir/fetch/Cargo.toml" --locked
-cargo_home=${CARGO_HOME:-"$HOME/.cargo"}
 registry_source=$(find "$cargo_home/registry/src" -type d -name 'memchr-2.8.3' -print -quit)
 if [ -z "$registry_source" ]; then
   echo "Cargo did not provide the pinned memchr 2.8.3 source" >&2

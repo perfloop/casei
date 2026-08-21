@@ -74,8 +74,8 @@ row: the five-pattern plan filters on common Cyrillic roots, admits 21.7% of the
 corpus into rune decoding and token-map verification, and never gains the rare
 interior pair-pair anchors selected for a single pattern. The missing iterator
 is therefore an API gap, not the primary performance gap. These measurements
-bound the result here to first-match search; rebar's count-all numbers cannot be
-borrowed in support of it.
+bound the result here to the 33-row arena contract; Rebar's non-overlapping
+enumeration numbers cannot be borrowed in support of it.
 
 **Correction (v2, after a three-way prior-art sweep):** dedicated engines
 DO exist, with different contracts:
