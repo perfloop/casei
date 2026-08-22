@@ -13,7 +13,12 @@ import sys
 sys.dont_write_bytecode = True
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
-from verify_benchmarkbar import EXPECTED_ROWS, is_utf8_row  # noqa: E402
+from verify_benchmarkbar import (  # noqa: E402
+    EXPECTED_ROWS,
+    REQUIRED_ROWS,
+    TARGETED_ROWS,
+    is_utf8_row,
+)
 
 
 VISIBLE = (
@@ -99,11 +104,11 @@ def parse(path):
 def verify(path, expected_samples=3, require_wins=True):
     rows = parse(path)
     found = set(rows)
-    if found != EXPECTED_ROWS:
+    if found != REQUIRED_ROWS:
         raise VerificationError(
             f"{path}: row inventory differs; "
-            f"missing={sorted(EXPECTED_ROWS - found)}, "
-            f"unexpected={sorted(found - EXPECTED_ROWS)}"
+            f"missing={sorted(REQUIRED_ROWS - found)}, "
+            f"unexpected={sorted(found - REQUIRED_ROWS)}"
         )
 
     medians = {}
@@ -134,7 +139,9 @@ def verify(path, expected_samples=3, require_wins=True):
 
 
 def render(medians, title, selected=None):
-    rows = set(medians) if selected is None else set(selected)
+    # Keep generated README tables on the historical acceptance inventory; the
+    # targeted field row is required for the run but is not a broad comparison.
+    rows = EXPECTED_ROWS if selected is None else set(selected)
     unknown = rows - set(medians)
     if unknown:
         raise VerificationError(f"unknown selected rows: {sorted(unknown)}")
@@ -164,12 +171,16 @@ def render(medians, title, selected=None):
 
 
 def summary(medians):
-    ratios = {row: result[2] for row, result in medians.items()}
-    narrowest = min(ratios, key=ratios.get)
-    widest = max(ratios, key=ratios.get)
+    acceptance = {row: medians[row][2] for row in EXPECTED_ROWS}
+    targeted = {row: medians[row][2] for row in TARGETED_ROWS}
+    narrowest = min(acceptance, key=acceptance.get)
+    widest = max(acceptance, key=acceptance.get)
+    target = next(iter(TARGETED_ROWS))
     return (
-        f"PASS: 33/33 throughput rows; narrowest {narrowest}={ratios[narrowest]:.2f}x; "
-        f"widest {widest}={ratios[widest]:.2f}x; three samples per lane"
+        f"PASS: 33/33 throughput rows; 1/1 targeted field row "
+        f"{target}={targeted[target]:.2f}x; narrowest "
+        f"{narrowest}={acceptance[narrowest]:.2f}x; widest "
+        f"{widest}={acceptance[widest]:.2f}x; three samples per lane"
     )
 
 

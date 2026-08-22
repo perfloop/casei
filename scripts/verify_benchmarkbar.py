@@ -11,6 +11,9 @@ import sys
 
 
 PREFIX = "BenchmarkBar/"
+# EXPECTED_ROWS is the long-lived arena acceptance board. Targeted rows are
+# checked with the same field and dispatch contract without rewriting its
+# published historical inventory.
 EXPECTED_ROWS = frozenset(
     {
         "multi/multi_N2_miss_log_1mb",
@@ -48,8 +51,15 @@ EXPECTED_ROWS = frozenset(
         "single/torture_miss_64kb",
     }
 )
+TARGETED_ROWS = frozenset(
+    {
+        "multi/multi_N1_unicode_pair_miss_1_5mb",
+    }
+)
+REQUIRED_ROWS = EXPECTED_ROWS | TARGETED_ROWS
 UTF8_ROWS = frozenset(
     {
+        "multi/multi_N1_unicode_pair_miss_1_5mb",
         "multi/multi_N512_miss_hazard_64kb",
         "multi/multi_N64_miss_ru_64kb",
         "multi/multi_N8_hazard_hit_1mb",
@@ -140,11 +150,11 @@ def parse(path):
 def verify(path, expected_samples=3):
     rows = parse(path)
     found = set(rows)
-    if found != EXPECTED_ROWS:
+    if found != REQUIRED_ROWS:
         raise VerificationError(
             f"{path}: row inventory differs; "
-            f"missing={sorted(EXPECTED_ROWS - found)}, "
-            f"unexpected={sorted(found - EXPECTED_ROWS)}"
+            f"missing={sorted(REQUIRED_ROWS - found)}, "
+            f"unexpected={sorted(found - REQUIRED_ROWS)}"
         )
 
     wrong_counts = {
@@ -246,21 +256,25 @@ def verify(path, expected_samples=3):
         name: median(sample["x_vs_best"] for sample in samples)
         for name, samples in rows.items()
     }
-    worst_row = max(medians, key=medians.get)
+    acceptance_medians = {name: medians[name] for name in EXPECTED_ROWS}
+    worst_row = max(acceptance_medians, key=acceptance_medians.get)
     worst_sample = max(
         sample["x_vs_best"]
-        for samples in rows.values()
-        for sample in samples
+        for name in EXPECTED_ROWS
+        for sample in rows[name]
     )
-    median_speedup = median(1 / ratio for ratio in medians.values())
+    median_speedup = median(1 / ratio for ratio in acceptance_medians.values())
     entrant_counts = [
         int(sample["entrants"])
         for samples in rows.values()
         for sample in samples
     ]
+    targeted = ", ".join(f"{name}={medians[name]:.4f}" for name in sorted(TARGETED_ROWS))
     return (
-        f"PASS: 33/33 rows; worst median {worst_row}={medians[worst_row]:.4f}; "
-        f"worst sample={worst_sample:.4f}; median speedup={median_speedup:.2f}x; "
+        f"PASS: {len(EXPECTED_ROWS)}/{len(EXPECTED_ROWS)} rows; "
+        f"{len(TARGETED_ROWS)}/{len(TARGETED_ROWS)} targeted rows ({targeted}); "
+        f"worst acceptance median {worst_row}={acceptance_medians[worst_row]:.4f}; "
+        f"worst acceptance sample={worst_sample:.4f}; median speedup={median_speedup:.2f}x; "
         f"entrants={min(entrant_counts)}-{max(entrant_counts)}; "
         "casei=512-bit; Vectorscan=512-bit VBMI; field dispatch verified"
     )
