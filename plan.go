@@ -2422,7 +2422,7 @@ func (p *searchPlan) findUnicodePairConfirm(haystack string, anchor *unicodePair
 
 func (p *searchPlan) findUnicodePairAnchor(haystack string, anchor *unicodePairAnchor) (Match, bool) {
 	if anchor.pairPair.valid != 0 {
-		if p.unicodePairConfirm().valid() && unicodePairConfirmVectorEnabled() {
+		if p.unicodePairConfirm().valid() && asciiPairVBMIEnabled() {
 			return p.findUnicodePairConfirm(haystack, anchor)
 		}
 		for at := 0; at+int(anchor.pairPair.offset)+1 < len(haystack); {

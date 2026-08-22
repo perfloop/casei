@@ -24,10 +24,6 @@ func asciiPairVBMIEnabled() bool {
 	return cpu.X86.HasAVX512F && cpu.X86.HasAVX512BW && cpu.X86.HasAVX512VBMI
 }
 
-func unicodePairConfirmVectorEnabled() bool {
-	return asciiPairVBMIEnabled()
-}
-
 // asciiFixedPrefix8 compares the compiled low eight pattern bytes after
 // applying case bits only at ASCII-letter positions. Its callers establish an
 // in-bounds eight-byte window before this unaligned amd64 load.

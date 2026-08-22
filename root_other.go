@@ -8,8 +8,6 @@ func runtimeVectorBits() int { return 0 }
 
 func asciiPairVBMIEnabled() bool { return false }
 
-func unicodePairConfirmVectorEnabled() bool { return false }
-
 func asciiFixedPrefix8(s string, at int, word, fold uint64) bool {
 	for i := 0; i < 8; i++ {
 		if s[at+i]|byte(fold>>(8*i)) != byte(word>>(8*i)) {
