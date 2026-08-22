@@ -45,9 +45,10 @@ class VerifyThroughputTest(unittest.TestCase):
     def test_accepts_complete_winning_board_and_renders_markdown(self):
         medians = self.verify_text(transcript())
         self.assertEqual(34, len(medians))
-        self.assertIn("1/1 targeted field row", verify.summary(medians))
+        self.assertIn("PASS: 34/34 throughput rows", verify.summary(medians))
         table = verify.render(medians, "Test CPU")
         self.assertIn("#### Test CPU", table)
+        self.assertIn("multi_N1_unicode_pair_miss_1_5mb", table)
         self.assertIn("**2.0**", table)
         self.assertIn("**2.00×**", table)
 
@@ -55,7 +56,7 @@ class VerifyThroughputTest(unittest.TestCase):
         self.assertEqual(34, len(self.verify_text(transcript(serial=True))))
 
     def test_rejects_missing_row(self):
-        first = sorted(verify.EXPECTED_ROWS)[0]
+        first = sorted(verify.REQUIRED_ROWS)[0]
         text = "".join(
             line
             for line in transcript().splitlines(keepends=True)
@@ -64,8 +65,8 @@ class VerifyThroughputTest(unittest.TestCase):
         with self.assertRaisesRegex(verify.VerificationError, "row inventory differs"):
             self.verify_text(text)
 
-    def test_rejects_missing_targeted_row(self):
-        row = next(iter(verify.TARGETED_ROWS))
+    def test_rejects_missing_unicode_confirmation_row(self):
+        row = "multi/multi_N1_unicode_pair_miss_1_5mb"
         text = "".join(
             line
             for line in transcript().splitlines(keepends=True)

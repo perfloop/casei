@@ -11,9 +11,9 @@ import sys
 
 
 PREFIX = "BenchmarkBar/"
-# EXPECTED_ROWS is the long-lived arena acceptance board. Targeted rows are
-# checked with the same field and dispatch contract without rewriting its
-# published historical inventory.
+# EXPECTED_ROWS is the board published before the focused Unicode-confirmation
+# row was added. REQUIRED_ROWS is the current acceptance board: every member is
+# subject to the same win, entrant-count, and dispatch requirements.
 EXPECTED_ROWS = frozenset(
     {
         "multi/multi_N2_miss_log_1mb",
@@ -256,25 +256,22 @@ def verify(path, expected_samples=3):
         name: median(sample["x_vs_best"] for sample in samples)
         for name, samples in rows.items()
     }
-    acceptance_medians = {name: medians[name] for name in EXPECTED_ROWS}
-    worst_row = max(acceptance_medians, key=acceptance_medians.get)
+    worst_row = max(medians, key=medians.get)
     worst_sample = max(
         sample["x_vs_best"]
-        for name in EXPECTED_ROWS
+        for name in REQUIRED_ROWS
         for sample in rows[name]
     )
-    median_speedup = median(1 / ratio for ratio in acceptance_medians.values())
+    median_speedup = median(1 / ratio for ratio in medians.values())
     entrant_counts = [
         int(sample["entrants"])
         for samples in rows.values()
         for sample in samples
     ]
-    targeted = ", ".join(f"{name}={medians[name]:.4f}" for name in sorted(TARGETED_ROWS))
     return (
-        f"PASS: {len(EXPECTED_ROWS)}/{len(EXPECTED_ROWS)} rows; "
-        f"{len(TARGETED_ROWS)}/{len(TARGETED_ROWS)} targeted rows ({targeted}); "
-        f"worst acceptance median {worst_row}={acceptance_medians[worst_row]:.4f}; "
-        f"worst acceptance sample={worst_sample:.4f}; median speedup={median_speedup:.2f}x; "
+        f"PASS: {len(REQUIRED_ROWS)}/{len(REQUIRED_ROWS)} rows; "
+        f"worst median {worst_row}={medians[worst_row]:.4f}; "
+        f"worst sample={worst_sample:.4f}; median speedup={median_speedup:.2f}x; "
         f"entrants={min(entrant_counts)}-{max(entrant_counts)}; "
         "casei=512-bit; Vectorscan=512-bit VBMI; field dispatch verified"
     )

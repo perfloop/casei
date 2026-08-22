@@ -72,7 +72,7 @@ class VerifyBenchmarkBarTest(unittest.TestCase):
 
     def test_accepts_complete_winning_full_width_board(self):
         summary = self.verify_text(transcript())
-        self.assertIn("PASS: 33/33 rows", summary)
+        self.assertIn("PASS: 34/34 rows", summary)
         self.assertIn("casei=512-bit", summary)
 
     def test_rejects_losing_sample(self):

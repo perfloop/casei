@@ -13,12 +13,7 @@ import sys
 sys.dont_write_bytecode = True
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
-from verify_benchmarkbar import (  # noqa: E402
-    EXPECTED_ROWS,
-    REQUIRED_ROWS,
-    TARGETED_ROWS,
-    is_utf8_row,
-)
+from verify_benchmarkbar import REQUIRED_ROWS, is_utf8_row  # noqa: E402
 
 
 VISIBLE = (
@@ -139,9 +134,7 @@ def verify(path, expected_samples=3, require_wins=True):
 
 
 def render(medians, title, selected=None):
-    # Keep generated README tables on the historical acceptance inventory; the
-    # targeted field row is required for the run but is not a broad comparison.
-    rows = EXPECTED_ROWS if selected is None else set(selected)
+    rows = REQUIRED_ROWS if selected is None else set(selected)
     unknown = rows - set(medians)
     if unknown:
         raise VerificationError(f"unknown selected rows: {sorted(unknown)}")
@@ -171,16 +164,13 @@ def render(medians, title, selected=None):
 
 
 def summary(medians):
-    acceptance = {row: medians[row][2] for row in EXPECTED_ROWS}
-    targeted = {row: medians[row][2] for row in TARGETED_ROWS}
-    narrowest = min(acceptance, key=acceptance.get)
-    widest = max(acceptance, key=acceptance.get)
-    target = next(iter(TARGETED_ROWS))
+    ratios = {row: medians[row][2] for row in REQUIRED_ROWS}
+    narrowest = min(ratios, key=ratios.get)
+    widest = max(ratios, key=ratios.get)
     return (
-        f"PASS: 33/33 throughput rows; 1/1 targeted field row "
-        f"{target}={targeted[target]:.2f}x; narrowest "
-        f"{narrowest}={acceptance[narrowest]:.2f}x; widest "
-        f"{widest}={acceptance[widest]:.2f}x; three samples per lane"
+        f"PASS: {len(REQUIRED_ROWS)}/{len(REQUIRED_ROWS)} throughput rows; "
+        f"narrowest {narrowest}={ratios[narrowest]:.2f}x; "
+        f"widest {widest}={ratios[widest]:.2f}x; three samples per lane"
     )
 
 
