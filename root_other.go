@@ -8,6 +8,8 @@ func runtimeVectorBits() int { return 0 }
 
 func asciiPairVBMIEnabled() bool { return false }
 
+func unicodePairConfirmVectorEnabled() bool { return false }
+
 func asciiFixedPrefix8(s string, at int, word, fold uint64) bool {
 	for i := 0; i < 8; i++ {
 		if s[at+i]|byte(fold>>(8*i)) != byte(word>>(8*i)) {
@@ -137,6 +139,17 @@ func findASCIIRunBytes(s string, kind uint8, needle byte, need int) int {
 
 func pairShuftiSkipBytes(s string, at int, filter *rootFilter) int {
 	return pairShuftiSkipScalar(s, at, &filter.shufti)
+}
+
+func pairPairConfirmBytes(s string, at, candidates int, filter *pairPairFilter, confirm unicodePairConfirm) int {
+	start := at
+	for at-start < candidates {
+		if pairPairAt(s, at, filter) && confirm.matchesAt(s, at-confirm.anchorAt()) {
+			return at - start
+		}
+		at++
+	}
+	return candidates
 }
 
 func pairPairSkipBytes(s string, at int, filter *pairPairFilter) int {
