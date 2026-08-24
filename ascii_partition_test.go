@@ -24,7 +24,7 @@ func decodedPlanFind(p *searchPlan, haystack string) (Match, bool) {
 	if p.maxUnits > len(starts) {
 		starts = make([]int, p.maxUnits)
 	}
-	return p.findUnfilteredWithStarts(haystack, starts, false)
+	return p.findUnfilteredWithStarts(haystack, starts)
 }
 
 func TestASCIIPartitionPlanAdmission(t *testing.T) {
@@ -77,6 +77,7 @@ func TestASCIIPartitionDifferential(t *testing.T) {
 
 func TestASCIIPartitionPositionDensityAndBoundaries(t *testing.T) {
 	patterns := asciiPartitionPatterns()
+	plan := newSearchPlan(patterns)
 	matcher := NewMatcher(patterns)
 	for _, size := range []int{1, 63, 64, 127, 1024, 8192} {
 		for _, gap := range []int{1, 7, 31, 127, 511} {
@@ -93,6 +94,19 @@ func TestASCIIPartitionPositionDensityAndBoundaries(t *testing.T) {
 		}
 	}
 
+	highAt := 64
+	spanEnd := highAt + len("€")
+	boundaryStart := spanEnd + plan.maxBytes - 1
+	boundary := []byte(strings.Repeat("x", boundaryStart+len("abc0")+32))
+	copy(boundary[highAt:], "€")
+	copy(boundary[boundaryStart:], "abc0")
+	secondHighAt := 128
+	interWindowStart := secondHighAt - plan.maxBytes - 1
+	interWindow := []byte(strings.Repeat("x", 256))
+	copy(interWindow[highAt:], "€")
+	copy(interWindow[secondHighAt:], "€")
+	copy(interWindow[interWindowStart:], "abc0")
+
 	for _, haystack := range []string{
 		"abc0" + "€" + strings.Repeat("x", 64),
 		strings.Repeat("x", 64) + "€" + "abc0",
@@ -103,6 +117,8 @@ func TestASCIIPartitionPositionDensityAndBoundaries(t *testing.T) {
 		strings.Repeat("x", 64) + "\x00" + "abc0",
 		strings.Repeat("x", 64) + "abc0" + "€" + "def1",
 		strings.Repeat("x", 64) + "€" + strings.Repeat("x", 64) + "\xff" + "ghi2",
+		string(boundary),
+		string(interWindow),
 	} {
 		want, wantOK := refFind(haystack, patterns)
 		if got, gotOK := matcher.Find(haystack); gotOK != wantOK || gotOK && got != want {
@@ -157,6 +173,40 @@ func TestASCIIPartitionEachContract(t *testing.T) {
 				t.Fatalf("Each(%x) match %d = %+v, want %+v", haystack, i, got[i], want[i])
 			}
 		}
+	}
+}
+
+func TestASCIIPartitionReportsWorkSplit(t *testing.T) {
+	patterns := asciiPartitionPatterns()
+	plan := newSearchPlan(patterns)
+	if !plan.asciiPartitionUsable() {
+		t.Skipf("ASCII partition is runtime-gated to AVX-512; vector width %d", runtimeVectorBits())
+	}
+	var input strings.Builder
+	for input.Len()+512+len("€") <= 1<<16 {
+		input.WriteString(strings.Repeat("x", 512))
+		input.WriteString("€")
+	}
+	input.WriteString(strings.Repeat("x", 1<<16-input.Len()))
+	haystack := input.String()
+	var stats asciiPartitionStats
+	if _, ok := plan.findUnfilteredWithStats(haystack, &stats); ok {
+		t.Fatal("setup unexpectedly matched")
+	}
+	if stats.fallbackEntries != 0 || stats.decodedWindows == 0 || stats.decodedWindowBytes == 0 {
+		t.Fatalf("partition diagnostics = %+v", stats)
+	}
+	if stats.highBytes == 0 || stats.firstExceptional <= 0 || stats.asciiCandidateBytes <= stats.decodedWindowBytes {
+		t.Fatalf("partition did not expose sparse ASCII work: %+v", stats)
+	}
+
+	fallbackHaystack := strings.Repeat("x", 256) + "€"
+	stats = asciiPartitionStats{}
+	if _, ok := plan.findUnfilteredWithStats(fallbackHaystack, &stats); ok {
+		t.Fatal("fallback setup unexpectedly matched")
+	}
+	if stats.fallbackEntries != 1 || stats.firstExceptional < 0 || stats.decodedWindows != 0 {
+		t.Fatalf("tail fallback diagnostics = %+v", stats)
 	}
 }
 

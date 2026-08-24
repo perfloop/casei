@@ -2439,7 +2439,50 @@ func (p *searchPlan) findWithWidth(haystack string) (Match, int, bool) {
 // boundary-safe path for plans containing opaque UTF-8 continuation bytes.
 func (p *searchPlan) findUnfiltered(haystack string) (Match, bool) {
 	if p.asciiPartitionUsable() && !asciiPartitionTailBoundary(haystack) {
-		return p.findUnfilteredWithStarts(haystack, nil, true)
+		firstHigh := rootSkipASCII(haystack, 0, rootExact, 0)
+		if firstHigh < len(haystack) {
+			return p.findPartitionedASCII(haystack, firstHigh)
+		}
+	}
+	return p.findUnfilteredDecodedLegacy(haystack)
+}
+
+// asciiPartitionStats is an optional diagnostic view of the partition route.
+// It is populated only by focused package benchmarks; normal searches pass nil
+// and retain the same hot path without counters.
+type asciiPartitionStats struct {
+	highBytes           int
+	firstExceptional    int
+	asciiCandidateBytes int
+	decodedWindowBytes  int
+	decodedWindows      int
+	fallbackEntries     int
+}
+
+func (p *searchPlan) findUnfilteredWithStats(haystack string, stats *asciiPartitionStats) (Match, bool) {
+	if stats != nil {
+		stats.firstExceptional = -1
+	}
+	if p.asciiPartitionUsable() && !asciiPartitionTailBoundary(haystack) {
+		firstHigh := rootSkipASCII(haystack, 0, rootExact, 0)
+		if firstHigh < len(haystack) {
+			if stats != nil {
+				stats.firstExceptional = firstHigh
+				return p.findPartitionedASCIIWithStats(haystack, firstHigh, stats)
+			}
+			return p.findPartitionedASCII(haystack, firstHigh)
+		}
+	}
+	if stats != nil {
+		stats.fallbackEntries++
+		for at := 0; at < len(haystack); at++ {
+			if haystack[at] >= utf8.RuneSelf {
+				stats.highBytes++
+				if stats.firstExceptional < 0 {
+					stats.firstExceptional = at
+				}
+			}
+		}
 	}
 	return p.findUnfilteredDecodedLegacy(haystack)
 }
@@ -2551,10 +2594,10 @@ func (p *searchPlan) findUnfilteredDecodedLegacy(haystack string) (Match, bool) 
 	return p.findNonASCIIDecoded(haystack, at, unit, state, bestUnitStart, best, starts)
 }
 
-// findUnfilteredWithStarts is the partition-capable decoded executor. A
-// caller can provide its offset ring so each boundary window reuses the same
-// stack storage rather than allocating a new ring.
-func (p *searchPlan) findUnfilteredWithStarts(haystack string, starts []int, partition bool) (Match, bool) {
+// findUnfilteredWithStarts is the decoded executor used for a bounded window.
+// A caller can provide its offset ring so each window reuses the same stack
+// storage rather than allocating a new ring.
+func (p *searchPlan) findUnfilteredWithStarts(haystack string, starts []int) (Match, bool) {
 	state, unit := 0, 0
 	bestUnitStart := -1
 	best := Match{Pattern: -1, Start: -1}
@@ -2638,7 +2681,7 @@ func (p *searchPlan) findUnfilteredWithStarts(haystack string, starts []int, par
 			starts = make([]int, p.maxUnits)
 		}
 	}
-	return p.findNonASCII(haystack, at, unit, state, bestUnitStart, best, starts, partition)
+	return p.findNonASCII(haystack, at, unit, state, bestUnitStart, best, starts)
 }
 
 // findASCIITripleFiltered is the all-ASCII specialization of the shared plan.
@@ -2680,6 +2723,51 @@ func (p *searchPlan) findASCIITripleFiltered(haystack string) (Match, bool) {
 			if best.Pattern < 0 || start < best.Start ||
 				start == best.Start && output.pattern < best.Pattern {
 				best = Match{Pattern: output.pattern, Start: start}
+			}
+		}
+		at += size
+	}
+	if best.Pattern < 0 {
+		return Match{}, false
+	}
+	return best, true
+}
+
+// findASCIITripleFilteredRange is the bounded form used for a maximal ASCII
+// run. Its vector scout may read two bytes beyond end from the original
+// haystack, but it never advances a candidate beyond end; a decoded window
+// handles matches whose source crosses the following exceptional span.
+func (p *searchPlan) findASCIITripleFilteredRange(haystack string, start, end int) (Match, bool) {
+	var inlineStarts [256]int
+	starts := inlineStarts[:]
+	if p.maxUnits > len(starts) {
+		starts = make([]int, p.maxUnits)
+	}
+
+	state, history := 0, 0
+	best := Match{Pattern: -1, Start: -1}
+	for at := start; at < end; {
+		if state == 0 {
+			if best.Pattern >= 0 && at > best.Start {
+				return best, true
+			}
+			history = 0
+			skipped := tripleSkipASCIIRegion(haystack, at, end, &p.asciiTriples)
+			at += skipped
+			if at == end {
+				break
+			}
+		}
+
+		starts[history%len(starts)] = at
+		token, size := p.haystackToken(haystack, at)
+		state = p.advance(state, token)
+		history++
+		if output := p.nodes[state].output; output.pattern >= 0 {
+			startAt := starts[(history-output.units)%len(starts)]
+			if best.Pattern < 0 || startAt < best.Start ||
+				startAt == best.Start && output.pattern < best.Pattern {
+				best = Match{Pattern: output.pattern, Start: startAt}
 			}
 		}
 		at += size
@@ -2869,129 +2957,151 @@ func (p *searchPlan) asciiPartitionUsable() bool {
 // is sound on a known-ASCII region. The caller has already separated all bytes
 // at or above UTF-8's RuneSelf, so the all-ASCII routes do not need to prove
 // that property again.
-func (p *searchPlan) findASCIIRegion(haystack string, starts []int) (Match, bool) {
-	if len(haystack) >= asciiTripleMinBytes {
-		return p.findASCIITripleFiltered(haystack)
+func (p *searchPlan) findASCIIRegion(haystack string, start, end int, starts []int) (Match, bool) {
+	if end-start >= asciiTripleMinBytes {
+		return p.findASCIITripleFilteredRange(haystack, start, end)
 	}
-	return p.findUnfilteredWithStarts(haystack, starts, false)
+	match, ok := p.findUnfilteredWithStarts(haystack[start:end], starts)
+	if ok {
+		match.Start += start
+	}
+	return match, ok
 }
 
-func earlierPartitionMatch(best, candidate Match) Match {
-	if candidate.Pattern < 0 || best.Pattern >= 0 &&
-		(candidate.Start > best.Start || candidate.Start == best.Start && candidate.Pattern >= best.Pattern) {
-		return best
-	}
-	return candidate
+// findPartitionedASCII resumes after the first high byte. It visits each
+// maximal ASCII run with the existing candidate transition and decodes only a
+// coalesced window around exceptional spans. The run preceding a span ends at
+// spanStart-maxBytes, so every match start it can return is wholly before the
+// span; the decoded window owns the remaining starts and all cross-span paths.
+func (p *searchPlan) findPartitionedASCII(haystack string, firstHigh int) (Match, bool) {
+	return p.findPartitionedASCIIWithStats(haystack, firstHigh, nil)
 }
 
-// findPartitionedASCII resumes after the first high byte. It keeps the exact
-// decoded transition for windows around non-ASCII spans, but sends the large
-// pure-ASCII gaps back through the plan's existing block candidate route.
-// Windows overlap by the plan's maximum possible source width, so a match that
-// crosses a boundary is present in at least one decoded window. ASCII-only
-// matches that cross an artificial window edge are covered by searching their
-// complete ASCII run as well.
-func (p *searchPlan) findPartitionedASCII(haystack string, firstHigh int, best Match, starts []int) (Match, bool) {
+func (p *searchPlan) findPartitionedASCIIWithStats(haystack string, firstHigh int, stats *asciiPartitionStats) (Match, bool) {
 	maxBytes := p.maxBytes
-	if maxBytes < 1 {
-		return best, best.Pattern >= 0
+	if maxBytes < 1 || firstHigh >= len(haystack) {
+		return Match{}, false
 	}
 
-	windowStart, windowEnd := 0, 0
-	lastHighEnd := firstHigh
-	haveWindow := false
-	at := firstHigh
+	var inlineStarts [256]int
+	starts := inlineStarts[:]
+	if p.maxUnits > len(starts) {
+		starts = make([]int, p.maxUnits)
+	}
+
+	cursor := 0
+	spanStart := firstHigh
 	for {
-		at += rootSkipASCII(haystack, at, rootExact, 0)
-		if at == len(haystack) {
-			break
+		spanEnd := spanStart
+		for spanEnd < len(haystack) && (haystack[spanEnd] >= utf8.RuneSelf || haystack[spanEnd] == 0) {
+			spanEnd++
 		}
-		spanStart := at
-		for at < len(haystack) && (haystack[at] >= utf8.RuneSelf || haystack[at] == 0) {
-			at++
-		}
-		spanEnd := at
-
-		start := 0
-		if maxBytes < spanStart {
-			start = spanStart - maxBytes
-		}
-		end := len(haystack)
-		if maxBytes <= len(haystack)-spanEnd {
-			end = spanEnd + maxBytes
-		}
-
-		if !haveWindow {
-			windowStart, windowEnd = start, end
-			lastHighEnd = spanEnd
-			haveWindow = true
-			continue
-		}
-		if start <= windowEnd {
-			if end > windowEnd {
-				windowEnd = end
+		if stats != nil {
+			for at := spanStart; at < spanEnd; at++ {
+				if haystack[at] >= utf8.RuneSelf {
+					stats.highBytes++
+				}
 			}
-			lastHighEnd = spanEnd
-			continue
+		}
+		windowStart := spanStart - maxBytes
+		if windowStart < 0 {
+			windowStart = 0
+		}
+		windowEnd := spanEnd + maxBytes
+		if windowEnd > len(haystack) {
+			windowEnd = len(haystack)
+		}
+		lastHighEnd := spanEnd
+
+		// Coalesce exceptional spans whose widened windows touch. This leaves
+		// one decoded transition for a cluster rather than restarting it at
+		// every high byte.
+		nextStart := -1
+		for at := spanEnd; at < len(haystack); {
+			at += rootSkipASCII(haystack, at, rootExact, 0)
+			if at == len(haystack) {
+				break
+			}
+			nextSpanEnd := at
+			for nextSpanEnd < len(haystack) && (haystack[nextSpanEnd] >= utf8.RuneSelf || haystack[nextSpanEnd] == 0) {
+				nextSpanEnd++
+			}
+			nextWindowStart := at - maxBytes
+			if nextWindowStart < 0 {
+				nextWindowStart = 0
+			}
+			nextWindowEnd := nextSpanEnd + maxBytes
+			if nextWindowEnd > len(haystack) {
+				nextWindowEnd = len(haystack)
+			}
+			if nextWindowStart > windowEnd {
+				nextStart = at
+				break
+			}
+			if stats != nil {
+				for high := at; high < nextSpanEnd; high++ {
+					if haystack[high] >= utf8.RuneSelf {
+						stats.highBytes++
+					}
+				}
+			}
+			if nextWindowEnd > windowEnd {
+				windowEnd = nextWindowEnd
+			}
+			lastHighEnd = nextSpanEnd
+			at = nextSpanEnd
 		}
 
-		if match, ok := p.findUnfilteredWithStarts(haystack[windowStart:windowEnd], starts, false); ok {
+		if cursor < windowStart {
+			if stats != nil {
+				stats.asciiCandidateBytes += windowStart - cursor
+			}
+			if match, ok := p.findASCIIRegion(haystack, cursor, windowStart, starts); ok {
+				return match, true
+			}
+		}
+		if stats != nil {
+			stats.decodedWindowBytes += windowEnd - windowStart
+			stats.decodedWindows++
+		}
+		if match, ok := p.findUnfilteredWithStarts(haystack[windowStart:windowEnd], starts); ok {
 			match.Start += windowStart
-			best = earlierPartitionMatch(best, match)
-		}
-		if best.Pattern >= 0 {
-			return best, true
-		}
-		if lastHighEnd < spanStart {
-			if match, ok := p.findASCIIRegion(haystack[lastHighEnd:spanStart], starts); ok {
-				match.Start += lastHighEnd
-				return earlierPartitionMatch(best, match), true
-			}
-		}
-		windowStart, windowEnd = start, end
-		lastHighEnd = spanEnd
-	}
-
-	if !haveWindow {
-		return best, best.Pattern >= 0
-	}
-	if match, ok := p.findUnfilteredWithStarts(haystack[windowStart:windowEnd], starts, false); ok {
-		match.Start += windowStart
-		best = earlierPartitionMatch(best, match)
-	}
-	if best.Pattern >= 0 {
-		return best, true
-	}
-	if windowEnd < len(haystack) {
-		if match, ok := p.findASCIIRegion(haystack[lastHighEnd:], starts); ok {
-			match.Start += lastHighEnd
 			return match, true
 		}
+
+		if nextStart < 0 {
+			if lastHighEnd < len(haystack) {
+				if stats != nil {
+					stats.asciiCandidateBytes += len(haystack) - lastHighEnd
+				}
+				return p.findASCIIRegion(haystack, lastHighEnd, len(haystack), starts)
+			}
+			return Match{}, false
+		}
+
+		// The next group starts after this group's widened window. Search the
+		// intervening ASCII suffix, including the overlap after the exceptional
+		// span, before moving to the next decoded window.
+		nextWindowStart := nextStart - maxBytes
+		if nextWindowStart < 0 {
+			nextWindowStart = 0
+		}
+		if lastHighEnd < nextStart {
+			if stats != nil {
+				stats.asciiCandidateBytes += nextStart - lastHighEnd
+			}
+			if match, ok := p.findASCIIRegion(haystack, lastHighEnd, nextStart, starts); ok {
+				return match, true
+			}
+		}
+		cursor = nextWindowStart
+		spanStart = nextStart
 	}
-	return best, best.Pattern >= 0
 }
 
-// findNonASCII resumes the plan at its first non-ASCII byte. Sparse high-byte
-// input is partitioned into decoded boundary windows and ASCII runs; plans
-// without a sound ASCII specialization retain the original decoded executor.
-func (p *searchPlan) findNonASCII(haystack string, at, unit, state, bestUnitStart int, best Match, starts []int, partition bool) (Match, bool) {
-	if partition && len(haystack)-at > asciiTripleMinBytes && p.asciiPartitionUsable() {
-		// Do not pay the partition scan when the remaining suffix cannot hold
-		// an existing block route. Dense high-byte input therefore retains the
-		// original decoded loop without another boundary pass.
-		boundaryEnd := at
-		for boundaryEnd < len(haystack) && (haystack[boundaryEnd] >= utf8.RuneSelf || haystack[boundaryEnd] == 0) {
-			boundaryEnd++
-		}
-		if boundaryEnd < len(haystack) &&
-			boundaryEnd+rootSkipASCII(haystack, boundaryEnd, rootExact, 0) < boundaryEnd+asciiTripleMinBytes {
-			return p.findNonASCIIDecoded(haystack, at, unit, state, bestUnitStart, best, starts)
-		}
-		if boundaryEnd == len(haystack) {
-			return p.findNonASCIIDecoded(haystack, at, unit, state, bestUnitStart, best, starts)
-		}
-		return p.findPartitionedASCII(haystack, at, best, starts)
-	}
+// findNonASCII resumes the plan at its first non-ASCII byte. It retains the
+// original decoded executor for bounded windows and short known-ASCII regions.
+func (p *searchPlan) findNonASCII(haystack string, at, unit, state, bestUnitStart int, best Match, starts []int) (Match, bool) {
 	return p.findNonASCIIDecoded(haystack, at, unit, state, bestUnitStart, best, starts)
 }
 

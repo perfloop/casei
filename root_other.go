@@ -253,6 +253,13 @@ func tripleSkipBytes(s string, at int, filter *tripleFilter) int {
 	return tripleSkipScalar(s, at, filter)
 }
 
+func tripleSkipASCIIRegion(s string, start, end int, filter *tripleFilter) int {
+	if start >= end {
+		return 0
+	}
+	return tripleSkipScalar(s[start:end], 0, filter)
+}
+
 func tripleSkipScalar(s string, at int, filter *tripleFilter) int {
 	start := at
 	for at+2 < len(s) {

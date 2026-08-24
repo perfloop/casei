@@ -743,6 +743,26 @@ func tripleSkipBytes(s string, at int, filter *tripleFilter) int {
 	return at - start + tripleSkipScalar(s, at, filter)
 }
 
+// tripleSkipASCIIRegion scans candidate starts in [start,end) while allowing
+// the overlapping vector loads to use the following two bytes of the original
+// haystack. Those bytes are never admitted as candidates: the returned skip is
+// clamped to the known-ASCII region, and the decoded boundary window owns all
+// starts near the exceptional span.
+func tripleSkipASCIIRegion(s string, start, end int, filter *tripleFilter) int {
+	if start >= end {
+		return 0
+	}
+	scanEnd := end + 2
+	if scanEnd > len(s) {
+		scanEnd = len(s)
+	}
+	skipped := tripleSkipBytes(s[start:scanEnd], 0, filter)
+	if limit := end - start; skipped > limit {
+		return limit
+	}
+	return skipped
+}
+
 func tripleSkipScalar(s string, at int, filter *tripleFilter) int {
 	start := at
 	for at+2 < len(s) {
