@@ -2842,3 +2842,455 @@ pairpairvbmidone64:
 	MOVQ BX, ret+24(FP)
 	VZEROUPPER
 	RET
+
+// pairPairConfirmVBMI64 keeps the pair-pair candidate mask in the AVX-512
+// loop and checks each set bit against the bounded raw-token representation.
+// The packed confirmation has ten-byte parts: values at 0, 2, and 4, source
+// offset at 6, width at 7, and value count at 8. Its anchor offset and vector
+// part count are at 201 and 202 after its twenty slots. The pair-pair slots
+// are excluded from that count after their UTF-8 byte classes make the VBMI
+// low-six-bit table hits exact.
+TEXT ·pairPairConfirmVBMI64(SB), NOSPLIT, $0-40
+	MOVQ ptr+0(FP), AX
+	MOVQ n+8(FP), DX
+	MOVQ filter+16(FP), SI
+	MOVQ confirm+24(FP), DI
+	XORQ BX, BX
+	MOVQ $-1, CX
+	KMOVQ CX, K1
+	VMOVDQU8 0(SI), K1, Z1
+	VMOVDQU8 64(SI), K1, Z2
+	VMOVDQU8 128(SI), K1, Z3
+	VMOVDQU8 192(SI), K1, Z4
+	MOVBLZX 256(SI), R8
+
+pairpairconfirmdouble64:
+	CMPQ DX, $128
+	JL pairpairconfirmsingle64
+	VMOVDQU8 (AX), K1, Z0
+	VMOVDQU8 1(AX), K1, Z9
+	VMOVDQU8 (AX)(R8*1), K1, Z10
+	VMOVDQU8 1(AX)(R8*1), K1, Z11
+	VMOVDQU8 64(AX), K1, Z12
+	VMOVDQU8 65(AX), K1, Z13
+	VMOVDQU8 64(AX)(R8*1), K1, Z14
+	VMOVDQU8 65(AX)(R8*1), K1, Z15
+
+	VPERMB Z1, Z0, Z0
+	VPERMB Z2, Z9, Z9
+	VPERMB Z3, Z10, Z10
+	VPERMB Z4, Z11, Z11
+	VPTESTMB Z9, Z0, K1, K2
+	VPTESTMB Z11, Z10, K1, K3
+	KANDQ K2, K3, K2
+
+	VPERMB Z1, Z12, Z12
+	VPERMB Z2, Z13, Z13
+	VPERMB Z3, Z14, Z14
+	VPERMB Z4, Z15, Z15
+	VPTESTMB Z13, Z12, K1, K3
+	VPTESTMB Z15, Z14, K1, K4
+	KANDQ K3, K4, K3
+	KORTESTQ K2, K3
+	JEQ pairpairconfirmadvance128
+
+	KMOVQ K2, CX
+	XORQ SI, SI
+	TESTQ CX, CX
+	JNZ pairpairconfirmcandidate
+	JMP pairpairconfirmsecond
+
+pairpairconfirmsecond:
+	MOVQ $1, SI
+	KMOVQ K3, CX
+	TESTQ CX, CX
+	JNZ pairpairconfirmcandidate
+	JMP pairpairconfirmadvance128
+
+pairpairconfirmcandidate:
+	BSFQ CX, R9
+	LEAQ (AX)(R9*1), R10
+	CMPQ SI, $1
+	JNE pairpairconfirmbase
+	ADDQ $64, R10
+pairpairconfirmbase:
+	MOVBLZX 201(DI), R13
+	SUBQ R13, R10
+	LEAQ (R10)(R13*1), R11
+	MOVQ $0x80C0, R14
+	MOVWQZX (R11), R12
+	ANDQ $0xC0C0, R12
+	CMPQ R14, R12
+	JNE pairpairconfirmreject
+	MOVWQZX (R11)(R8*1), R12
+	ANDQ $0xC0C0, R12
+	CMPQ R14, R12
+	JNE pairpairconfirmreject
+	MOVQ DI, R11
+	MOVBLZX 202(DI), R12
+	TESTQ R12, R12
+	JZ pairpairconfirmaccepted
+pairpairconfirmpart:
+	MOVBLZX 6(R11), R13
+	MOVBLZX 7(R11), R14
+	CMPQ R14, $2
+	JEQ pairpairconfirmword
+	MOVBLZX (R10)(R13*1), R14
+	JMP pairpairconfirmvalue
+pairpairconfirmword:
+	MOVWQZX (R10)(R13*1), R14
+pairpairconfirmvalue:
+	MOVWQZX 0(R11), R15
+	CMPQ R14, R15
+	JEQ pairpairconfirmnext
+	CMPB 8(R11), $2
+	JL pairpairconfirmreject
+	MOVWQZX 2(R11), R15
+	CMPQ R14, R15
+	JEQ pairpairconfirmnext
+	CMPB 8(R11), $3
+	JNE pairpairconfirmreject
+	MOVWQZX 4(R11), R15
+	CMPQ R14, R15
+	JNE pairpairconfirmreject
+pairpairconfirmnext:
+	ADDQ $10, R11
+	DECQ R12
+	JNZ pairpairconfirmpart
+pairpairconfirmaccepted:
+	ADDQ R9, BX
+	CMPQ SI, $1
+	JNE pairpairconfirmdone
+	ADDQ $64, BX
+	JMP pairpairconfirmdone
+
+pairpairconfirmreject:
+	BTRQ R9, CX
+	TESTQ CX, CX
+	JNZ pairpairconfirmcandidate
+	CMPQ SI, $0
+	JEQ pairpairconfirmsecond
+	CMPQ SI, $1
+	JEQ pairpairconfirmadvance128
+	JMP pairpairconfirmadvance64
+
+pairpairconfirmadvance128:
+	ADDQ $128, AX
+	ADDQ $128, BX
+	SUBQ $128, DX
+	JMP pairpairconfirmdouble64
+
+pairpairconfirmsingle64:
+	CMPQ DX, $64
+	JL pairpairconfirmdone
+	VMOVDQU8 (AX), K1, Z0
+	VMOVDQU8 1(AX), K1, Z9
+	VMOVDQU8 (AX)(R8*1), K1, Z10
+	VMOVDQU8 1(AX)(R8*1), K1, Z11
+	VPERMB Z1, Z0, Z0
+	VPERMB Z2, Z9, Z9
+	VPERMB Z3, Z10, Z10
+	VPERMB Z4, Z11, Z11
+	VPTESTMB Z9, Z0, K1, K2
+	VPTESTMB Z11, Z10, K1, K3
+	KANDQ K2, K3, K2
+	KTESTQ K2, K2
+	JEQ pairpairconfirmadvance64
+	KMOVQ K2, CX
+	MOVQ $2, SI
+	JMP pairpairconfirmcandidate
+
+pairpairconfirmadvance64:
+	ADDQ $64, AX
+	ADDQ $64, BX
+	SUBQ $64, DX
+	JMP pairpairconfirmsingle64
+
+pairpairconfirmdone:
+	MOVQ BX, ret+32(FP)
+	VZEROUPPER
+	RET
+
+// rawByteMultiAnchorSkip64 intersects a primary pattern-tag pair with up to
+// three fixed-displacement confirmation pairs. Tables use VPERMB's low six
+// source bits; Go checks all three exact pairs before replaying a returned lane.
+// rawByteMultiAnchorFilter lays out primary tables at 0/64, confirmation-first
+// tables at 128/192/256, and confirmation-second tables at 320/384/448.
+TEXT ·rawByteMultiAnchorSkip64(SB), NOSPLIT, $0-32
+	MOVQ ptr+0(FP), AX
+	MOVQ n+8(FP), DX
+	MOVQ filter+16(FP), SI
+	MOVQ $-1, CX
+	KMOVQ CX, K1
+	VMOVDQU8 0(SI), K1, Z1
+	VMOVDQU8 64(SI), K1, Z2
+	VMOVDQU8 128(SI), K1, Z3
+	VMOVDQU8 192(SI), K1, Z4
+	VMOVDQU8 256(SI), K1, Z5
+	VMOVDQU8 320(SI), K1, Z6
+	VMOVDQU8 384(SI), K1, Z7
+	VMOVDQU8 448(SI), K1, Z8
+	MOVBLZX 512(SI), R8
+	MOVBLZX 513(SI), R9
+	MOVBLZX 514(SI), R10
+	MOVBLZX 516(SI), R11
+	ADDQ $65, R11
+	LEAQ 192(R11), R12
+	// The eight-block zero scan reads the adjacent primary byte through offset
+	// 512. Keep a complete confirmation horizon for every scanned block too:
+	// an aggregate hit must safely replay the four-/one-block dispatcher.
+	LEAQ 448(R11), BX
+rawbytemultianchorloop64:
+	CMPQ DX, R11
+	JL rawbytemultianchordone64
+	CMPQ DX, BX
+	JGE rawbytemultianchorzero512
+rawbytemultianchorfour64:
+	CMPQ DX, R12
+	JL rawbytemultianchorsingle64
+
+	// Four independent primary blocks hide VPERMB latency on no-candidate text.
+	// Materialize their tag products, then reduce them once. The common sparse
+	// no-hit path crosses only one byte mask; the per-block masks are derived
+	// only when the aggregate is nonzero and are then reused for density choice.
+	VMOVDQU8 (AX), K1, Z0
+	VMOVDQU8 1(AX), K1, Z9
+	VMOVDQU8 64(AX), K1, Z10
+	VMOVDQU8 65(AX), K1, Z11
+	VMOVDQU8 128(AX), K1, Z12
+	VMOVDQU8 129(AX), K1, Z13
+	VMOVDQU8 192(AX), K1, Z14
+	VMOVDQU8 193(AX), K1, Z15
+	VPERMB Z1, Z0, Z0
+	VPERMB Z2, Z9, Z9
+	VPERMB Z1, Z10, Z10
+	VPERMB Z2, Z11, Z11
+	VPERMB Z1, Z12, Z12
+	VPERMB Z2, Z13, Z13
+	VPERMB Z1, Z14, Z14
+	VPERMB Z2, Z15, Z15
+	VPANDQ Z9, Z0, K1, Z0
+	VPANDQ Z11, Z10, K1, Z10
+	VPANDQ Z13, Z12, K1, Z12
+	VPANDQ Z15, Z14, K1, Z14
+	VPORQ Z10, Z0, K1, Z9
+	// 0xfe is the three-input OR truth table. Z9 already carries blocks 0|1.
+	VPTERNLOGD $0xfe, Z14, Z12, K1, Z9
+	VPTESTMB Z9, Z9, K1, K2
+	KTESTQ K2, K2
+	JEQ rawbytemultianchoradvance256
+
+	// An aggregate hit is rare on sparse data. Only then recover the individual
+	// masks needed to select a sole block or enter the dense schedule.
+	VPTESTMB Z0, Z0, K1, K2
+	VPTESTMB Z10, Z10, K1, K3
+	VPTESTMB Z12, Z12, K1, K4
+	VPTESTMB Z14, Z14, K1, K5
+	// Any two occupied blocks choose the bounded dense one-block schedule; a
+	// sole occupied block keeps its already materialized primary product.
+	KORTESTQ K2, K3
+	JNE rawbytemultianchorfirstnonzero64
+	KORTESTQ K4, K5
+	JNE rawbytemultianchorlastnonzero64
+rawbytemultianchoradvance256:
+	ADDQ $256, AX
+	SUBQ $256, DX
+	JMP rawbytemultianchorloop64
+rawbytemultianchorfirstnonzero64:
+	KORTESTQ K4, K5
+	JNE rawbytemultianchordense64
+	KTESTQ K2, K2
+	JEQ rawbytemultianchorblock164
+	KTESTQ K3, K3
+	JNE rawbytemultianchordense64
+	JMP rawbytemultianchorconfirm64
+rawbytemultianchorlastnonzero64:
+	KTESTQ K4, K4
+	JEQ rawbytemultianchorblock364
+	KTESTQ K5, K5
+	JNE rawbytemultianchordense64
+rawbytemultianchorblock264:
+	VMOVDQA64 Z12, K1, Z0
+	ADDQ $128, AX
+	SUBQ $128, DX
+	JMP rawbytemultianchorconfirm64
+rawbytemultianchorblock164:
+	VMOVDQA64 Z10, K1, Z0
+	ADDQ $64, AX
+	SUBQ $64, DX
+	JMP rawbytemultianchorconfirm64
+rawbytemultianchorblock364:
+	VMOVDQA64 Z14, K1, Z0
+	ADDQ $192, AX
+	SUBQ $192, DX
+	JMP rawbytemultianchorconfirm64
+
+// The sparse fast path has no candidate ordering work: it only proves that
+// eight independent 64-byte primary blocks are all zero. Any aggregate hit
+// replays the existing four-block dispatcher at the unchanged AX/DX, where it
+// recovers masks, preserves leftmost order, and applies the density switch.
+rawbytemultianchorzero512:
+	VMOVDQU8 (AX), K1, Z0
+	VMOVDQU8 1(AX), K1, Z9
+	VMOVDQU8 64(AX), K1, Z10
+	VMOVDQU8 65(AX), K1, Z11
+	VMOVDQU8 128(AX), K1, Z12
+	VMOVDQU8 129(AX), K1, Z13
+	VMOVDQU8 192(AX), K1, Z14
+	VMOVDQU8 193(AX), K1, Z15
+	VMOVDQU8 256(AX), K1, Z16
+	VMOVDQU8 257(AX), K1, Z17
+	VMOVDQU8 320(AX), K1, Z18
+	VMOVDQU8 321(AX), K1, Z19
+	VMOVDQU8 384(AX), K1, Z20
+	VMOVDQU8 385(AX), K1, Z21
+	VMOVDQU8 448(AX), K1, Z22
+	VMOVDQU8 449(AX), K1, Z23
+	VPERMB Z1, Z0, Z0
+	VPERMB Z2, Z9, Z9
+	VPERMB Z1, Z10, Z10
+	VPERMB Z2, Z11, Z11
+	VPERMB Z1, Z12, Z12
+	VPERMB Z2, Z13, Z13
+	VPERMB Z1, Z14, Z14
+	VPERMB Z2, Z15, Z15
+	VPERMB Z1, Z16, Z16
+	VPERMB Z2, Z17, Z17
+	VPERMB Z1, Z18, Z18
+	VPERMB Z2, Z19, Z19
+	VPERMB Z1, Z20, Z20
+	VPERMB Z2, Z21, Z21
+	VPERMB Z1, Z22, Z22
+	VPERMB Z2, Z23, Z23
+	VPANDQ Z9, Z0, K1, Z0
+	VPANDQ Z11, Z10, K1, Z10
+	VPANDQ Z13, Z12, K1, Z12
+	VPANDQ Z15, Z14, K1, Z14
+	VPANDQ Z17, Z16, K1, Z16
+	VPANDQ Z19, Z18, K1, Z18
+	VPANDQ Z21, Z20, K1, Z20
+	VPANDQ Z23, Z22, K1, Z22
+	// Reduce eight products in four Boolean operations. Each 0xfe ternary
+	// instruction ORs its two sources with its old destination.
+	VPTERNLOGD $0xfe, Z12, Z10, K1, Z0
+	VPTERNLOGD $0xfe, Z18, Z16, K1, Z14
+	VPTERNLOGD $0xfe, Z20, Z14, K1, Z0
+	VPORQ Z22, Z0, K1, Z0
+	VPTESTMB Z0, Z0, K1, K2
+	KTESTQ K2, K2
+	JNE rawbytemultianchorfour64
+	ADDQ $512, AX
+	SUBQ $512, DX
+	JMP rawbytemultianchorloop64
+
+rawbytemultianchorsingle64:
+	VMOVDQU8 (AX), K1, Z0
+	VMOVDQU8 1(AX), K1, Z9
+	VPERMB Z1, Z0, Z0
+	VPERMB Z2, Z9, Z9
+	VPTESTMB Z9, Z0, K1, K2
+	KTESTQ K2, K2
+	JEQ rawbytemultianchoradvance64
+	VPANDQ Z9, Z0, K1, Z0
+
+rawbytemultianchorconfirm64:
+	// Do not pay the three confirmation lookups for a block with no primary
+	// tag. A primary hit remains conservative; the exact Go checks still decide
+	// the candidate before the common raw transition replay.
+	VMOVDQU8 0(AX)(R8*1), K1, Z9
+	VMOVDQU8 1(AX)(R8*1), K1, Z10
+	VMOVDQU8 0(AX)(R9*1), K1, Z11
+	VMOVDQU8 1(AX)(R9*1), K1, Z12
+	VMOVDQU8 0(AX)(R10*1), K1, Z13
+	VMOVDQU8 1(AX)(R10*1), K1, Z14
+	VPERMB Z3, Z9, Z9
+	VPERMB Z6, Z10, Z10
+	VPERMB Z4, Z11, Z11
+	VPERMB Z7, Z12, Z12
+	VPERMB Z5, Z13, Z13
+	VPERMB Z8, Z14, Z14
+	VPANDQ Z10, Z9, K1, Z9
+	VPANDQ Z12, Z11, K1, Z11
+	VPANDQ Z14, Z13, K1, Z13
+	VPANDQ Z9, Z0, K1, Z9
+	VPANDQ Z11, Z0, K1, Z11
+	VPANDQ Z13, Z0, K1, Z13
+	VPORQ Z11, Z9, K1, Z9
+	VPORQ Z13, Z9, K1, Z9
+	VPTESTMB Z9, Z9, K1, K2
+	KTESTQ K2, K2
+	JNE rawbytemultianchorstop64
+rawbytemultianchoradvance64:
+	ADDQ $64, AX
+	SUBQ $64, DX
+	JMP rawbytemultianchorloop64
+rawbytemultianchorstop64:
+	KMOVQ K2, CX
+	BSFQ CX, CX
+	ADDQ CX, AX
+	JMP rawbytemultianchordone64
+// The dense body is the proven one-block primary-plus-confirmation schedule.
+// It changes only batching; the same conservative tables and Go replay remain
+// the match authority.
+rawbytemultianchordense64:
+	// A dense-prefix/sparse-suffix diagnostic is three times slower when dense
+	// mode owns the whole input. Bound a dense epoch to 4 KiB, or to the
+	// remaining safe block count. The decrement below replaces the old per-block
+	// tail comparison; expiration re-enters the shared four-block dispatcher.
+	CMPQ DX, R11
+	JL rawbytemultianchordone64
+	MOVQ DX, R13
+	SUBQ R11, R13
+	SHRQ $6, R13
+	INCQ R13
+	CMPQ R13, $64
+	JLE rawbytemultianchordenseloop64
+	MOVQ $64, R13
+rawbytemultianchordenseloop64:
+	VMOVDQU8 (AX), K1, Z0
+	VMOVDQU8 1(AX), K1, Z9
+	VMOVDQU8 0(AX)(R8*1), K1, Z10
+	VMOVDQU8 1(AX)(R8*1), K1, Z11
+	VMOVDQU8 0(AX)(R9*1), K1, Z12
+	VMOVDQU8 1(AX)(R9*1), K1, Z13
+	VMOVDQU8 0(AX)(R10*1), K1, Z14
+	VMOVDQU8 1(AX)(R10*1), K1, Z15
+	VPERMB Z1, Z0, Z0
+	VPERMB Z2, Z9, Z9
+	VPERMB Z3, Z10, Z10
+	VPERMB Z6, Z11, Z11
+	VPERMB Z4, Z12, Z12
+	VPERMB Z7, Z13, Z13
+	VPERMB Z5, Z14, Z14
+	VPERMB Z8, Z15, Z15
+	VPANDQ Z9, Z0, K1, Z0
+	VPANDQ Z11, Z10, K1, Z10
+	VPANDQ Z13, Z12, K1, Z12
+	VPANDQ Z15, Z14, K1, Z14
+	VPANDQ Z10, Z0, K1, Z10
+	VPANDQ Z12, Z0, K1, Z12
+	VPANDQ Z14, Z0, K1, Z14
+	VPORQ Z12, Z10, K1, Z10
+	VPORQ Z14, Z10, K1, Z10
+	VPTESTMB Z10, Z10, K1, K2
+	KTESTQ K2, K2
+	JNE rawbytemultianchordensestop64
+	ADDQ $64, AX
+	SUBQ $64, DX
+	DECQ R13
+	JNE rawbytemultianchordenseloop64
+	JMP rawbytemultianchorloop64
+rawbytemultianchordensestop64:
+	KMOVQ K2, CX
+	BSFQ CX, CX
+	ADDQ CX, AX
+	SUBQ ptr+0(FP), AX
+	MOVQ AX, ret+24(FP)
+	VZEROUPPER
+	RET
+
+rawbytemultianchordone64:
+	SUBQ ptr+0(FP), AX
+	MOVQ AX, ret+24(FP)
+	VZEROUPPER
+	RET

@@ -4,10 +4,10 @@ This directory contains the adapter and aggregate measurements behind
 [`REBAR.md`](../../REBAR.md). It is evidence for the boundary of the public
 claim, not another favorable benchmark suite.
 
-- [`runner/main.go`](runner/main.go) is the exact adapter used on both hosts.
-  It compiles a `Matcher` once, enumerates non-overlapping matches by calling
-  `Find` on each remaining suffix, verifies each matched byte width, and emits
-  rebar's timing/count samples after reading its KLV request.
+- [`runner/main.go`](runner/main.go) is the exact adapter for this audit. It
+  compiles a `Matcher` once, validates complete non-overlapping enumeration
+  against an independent simple-fold oracle before timing, then times
+  `Matcher.Each` with only the count/span sink after reading its KLV request.
 - [`prepare.py`](prepare.py) registers that runner on all 18 representable
   performance workloads and all three relevant semantic checks in the pinned
   rebar checkout. It refuses any other rebar commit.
@@ -60,8 +60,9 @@ produced with:
   --max-iters 1000 --max-time 500ms > rebar-audit-pass1.csv
 ```
 
-Repeat for passes two and three. Rebar's runner validates every answer while
-measuring; any mismatch appears in the CSV's `err` column. The two compatible
+Repeat for passes two and three. The runner validates every answer in its
+untimed preflight before it emits timing samples; any mismatch appears in the
+CSV's `err` column. The two compatible
 Unicode behavior checks can also be isolated with:
 
 ```sh

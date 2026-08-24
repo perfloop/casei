@@ -1372,6 +1372,40 @@ the same compiled plan confirms its complete literal. The mixed-fold hit and
 miss arena rows, warmed per-pattern control, and Unicode / invalid-byte
 differentials are the operational falsifiers for these filters.
 
+### Tagged interior-pair multi-anchor enumeration
+
+For an eligible multi-literal plan, the compiler assigns one pattern-tag bit to
+each literal, chooses a stable interior UTF-8 pair as that literal's primary
+anchor, and records a second pair at every possible bounded byte displacement
+caused by earlier simple-fold spellings. A third pair is retained as an exact
+scalar guard. The immutable plan owns a 64-entry first-byte table and
+second-byte table for the primary tags, plus up to three corresponding
+confirmation table pairs and their displacements. It is built with the search
+plan, not from a caller, haystack sample, benchmark name, or first-use history.
+
+On a VBMI host, the block loop uses the low six bits of source bytes to look up
+all primary and confirmation tag masks, intersects the masks for each compiled
+displacement, and returns the first conservative survivor. Before the shared
+raw-token state machine can see that survivor, exact full-byte primary,
+confirmation, and guard pairs are checked; low-six-bit aliases therefore cannot
+create a match. The shared plan then replays the candidate and supplies byte
+start, terminal selection, leftmost order, and lowest-ID ties. Wider forms,
+malformed bytes, unsupported plans, scalar tails, and feature-disabled hosts
+remain on the existing decoded/raw-plan authority. This is a conservative
+enumeration filter, not a separate recognizer or a byte-only fold definition.
+
+The components are known art: fixed rare anchors and candidate verification are
+catalogued in `CONTEXT.md` §§3 and 8, while Vectorscan's Teddy implementation
+uses compiled byte-class tables, `VPERMB`, and mask combination for the same
+block-filter role. The repository-specific composition is a pattern-tagged,
+variable-displacement set of UTF-8 interior-pair filters that retains the
+shared fold-transition replay as the sole match authority. It makes no claim
+that this state representation is new. Its operational claim is falsified by
+any missed canonical reference occurrence, any disagreement between the
+assembly predicate and its scalar table model, a tail-alignment failure, or a
+full native field run that does not improve the contested result without
+regressing another required row.
+
 ### VBMI table and mask-scheduling follow-up
 
 The native Vectorscan 5.4.12 source prepared by `arena/vectorscan/prepare.sh`
@@ -1399,6 +1433,179 @@ stop replays the same decoded plan before it can become a match. The exact
 materializing a separate vector AND. The general pair-root loop separately
 unrolls two independent blocks after its first one-block probe, which is
 ordinary dependency/branch scheduling rather than a different matcher.
+
+The tagged multi-anchor miss loop likewise carries four independent primary
+blocks. Its retained schedule applies `VPTESTMB` directly to each pair of
+pattern-tag vectors, retains the four k-masks, and crosses only the earliest
+nonzero block into the scalar guard and shared-plan replay. Two aggregate
+variants materialized all four products, OR-reduced them, and used one
+`VPTESTMB` before reconstructing a block mask on a hit. The second also kept
+the products across a false confirmation and checked all four blocks before
+advancing, so it did not discard already computed primary work. Two pair-
+retention variants instead kept the original primary pairs and k-masks,
+materializing only the selected product after a false confirmation; one kept
+pairs high and confirmation scratch low, while the other did the reverse. They
+retained the direct no-hit instruction mix but increased live vector state
+through the shared confirmation. All four regressed the real dense enumeration;
+the product form also lost the raw N=5 miss A/B. They were removed. This
+scheduling cell is reopened only by an alternating-order field run that
+improves both the sparse synthetic rows and the real tagged enumeration without
+changing the common-plan replay.
+
+The Vectorscan-derived software-prefetch detour is also closed. An
+otherwise-identical `zero512` kernel issued one `PREFETCHT0` per 512-byte sparse
+batch and was compared in same-process shuffled A/B runs at each lead distance:
+
+| `PREFETCHT0` lead | Result | Decision |
+| --- | --- | --- |
+| 512 bytes | Repeatedly slower | Removed |
+| 1024 bytes | Neutral | Removed |
+| 2048 bytes | Repeatedly slower | Removed |
+| 4096 bytes | Repeatedly slower | Removed |
+
+The sweep targeted the common zero-only raw N=5 loop; no distance showed a
+repeatable win, so no prefetch instruction remains and this dimension must not
+be reopened without new evidence that changes the memory-latency premise.
+
+An AVX-512 BITALG union-scout variant was also rejected. It derived the union
+of nonzero `second`-table classes once, broadcast its 64-bit membership mask,
+and used eight memory-source `VPSHUFBITQMB` operations on the second-byte
+windows at `1(AX), 65(AX), …, 449(AX)`. A zero union mask safely advanced 512
+bytes; a nonzero mask replayed the unchanged four-block tagged dispatcher. The
+scalar model checked every low-six class and all four byte aliases, and the
+assembly agreed with the vector table model across randomized horizons and
+tails. The raw N=5 rows had a zero union mask in all 10,239 full chunks, while
+Rebar always fell back, so the construction was reached on precisely the
+intended sparse shape.
+
+Despite removing the explicit zero-scout loads, table lookups, products, and
+vector reduction, four shuffled same-process Ice Lake A/B runs rejected it:
+
+| Workload | BITALG / retained median range | Result |
+| --- | --- | --- |
+| raw N=5 miss | 1.0014--1.0114 | Slower in every run |
+| raw N=5 late hit | 1.0024--1.0157 | Slower in every run |
+| dense-prefix/sparse-suffix | 1.0056--1.0181 | Slower in every run |
+| uniform dense/no-confirm | 0.9834--1.0002 | Mixed, not a compensating gate |
+| Rebar N=5 iterator | 0.9712--0.9818 | Faster, but insufficient against the raw regressions |
+
+The direct memory form assembled as intended and used no spills, but a
+throughput reduction in one schedule does not establish a field improvement.
+It was removed before a native field run because it failed the required
+same-source raw and heterogeneous controls. Reopen it only with a materially
+different membership/scheduling proof, not another tuning of this union scout.
+
+A separate zero512 Boolean-fusion cell was also rejected. The base materializes
+eight primary tag products with `VPANDQ`, then OR-reduces them. The temporary
+form used two four-block accumulators: one initial `VPANDQ` per accumulator,
+three `VPTERNLOGD $0xf8` folds per accumulator, and one final `VPORQ`.
+`0xf8` was modeled bit-for-bit as `dst | (srcA & srcB)` and the copied base and
+fused kernels both matched the scalar vector-table model on randomized lengths,
+tails, dense prefixes, and the Rebar enumeration checksum. Opcodex confirms
+that the native Go-assembler `VPTERNLOGD` ZMM form needs only AVX-512F and is a
+one-cycle, 0.5 reciprocal-throughput instruction on Ice Lake.
+
+Four pinned, shuffled same-process runs produced these fused/base paired-median
+ranges:
+
+| Workload | Fused / base paired-median range | Result |
+| --- | --- | --- |
+| raw N=5 miss | 0.9957--1.0038 | Slower in three of four runs; no repeatable win |
+| raw N=5 late hit | 0.9939--1.0011 | Mixed |
+| dense-prefix/sparse-suffix | 0.9969--1.0037 | Mixed |
+| Rebar N=5 iterator | 0.9976--1.0014 | Mixed |
+
+The lower Boolean instruction count did not yield repeatable sparse headroom
+and did not clear the raw and heterogeneous gates. The fused source and copied
+A/B kernel were removed without a native field run. Do not retry this exact
+`0xf8` grouping; a future zero512 change needs a different bottleneck proof.
+
+Code-target alignment was assessed separately after that fusion result. The
+unmodified zero512 target had low six address bits `0x13` in the test binary.
+Temporary otherwise-identical kernels put `PCALIGN $32` or `PCALIGN
+$64` immediately before that target; disassembly put each target at a
+64-byte boundary. Both retained the predicate, confirmation horizon, density
+switch, and raw-plan replay, and each agreed with the scalar table model and
+Rebar's 971-result checksum.
+
+Four pinned, shuffled same-process runs gave these paired-median ranges versus
+the unaligned kernel:
+
+| Workload | `PCALIGN $32` / base | `PCALIGN $64` / base |
+| --- | --- | --- |
+| raw N=5 miss | 0.9947--1.0032 | 0.9997--1.0049 |
+| raw N=5 late hit | 0.9942--1.0056 | 0.9962--1.0021 |
+| dense-prefix/sparse-suffix | 0.9986--1.0024 | 0.9977--1.0007 |
+| Rebar N=5 iterator | 1.0179--1.0240 | 1.0201--1.0308 |
+
+Neither target had repeatable raw headroom, and both consistently regressed the
+heterogeneous enumeration. The alignment copies were removed without a native
+field run; do not reopen these target alignments absent a changed instruction
+layout or a new bottleneck proof.
+
+A compiled universal-byte scout was also rejected after a source-level
+min/max-width model. It intersected bytes invariant across every simple-fold
+rendering of every eligible literal, selected space (`0x20`) for the five raw
+N=5 literals, and converted each selected occurrence into the actual
+primary-pair coordinate. The resulting package-owned interval was `[1,20]`;
+it covered every compiled primary-start width and was admitted only when its
+span was at most 64 bytes. A scalar combined model, randomized/tail checks,
+width-changing forms, malformed bytes, endpoint lanes, and a deliberately
+constructed low-six-bit tagged-table false positive all agreed with the
+assembly and the existing exact replay. Disassembly showed the sparse path as
+one early `VPCMPEQB` probe followed by eight memory-source `VPCMPEQB` probes
+and k-mask OR reduction; a nonzero byte mask re-entered the unchanged tagged
+four-block dispatcher.
+
+Four pinned, shuffled same-process A/B runs compared that scout with the same
+compiled plan after only its valid bit was cleared:
+
+| Workload | Scout / no-scout paired-median range | Result |
+| --- | --- | --- |
+| raw N=5 miss | 0.9981--1.0095 | No repeatable gain |
+| raw N=5 late hit | 1.0051--1.0099 | Slower in every run |
+| dense-prefix/sparse-suffix | 1.0000--1.0139 | No gain; slower in three runs |
+| Rebar N=5 iterator | 0.9561--0.9605 | Faster, but not a compensating gate |
+
+The sparse raw rows and heterogeneous control did not clear their gate, so the
+universal compiler, vector path, model, and A/B harness were removed before a
+native field run. Reopen this route only with a different instruction schedule
+that improves both raw rows without losing the dense control; do not reuse the
+same nine-probe layout.
+
+A `PREFETCHT0` zero512 distance sweep was also closed. The same-process,
+shuffled A/B harness tested ahead distances of 512, 1024, 2048, and 4096 bytes
+on the raw N=5 miss and late-hit rows and the dense controls. No distance
+produced a repeatable win, so no prefetch source was retained and this is not a
+route to retune. The temporary harness and its individual timing samples were
+removed before they were copied into this receipt; the only defensible
+historical result is the four-distance negative conclusion, not reconstructed
+numeric ratios.
+
+Changing level from the zero512 body to Find's origin also did not clear the
+floor. A temporary compiler chose an ASCII byte fixed by `SimpleFold` that was
+present in every literal, proved the maximum folded-source prefix width before
+that byte, and used the existing `literalSkipASCII` scan to begin the unchanged
+raw plan no later than that bound before the first occurrence. `literalSkipASCII`
+was necessary rather than `rootSkipASCII`: the latter intentionally stops at a
+high byte, while the exact fixed-byte predicate may skip UTF-8 and malformed
+bytes. Enumerating every fold spelling before the selected byte, malformed
+inputs, width-changing prefixes, unrelated earlier bytes, vector lanes/tails,
+and tie cases all agreed with the reference matcher.
+
+Four pinned, shuffled same-process runs compared only this origin gate with the
+same plan after its gate was disabled:
+
+| Workload | Origin gate / no-gate paired-median range | Result |
+| --- | --- | --- |
+| raw N=5 miss | 0.9957--1.0131 | Mixed; no repeatable gain |
+| raw N=5 late hit | 0.9858--1.0037 | Mixed; no repeatable gain |
+
+The no-space miss still traversed the corpus once and reached the same
+bandwidth/loop floor as zero512; the late-hit path likewise had no stable
+advantage. The compiler, Find branch, and A/B tests were removed before a full
+field run. Do not retry this exact origin gate without a different measured
+reason it can beat that floor.
 
 This is a negative novelty assessment. Byte-class table lookup, Teddy/Shufti
 candidate masks, confirmation after a survivor, `VPERMB`/`VPERMT2B` selection,

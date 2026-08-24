@@ -1,5 +1,7 @@
 package casei
 
+import "unicode/utf8"
+
 // Matcher searches for any of a set of patterns under the same Unicode
 // simple-fold semantics as IndexFold. IndexFold is the one-pattern form of the
 // same compiled search plan. The implementation scans the haystack once rather
@@ -16,8 +18,8 @@ type Match struct {
 }
 
 // Matcher searches for any of a fixed set of patterns. Construction compiles
-// their shared fold-orbit transition plan; Find only advances that plan over
-// the haystack.
+// their shared fold-orbit transition plan; Find returns one answer and Each
+// enumerates non-overlapping answers over the haystack.
 type Matcher struct {
 	patterns []string
 	plan     *searchPlan
@@ -46,6 +48,55 @@ func (m *Matcher) Find(haystack string) (Match, bool) {
 		return Match{}, false
 	}
 	return m.plan.find(haystack)
+}
+
+// Each calls yield for each non-overlapping match in haystack, in the same
+// leftmost and lowest-pattern-ID order as repeated calls to Find. width is the
+// exact byte width consumed by this occurrence, which can differ from the
+// matched pattern's byte length under Unicode simple folding. Returning false
+// from yield stops enumeration and makes Each return false.
+//
+// A nil Matcher or nil yield has no matches and returns true. Each is safe for
+// concurrent use when yield itself is safe.
+func (m *Matcher) Each(haystack string, yield func(match Match, width int) bool) bool {
+	if m == nil || m.plan == nil || yield == nil {
+		return true
+	}
+	if m.plan.empty < 0 && m.plan.rawByteMulti.usable() {
+		return m.plan.eachRawByteFixedAnchored(haystack, yield)
+	}
+	for at := 0; at <= len(haystack); {
+		match, ok := m.plan.find(haystack[at:])
+		if !ok {
+			return true
+		}
+		match.Start += at
+		units := utf8.RuneCountInString(m.patterns[match.Pattern])
+		end := matcherMatchEnd(haystack, match.Start, units)
+		width := end - match.Start
+		if !yield(match, width) {
+			return false
+		}
+		if width != 0 {
+			at = end
+			continue
+		}
+		if match.Start == len(haystack) {
+			return true
+		}
+		_, size := utf8.DecodeRuneInString(haystack[match.Start:])
+		at = match.Start + size
+	}
+	return true
+}
+
+func matcherMatchEnd(haystack string, start, units int) int {
+	at := start
+	for range units {
+		_, size := utf8.DecodeRuneInString(haystack[at:])
+		at += size
+	}
+	return at
 }
 
 // VectorBits reports the widest runtime-gated block transition available to

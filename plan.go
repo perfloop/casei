@@ -40,35 +40,42 @@ type searchPlan struct {
 	// asciiProbe is a single-pattern, byte-aligned block transition. It
 	// intersects three dispersed literal positions, then confirms the same
 	// compiled pattern at the surviving start.
-	asciiProbe         asciiProbe
-	asciiOnlyProbe     asciiProbe
-	asciiOnlyNeedle    string
-	asciiOnlyWord      uint64
-	asciiOnlyFold      uint64
-	asciiOnly          bool
-	asciiOnlyLong      bool
-	asciiPair          asciiPairProbe
-	asciiNeedle        string
-	asciiFirstWord     uint64
-	asciiFirstFold     uint64
-	asciiTailWord      uint64
-	asciiTailFold      uint64
-	asciiTailMask      uint64
-	asciiVerifyTokens  bool
-	asciiFixedPrefix   int
-	asciiByteAnchor    bool
-	asciiStaticAnchor  bool
-	asciiStaticAt      int
-	asciiStaticKind    uint8
-	asciiStaticByte    byte
-	asciiRun           bool
-	asciiRunKind       uint8
-	asciiRunByte       byte
-	unicodeAnchor      tripleFilter
-	unicodeAt          int
-	unicodePairs       [8]unicodePairAnchor
-	unicodePairN       uint8
-	singleTokens       []uint32
+	asciiProbe     asciiProbe
+	asciiOnlyProbe asciiProbe
+	// singlePayload is the literal for the all-ASCII route. That route is
+	// disabled for Unicode patterns, where this otherwise unused string instead
+	// holds the packed raw terminal confirmation for the N=1 VBMI transition.
+	singlePayload     string
+	asciiOnlyWord     uint64
+	asciiOnlyFold     uint64
+	asciiOnly         bool
+	asciiOnlyLong     bool
+	asciiPair         asciiPairProbe
+	asciiNeedle       string
+	asciiFirstWord    uint64
+	asciiFirstFold    uint64
+	asciiTailWord     uint64
+	asciiTailFold     uint64
+	asciiTailMask     uint64
+	asciiVerifyTokens bool
+	asciiFixedPrefix  int
+	asciiByteAnchor   bool
+	asciiStaticAnchor bool
+	asciiStaticAt     int
+	asciiStaticKind   uint8
+	asciiStaticByte   byte
+	asciiRun          bool
+	asciiRunKind      uint8
+	asciiRunByte      byte
+	unicodeAnchor     tripleFilter
+	unicodeAt         int
+	unicodePairs      [8]unicodePairAnchor
+	unicodePairN      uint8
+	singleTokens      []uint32
+	// rawByteMulti is the fixed, tagged interior-pair screen used only by
+	// eligible multi-pattern enumeration. It is compiled into the plan with the
+	// raw transition map; it never depends on a caller's haystack or history.
+	rawByteMulti       rawByteMultiAnchorFilter
 	runes              map[rune]uint32
 	opaqueContinuation bool
 
@@ -468,6 +475,64 @@ type unicodePairAnchor struct {
 	confirm   rootFilter
 	confirmAt int
 	pairPair  pairPairFilter
+}
+
+const (
+	unicodePairConfirmMaxParts     = 20
+	unicodePairConfirmPartSize     = 10
+	unicodePairConfirmSkippedParts = 2
+
+	unicodePairConfirmSkippedAt  = (unicodePairConfirmMaxParts - unicodePairConfirmSkippedParts) * unicodePairConfirmPartSize
+	unicodePairConfirmLengthAt   = unicodePairConfirmMaxParts * unicodePairConfirmPartSize
+	unicodePairConfirmAnchorAt   = unicodePairConfirmLengthAt + 1
+	unicodePairConfirmNAt        = unicodePairConfirmLengthAt + 2
+	unicodePairConfirmValidAt    = unicodePairConfirmLengthAt + 3
+	unicodePairConfirmPackedSize = unicodePairConfirmLengthAt + 4
+)
+
+// unicodePairConfirm is a bounded exact terminal transition for one literal.
+// Its bytes are stable assembly input: each ten-byte part stores three
+// little-endian raw values at 0, 2, and 4; source offset at 6; width at 7; and
+// value count at 8. The final four bytes hold length, anchor offset, part
+// count, and validity plus the number of trailing pair-pair parts. A
+// two-byte value preserves correlations between UTF-8 lead and continuation
+// bytes; independently normalizing those bytes would admit other runes.
+//
+// It is populated only when every token has one to three width-stable raw
+// forms of one or two bytes. Longer, width-changing, four-way, and opaque
+// tokens retain decoded confirmation.
+type unicodePairConfirm string
+
+func (confirm unicodePairConfirm) valid() bool {
+	if len(confirm) != unicodePairConfirmPackedSize || confirm[unicodePairConfirmValidAt]&1 == 0 ||
+		confirm[unicodePairConfirmLengthAt] == 0 || confirm[unicodePairConfirmAnchorAt] >= confirm[unicodePairConfirmLengthAt] {
+		return false
+	}
+	skipped := confirm.skippedN()
+	parts := int(confirm[unicodePairConfirmNAt])
+	return (skipped == 0 || skipped == unicodePairConfirmSkippedParts) && parts+skipped <= unicodePairConfirmMaxParts &&
+		(parts != 0 || skipped != 0)
+}
+
+func (confirm unicodePairConfirm) length() int {
+	return int(confirm[unicodePairConfirmLengthAt])
+}
+
+func (confirm unicodePairConfirm) anchorAt() int {
+	return int(confirm[unicodePairConfirmAnchorAt])
+}
+
+func (confirm unicodePairConfirm) skippedN() int {
+	return int(confirm[unicodePairConfirmValidAt] >> 1)
+}
+
+func (confirm unicodePairConfirm) partN(part int) uint8 {
+	return confirm[part*unicodePairConfirmPartSize+8]
+}
+
+func (confirm unicodePairConfirm) partValue(part, value int) uint16 {
+	at := part*unicodePairConfirmPartSize + value*2
+	return uint16(confirm[at]) | uint16(confirm[at+1])<<8
 }
 
 // asciiVBMIProbe is the AVX-512 VBMI projection for one sparse three-byte
@@ -922,6 +987,7 @@ func newSearchPlan(patterns []string) *searchPlan {
 		p.makeASCIIAnchor(patterns[0])
 		p.makeUnicodeAnchor(patterns[0])
 	}
+	p.makeRawByteTokenPlan(patterns)
 	return p
 }
 
@@ -1206,7 +1272,7 @@ func (p *searchPlan) makeASCIIOnlyProbe(pattern string) {
 			p.asciiOnlyWord |= uint64(value) << (8 * at)
 		}
 	}
-	p.asciiOnlyNeedle = pattern
+	p.singlePayload = pattern
 	p.asciiOnly = true
 }
 
@@ -1372,6 +1438,118 @@ func patternRawForms(pattern string) (forms [][]string, widths []int) {
 	return forms, widths
 }
 
+// makeUnicodePairConfirm moves pair-pair's two raw tokens to trailing slots
+// when confirmAt is supplied. The vector transition proves those slots from
+// its low-six-bit tables plus UTF-8 byte classes; matchesAt still checks every
+// slot and remains a complete raw-token oracle for scalar replay.
+func makeUnicodePairConfirm(pattern string, anchorAt int, confirmAt ...int) unicodePairConfirm {
+	if anchorAt < 0 || anchorAt > 255 || len(pattern) > 255 || len(confirmAt) > 1 {
+		return ""
+	}
+
+	skippedAt := [unicodePairConfirmSkippedParts]int{}
+	skipN := 0
+	if len(confirmAt) != 0 {
+		if confirmAt[0] < 0 || confirmAt[0] > 255 || confirmAt[0] == anchorAt {
+			return ""
+		}
+		skippedAt[0], skippedAt[1] = anchorAt, confirmAt[0]
+		skipN = unicodePairConfirmSkippedParts
+	}
+
+	forms, _ := patternRawForms(pattern)
+	packed := make([]byte, unicodePairConfirmPackedSize)
+	at, parts, skipped := 0, 0, 0
+	for _, unit := range forms {
+		r, size := utf8.DecodeRuneInString(pattern[at:])
+		if r == utf8.RuneError && size == 1 || len(unit) == 0 || len(unit) > 3 {
+			return ""
+		}
+		width := len(unit[0])
+		if width < 1 || width > 2 || width != size {
+			return ""
+		}
+
+		var packedPart [unicodePairConfirmPartSize]byte
+		packedPart[6], packedPart[7], packedPart[8] = uint8(at), uint8(width), uint8(len(unit))
+		for i, form := range unit {
+			if len(form) != width {
+				return ""
+			}
+			value := uint16(form[0])
+			if width == 2 {
+				value |= uint16(form[1]) << 8
+			}
+			valueAt := i * 2
+			packedPart[valueAt], packedPart[valueAt+1] = uint8(value), uint8(value>>8)
+		}
+
+		isSkipped := false
+		for i := range skipN {
+			if at == skippedAt[i] {
+				isSkipped = true
+				break
+			}
+		}
+		if isSkipped {
+			if skipped == skipN {
+				return ""
+			}
+			partAt := unicodePairConfirmSkippedAt + skipped*unicodePairConfirmPartSize
+			copy(packed[partAt:], packedPart[:])
+			skipped++
+		} else {
+			if parts == unicodePairConfirmMaxParts-skipN {
+				return ""
+			}
+			partAt := parts * unicodePairConfirmPartSize
+			copy(packed[partAt:], packedPart[:])
+			parts++
+		}
+		at += size
+	}
+	if at != len(pattern) || parts+skipped == 0 || skipped != skipN {
+		return ""
+	}
+	packed[unicodePairConfirmLengthAt] = uint8(at)
+	packed[unicodePairConfirmAnchorAt] = uint8(anchorAt)
+	packed[unicodePairConfirmNAt] = uint8(parts)
+	packed[unicodePairConfirmValidAt] = 1 | uint8(skipped<<1)
+	return unicodePairConfirm(string(packed))
+}
+
+func (confirm unicodePairConfirm) matchesPartAt(haystack string, at, partAt int) bool {
+	value := uint16(haystack[at+int(confirm[partAt+6])])
+	if confirm[partAt+7] == 2 {
+		value |= uint16(haystack[at+int(confirm[partAt+6])+1]) << 8
+	}
+	if value == uint16(confirm[partAt])|uint16(confirm[partAt+1])<<8 {
+		return true
+	}
+	if confirm[partAt+8] >= 2 && value == uint16(confirm[partAt+2])|uint16(confirm[partAt+3])<<8 {
+		return true
+	}
+	return confirm[partAt+8] >= 3 && value == uint16(confirm[partAt+4])|uint16(confirm[partAt+5])<<8
+}
+
+func (confirm unicodePairConfirm) matchesAt(haystack string, at int) bool {
+	if !confirm.valid() || at < 0 || len(haystack)-at < confirm.length() {
+		return false
+	}
+	for part := range int(confirm[unicodePairConfirmNAt]) {
+		if !confirm.matchesPartAt(haystack, at, part*unicodePairConfirmPartSize) {
+			return false
+		}
+	}
+	for skipped := range confirm.skippedN() {
+		partAt := unicodePairConfirmSkippedAt + skipped*unicodePairConfirmPartSize
+		if !confirm.matchesPartAt(haystack, at, partAt) {
+			return false
+		}
+	}
+	return true
+}
+
 func tripleFromForms(forms [][]string, start int) (tripleFilter, bool) {
 	var filter tripleFilter
 	var expand func(int, [3]byte, int) bool
@@ -1467,6 +1645,12 @@ func (p *searchPlan) makeUnicodePairAnchor(pattern string) {
 
 func (p *searchPlan) makeUnicodeAnchor(pattern string) {
 	p.makeUnicodePairAnchor(pattern)
+	if !p.asciiOnly && p.unicodePairN != 0 && p.unicodePairs[0].pairPair.valid != 0 {
+		anchor := p.unicodePairs[0]
+		if confirm := makeUnicodePairConfirm(pattern, anchor.at, anchor.confirmAt); confirm.valid() {
+			p.singlePayload = string(confirm)
+		}
+	}
 	forms, widths := patternRawForms(pattern)
 	offset, fixedPrefix := 0, true
 	var best tripleFilter
@@ -1901,6 +2085,12 @@ func (p *searchPlan) haystackToken(s string, at int) (uint32, int) {
 	}
 	r, size := utf8.DecodeRuneInString(s[at:])
 	if r == utf8.RuneError && size == 1 {
+		// An eligible raw-byte plan has no opaque pattern bytes. Its opaque
+		// storage holds direct two-byte tokens instead, so malformed input must
+		// remain the ordinary zero-token reset.
+		if p.hasRawByteTokenPlan() {
+			return 0, 1
+		}
 		return p.opaque[byteValue], 1
 	}
 	return p.runes[r], size
@@ -2197,8 +2387,55 @@ func pairFilterAt(haystack string, at int, filter *rootFilter) bool {
 	return false
 }
 
+// findUnicodePairConfirm keeps the exact N=1 raw confirmation in the VBMI
+// transition for full vector blocks. The scalar tail remains bounded and uses
+// the same compiled raw forms, while unavailable vector hosts retain the
+// decoded executor below.
+func (p *searchPlan) unicodePairConfirm() unicodePairConfirm {
+	if p.asciiOnly {
+		return ""
+	}
+	return unicodePairConfirm(p.singlePayload)
+}
+
+func (p *searchPlan) findUnicodePairConfirm(haystack string, anchor *unicodePairAnchor) (Match, bool) {
+	confirm := p.unicodePairConfirm()
+	lastStart := len(haystack) - confirm.length()
+	if lastStart < 0 {
+		return Match{}, false
+	}
+
+	at := anchor.at
+	candidates := lastStart + 1
+	full := candidates &^ 63
+	if full != 0 {
+		skipped := pairPairConfirmBytes(haystack, at, full, &anchor.pairPair, confirm)
+		if skipped < full {
+			return Match{Pattern: 0, Start: at + skipped - anchor.at}, true
+		}
+		at += full
+	}
+
+	lastAnchor := lastStart + anchor.at
+	for at <= lastAnchor {
+		at += pairPairSkipBytes(haystack, at, &anchor.pairPair)
+		if at > lastAnchor {
+			break
+		}
+		start := at - anchor.at
+		if confirm.matchesAt(haystack, start) {
+			return Match{Pattern: 0, Start: start}, true
+		}
+		at++
+	}
+	return Match{}, false
+}
+
 func (p *searchPlan) findUnicodePairAnchor(haystack string, anchor *unicodePairAnchor) (Match, bool) {
 	if anchor.pairPair.valid != 0 {
+		if p.unicodePairConfirm().valid() && unicodePairConfirmVectorEnabled() {
+			return p.findUnicodePairConfirm(haystack, anchor)
+		}
 		for at := 0; at+int(anchor.pairPair.offset)+1 < len(haystack); {
 			at += pairPairSkipBytes(haystack, at, &anchor.pairPair)
 			if at+int(anchor.pairPair.offset)+1 >= len(haystack) {
@@ -2282,9 +2519,15 @@ func (p *searchPlan) find(haystack string) (Match, bool) {
 	// a short or structured ASCII haystack use the same vector transition in one
 	// pass; any high byte falls through to the full Unicode plan unchanged.
 	if p.asciiOnly && (len(haystack) <= 4096 || p.asciiOnlyLong) {
-		if match, ok, handled := p.findASCIIOnlyAnchor(haystack, p.asciiOnlyNeedle); handled {
+		if match, ok, handled := p.findASCIIOnlyAnchor(haystack, p.singlePayload); handled {
 			return match, ok
 		}
+	}
+	// The tagged multi-anchor filter is one plan-owned raw transition scan for
+	// both Find and Each. Its exact replay decides the result, so Find can stop
+	// at the first completed leftmost candidate without selecting a second engine.
+	if p.rawByteMulti.usable() {
+		return p.findRawByteFixedAnchored(haystack)
 	}
 	if anchor := p.chooseUnicodePairAnchor(haystack); anchor != nil {
 		return p.findUnicodePairAnchor(haystack, anchor)
@@ -2537,6 +2780,7 @@ func (p *searchPlan) findFiltered(haystack string) (Match, bool) {
 	if p.empty >= 0 {
 		best = Match{Pattern: p.empty, Start: 0}
 	}
+	raw := p.hasRawByteTokenPlan()
 	for at := 0; at < len(haystack); {
 		if state == 0 {
 			// Once no prefix is live, a previously found start cannot be
@@ -2566,8 +2810,39 @@ func (p *searchPlan) findFiltered(haystack string) (Match, bool) {
 		}
 
 		starts[history%len(starts)] = at
-		token, size := p.haystackToken(haystack, at)
-		state = p.advance(state, token)
+		size := 0
+		if raw {
+			// Keep the raw classification in this loop so the source-byte loads
+			// and dense transition stay in one generated body. Wider and malformed
+			// input falls through to the complete decoded transition below.
+			value := haystack[at]
+			if value < utf8.RuneSelf {
+				token := p.ascii[value]
+				if token == 0 {
+					state = 0
+				} else {
+					state = int(p.dense[state*p.stride+int(token)])
+				}
+				size = 1
+			} else if value >= 0xc2 && value <= 0xdf && at+1 < len(haystack) {
+				trail := haystack[at+1]
+				if trail >= 0x80 && trail < 0xc0 {
+					row := p.opaque[value]
+					if row == 0 {
+						state = 0
+					} else if token := p.opaque[(int(row)-1)*rawByteTrailClasses+int(trail-0x80)]; token == 0 {
+						state = 0
+					} else {
+						state = int(p.dense[state*p.stride+int(token)])
+					}
+					size = 2
+				}
+			}
+		}
+		if size == 0 {
+			token, decodedSize := p.haystackToken(haystack, at)
+			state, size = p.advance(state, token), decodedSize
+		}
 		history++
 		if output := p.nodes[state].output; output.pattern >= 0 {
 			start := starts[(history-output.units)%len(starts)]

@@ -60,12 +60,12 @@ target for the open work.
 | folding | Unicode simple folding on every row | Unicode on 5 rows, ASCII-only on 13 |
 | measurement | in-process field timing, with three publication passes on each pinned host; Perfloop separately co-measured the engine's source revisions | [Rebar's sequential runner protocol](https://github.com/BurntSushi/rebar/blob/463d00f31887e84c38467805b9e3122c314b9521/METHODOLOGY.md), three independent passes here |
 
-The audit adapter compiles `NewMatcher` outside the timed region. Each iteration
-calls `Find` on successive suffixes until it reaches the end. The adapter checks
-the matched byte width under simple folding before advancing. It supports
-rebar's `count` and `count-spans` models, with the same compiled plan reused for
-every hit. A future iterator could retain scan state and vector continuity. The
-diagnosis below measures how much that would change the worst row.
+The audit adapter compiles `NewMatcher` outside the timed region. Before warmup,
+it validates complete non-overlapping enumeration against an independent
+simple-fold source scan, including each match's byte width. Each timed iteration
+then calls `Matcher.Each` with only the count or span sink. It supports rebar's
+`count` and `count-spans` models with the same compiled plan reused throughout
+the scan.
 
 ## Results
 
