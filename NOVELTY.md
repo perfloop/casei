@@ -1385,14 +1385,14 @@ plan, not from a caller, haystack sample, benchmark name, or first-use history.
 
 On a VBMI host, the block loop uses the low six bits of source bytes to look up
 all primary and confirmation tag masks, intersects the masks for each compiled
-displacement, and returns the first conservative survivor. Before the shared
-raw-token state machine can see that survivor, exact full-byte primary,
-confirmation, and guard pairs are checked; low-six-bit aliases therefore cannot
-create a match. The shared plan then replays the candidate and supplies byte
-start, terminal selection, leftmost order, and lowest-ID ties. Wider forms,
-malformed bytes, unsupported plans, scalar tails, and feature-disabled hosts
-remain on the existing decoded/raw-plan authority. This is a conservative
-enumeration filter, not a separate recognizer or a byte-only fold definition.
+displacement, and returns the first conservative survivor with its pattern-tag
+byte. Exact full-byte primary, confirmation, and guard pairs are checked only
+for those tags; low-six-bit aliases therefore cannot create a match. The shared
+plan then replays the candidate and supplies byte start, source width, terminal
+selection, leftmost order, and lowest-ID ties. Wider forms, malformed bytes,
+unsupported plans, scalar tails, and feature-disabled hosts remain on the
+existing decoded/raw-plan authority. This is a conservative enumeration filter,
+not a separate recognizer or a byte-only fold definition.
 
 The components are known art: fixed rare anchors and candidate verification are
 catalogued in `CONTEXT.md` §§3 and 8, while Vectorscan's Teddy implementation
@@ -1405,6 +1405,26 @@ any missed canonical reference occurrence, any disagreement between the
 assembly predicate and its scalar table model, a tail-alignment failure, or a
 full native field run that does not improve the contested result without
 regressing another required row.
+
+### Variable-width raw confirmation
+
+An eligible N=1 Unicode plan now packs every one-, two-, or three-byte raw
+spelling of each fold token into a bounded confirmation sequence. The pair-pair
+screen fixes the candidate start only before the first width-changing orbit.
+Confirmation then advances its cursor by the spelling that actually matched
+and returns the resulting source width. `Matcher.Each` consumes that proved
+width instead of decoding the same occurrence again. A malformed pattern,
+four-byte spelling, orbit with more than three raw forms, oversized plan, or
+unproved anchor retains the decoded executor.
+
+Raw candidate confirmation and finite fold-variant expansion are known art in
+StringZilla, ClickHouse, Sneller, and the regex engines catalogued in
+`CONTEXT.md`. The repository-specific packed layout and assembly loop encode
+the existing plan's finite raw forms; they are not claimed as a new matching
+state. Their operational result is new only if the same-contract field rows
+move below 1.0 while differentials, exact source width, tails, and the complete
+arena remain green. A bare shortest spelling at the end of a haystack is an
+explicit regression case because it falsified the first maximum-width bound.
 
 ### VBMI table and mask-scheduling follow-up
 
@@ -1573,15 +1593,6 @@ native field run. Reopen this route only with a different instruction schedule
 that improves both raw rows without losing the dense control; do not reuse the
 same nine-probe layout.
 
-A `PREFETCHT0` zero512 distance sweep was also closed. The same-process,
-shuffled A/B harness tested ahead distances of 512, 1024, 2048, and 4096 bytes
-on the raw N=5 miss and late-hit rows and the dense controls. No distance
-produced a repeatable win, so no prefetch source was retained and this is not a
-route to retune. The temporary harness and its individual timing samples were
-removed before they were copied into this receipt; the only defensible
-historical result is the four-distance negative conclusion, not reconstructed
-numeric ratios.
-
 Changing level from the zero512 body to Find's origin also did not clear the
 floor. A temporary compiler chose an ASCII byte fixed by `SimpleFold` that was
 present in every literal, proved the maximum folded-source prefix width before
@@ -1607,13 +1618,55 @@ advantage. The compiler, Find branch, and A/B tests were removed before a full
 field run. Do not retry this exact origin gate without a different measured
 reason it can beat that floor.
 
-This is a negative novelty assessment. Byte-class table lookup, Teddy/Shufti
-candidate masks, confirmation after a survivor, `VPERMB`/`VPERMT2B` selection,
-and loop unrolling are established techniques. The package-specific table
-layouts merely encode predicates the existing plan already owns, and the
-common plan remains the sole match authority for N=1 and multi-pattern calls.
-The only falsifiable claim is operational and belongs to the arena and semantic
-differentials, not to a new search construction.
+### Retained origin proof with a dedicated exact scan
+
+The later retained path reuses the safe compiler fact from the rejected origin
+experiment, but it does not reuse that transition. The rejected path called the
+generic folded `literalSkipASCII` loop and did not move the raw miss floor. The
+retained `literalSkipExact64` kernel exploits the stronger predicate: the
+selected ASCII byte is invariant under `SimpleFold`, so it needs no fold vector.
+It issues eight independent memory-source `VPCMPEQB` operations across 512
+bytes, retains their k-masks, and tests ordered mask pairs before extracting the
+first lane. OpcodeX reports the relevant compare at three-cycle latency and
+one-per-cycle reciprocal throughput on Ice Lake. Its uops.info catalog has no
+Sapphire Rapids column, so the second host is supported by direct execution and
+field measurement rather than that offline table. The scan then starts the
+unchanged tagged plan no later than the maximum proved prefix before that first
+exact byte.
+
+The gate ships only as part of the combined result with tagged survivor bits,
+variable-width raw confirmation, and the wider sparse tagged schedule. No
+isolated novelty claim is made for it. The combined source passed every sample
+of the 36-row paired field on both hosts: worst medians were 0.9614 on Ice Lake
+and 0.9693 on Sapphire Rapids. It also moved all five same-contract Rebar rows
+below 1.0 on both hosts, with worst ratios 0.8766 and 0.8919. Those external
+rows are the result the prior construction did not hold.
+
+The retained route is falsified by a missed fold spelling, a start earlier than
+its lookback bound, a malformed-byte disagreement, a first-lane ordering error,
+an assembly/model mismatch at any 64-byte boundary, any Rebar same-contract row
+at or above 1.0, or any arena sample at or above 1.0.
+
+The checked-in [load-bearing ablations](audit/acceptance/ablations/README.md)
+exercise those falsifiers. Removing the origin gate loses the focused N=5
+field row on both hosts. Removing variable confirmation loses two of five
+same-contract Rebar rows on both hosts. Ignoring the returned tag byte loses
+the five-pattern Rebar row on Ice Lake.
+
+### Novelty decision for the retained combination
+
+Byte-class table lookup, Teddy/Shufti candidate masks, fixed rare anchors,
+confirmation after a survivor, `VPERMB`/`VPERMT2B` selection, finite fold-form
+expansion, and loop unrolling are established techniques. The package-specific
+tables encode predicates the existing plan already owns, and the common plan
+remains the sole match authority for N=1 and multi-pattern calls.
+
+The construction is therefore a negative novelty finding at the component
+level. The claimed advance is the result: correct simple-fold UTF-8 literal-set
+search, including non-overlapping enumeration, that leads the complete pinned
+field on all 36 arena rows and all five same-contract Rebar rows on both target
+microarchitectures. A published implementation with the same semantics and a
+better measured position would falsify that result claim.
 
 ### Complete experimental Go SIMD backend: negative result
 
@@ -1652,7 +1705,7 @@ compiler already emits.
 This negative would be falsified by a later compiler/backend that preserves the
 four-way independent schedule, keeps mask arithmetic in k-registers, and avoids
 the wide spills, followed by a complete-backend result that passes the same
-correctness checks and all 33 field rows on both qualifying processors. Until
+correctness checks and all 36 field rows on both qualifying processors. Until
 then, the assembly backend remains the accepted implementation.
 
 ### Rejected cells
@@ -1672,15 +1725,24 @@ Unicode/invalid-byte differential evidence.
 
 ## Provenance
 
-This contribution contains novelty assessments and implementation provenance in this file.  The
-original orbit-quotient, raw-byte, fixed-width projection, rolling-fingerprint,
-and prefix-invariant-anchor assessments, plus the five follow-up construction
-sweeps above, were written for this repository from the current `AGENTS.md`,
-`README.md`, `CONTEXT.md`, source and test files, and the cited source
-locations.  They contain no copied implementation code and make no external
-performance claim.  The follow-up sweep checked current upstream source via
-`git ls-remote` and immutable raw-source revisions for GNU libc, .NET,
-rust-lang/regex, Hyperscan, and StringZilla; semantic differences are stated
-where those engines are used only as mechanical prior art.  If implementation
-files are added later, each non-trivial file will identify its authorship and
-source provenance here.
+This contribution contains novelty assessments and implementation provenance
+in this file. The original orbit-quotient, raw-byte, fixed-width projection,
+rolling-fingerprint, and prefix-invariant-anchor assessments, plus the follow-up
+construction sweeps above, were written for this repository from the current
+`AGENTS.md`, `README.md`, `CONTEXT.md`, source and test files, and the cited
+source locations.
+
+The retained follow-up in `unicode_confirm.go`, `raw_byte.go`, `plan.go`,
+`matcher.go`, `root_amd64.go`, `root_amd64.s`, `root_other.go`, the focused
+arena rows, and their tests was produced in user-directed coding-agent sessions.
+The public Perfloop Cases supplied experiment history and rejected hypotheses;
+the final implementation was independently inspected, disassembled, modeled,
+and measured in the repository workspace. OpcodeX from Perfloop commit
+`ff4c454c6563852711156e7104f076529517c6c0` supplied offline instruction
+latency and throughput data for the queried Intel targets.
+
+The implementation was written from the techniques, not copied from field
+source. The follow-up read immutable source or built-object disassembly for
+Vectorscan, PCRE2, rust/regex, StringZilla, veloz, and Rust Aho-Corasick. No
+field implementation is imported, linked, executed, or embedded by the
+candidate module; `scripts/check-baseline-isolation.sh` enforces that boundary.

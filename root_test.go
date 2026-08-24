@@ -777,11 +777,11 @@ func TestPairPairVBMIProjection(t *testing.T) {
 }
 
 func TestUnicodePairConfirm(t *testing.T) {
-	if unicodePairConfirmPartSize != 10 || unicodePairConfirmLengthAt != 200 ||
+	if unicodePairConfirmPartSize != 10 || unicodePairConfirmMaxLengthAt != 200 ||
 		unicodePairConfirmAnchorAt != 201 || unicodePairConfirmNAt != 202 ||
 		unicodePairConfirmPackedSize != 204 {
 		t.Fatalf("unexpected packed confirmation layout: part=%d length=%d anchor=%d n=%d size=%d",
-			unicodePairConfirmPartSize, unicodePairConfirmLengthAt, unicodePairConfirmAnchorAt,
+			unicodePairConfirmPartSize, unicodePairConfirmMaxLengthAt, unicodePairConfirmAnchorAt,
 			unicodePairConfirmNAt, unicodePairConfirmPackedSize)
 	}
 
@@ -791,7 +791,7 @@ func TestUnicodePairConfirm(t *testing.T) {
 	if plan.unicodePairN == 0 || plan.unicodePairs[0].pairPair.valid == 0 || !confirm.valid() {
 		t.Fatalf("no bounded Unicode confirmation: anchors=%+v confirm=%+v", plan.unicodePairs, confirm)
 	}
-	if got, want := confirm.length(), len(needle); got != want {
+	if got, want := confirm.maxLength(), len(needle); got != want {
 		t.Fatalf("confirmation length = %d, want %d", got, want)
 	}
 	if got, want := confirm.anchorAt(), plan.unicodePairs[0].at; got != want {
@@ -807,19 +807,19 @@ func TestUnicodePairConfirm(t *testing.T) {
 	}
 
 	for _, rendering := range []string{needle, strings.ToUpper(needle)} {
-		if !confirm.matchesAt(rendering, 0) || !plan.matchesSingleAt(rendering, 0) {
+		if _, ok := confirm.matchWidthAt(rendering, 0); !ok || !plan.matchesSingleAt(rendering, 0) {
 			t.Fatalf("confirmation rejected simple-fold rendering %q", rendering)
 		}
 	}
 	nearMiss := needle[:len(needle)-len("й")] + "я"
-	if confirm.matchesAt(nearMiss, 0) || plan.matchesSingleAt(nearMiss, 0) {
+	if _, ok := confirm.matchWidthAt(nearMiss, 0); ok || plan.matchesSingleAt(nearMiss, 0) {
 		t.Fatalf("confirmation accepted near miss %q", nearMiss)
 	}
 	for _, nearMiss := range []string{
 		"я" + needle[len("п"):],
 		needle[:len("п")] + "я" + needle[len("п")+len("р"):],
 	} {
-		if confirm.matchesAt(nearMiss, 0) {
+		if _, ok := confirm.matchWidthAt(nearMiss, 0); ok {
 			t.Fatalf("confirmation accepted pair-pair near miss %q", nearMiss)
 		}
 	}
@@ -865,14 +865,14 @@ func TestUnicodePairConfirm(t *testing.T) {
 		t.Fatalf("displaced-anchor Find = %+v,%t want start 64", got, ok)
 	}
 
-	if got := makeUnicodePairConfirm("Σя", 0); !got.valid() || got.partN(0) != 3 {
+	if got := makeUnicodePairConfirm("Σя", 0); !got.valid() || got[8] != 3 {
 		t.Fatalf("three-way width-stable confirmation = %+v, want three forms", got)
 	}
 	threePlan := newSearchPlan([]string{"яраΣ"})
 	threeConfirm := threePlan.unicodePairConfirm()
 	hasThreeWay := func(confirm unicodePairConfirm) bool {
 		for part := range int(confirm[unicodePairConfirmNAt]) {
-			if confirm.partN(part) == 3 {
+			if confirm[part*unicodePairConfirmPartSize+8] == 3 {
 				return true
 			}
 		}

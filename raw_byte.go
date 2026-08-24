@@ -630,9 +630,9 @@ func (filter *rawByteMultiAnchorFilter) canAddConfirmationOffsets(offsets []uint
 	return true
 }
 
-// tagsAt applies all exact pair checks after the vector screen. It retains only
-// literal tags that own the primary, fixed-displacement confirmation, and
-// scalar guard simultaneously.
+// tagsAt applies exact pair checks only for tags retained by the vector or
+// scalar table screen. It retains literal tags that own the primary,
+// fixed-displacement confirmation, and scalar guard simultaneously.
 func (anchor rawByteMultiAnchor) maxOffset() int {
 	max := 0
 	for i := 0; i < int(anchor.confirmN); i++ {
@@ -648,12 +648,14 @@ func (anchor rawByteMultiAnchor) maxOffset() int {
 	return max
 }
 
-func (filter *rawByteMultiAnchorFilter) tagsAt(s string, at int) byte {
+func (filter *rawByteMultiAnchorFilter) tagsAt(s string, at int, candidates byte) byte {
 	if !filter.usable() {
 		return 0
 	}
 	var tags byte
-	for i := 0; i < len(filter.anchors); i++ {
+	for candidates != 0 {
+		i := bits.TrailingZeros8(candidates)
+		candidates &= candidates - 1
 		anchor := filter.anchors[i]
 		if anchor.startN == 0 || at+anchor.maxOffset()+1 >= len(s) || !anchor.primary.matches(s, at) {
 			continue
@@ -676,7 +678,7 @@ func (filter *rawByteMultiAnchorFilter) tagsAt(s string, at int) byte {
 	return tags
 }
 
-func rawByteMultiAnchorSkipScalar(s string, at int, filter *rawByteMultiAnchorFilter) int {
+func rawByteMultiAnchorSkipScalar(s string, at int, filter *rawByteMultiAnchorFilter) (int, byte) {
 	start := at
 	for at+1 < len(s) {
 		// The vector loop has already reduced these same low-six-bit tables.
@@ -692,14 +694,14 @@ func rawByteMultiAnchorSkipScalar(s string, at int, filter *rawByteMultiAnchorFi
 				}
 				confirmed := filter.confirmFirst[group][s[at+offset]&0x3f] &
 					filter.confirmSecond[group][s[at+offset+1]&0x3f]
-				if tags&confirmed != 0 {
-					return at - start
+				if candidates := tags & confirmed; candidates != 0 {
+					return at - start, candidates
 				}
 			}
 		}
 		at++
 	}
-	return at - start
+	return at - start, 0
 }
 
 // rawByteMatchAt confirms only an anchored start. It retains the same raw
@@ -788,11 +790,12 @@ func (p *searchPlan) eachRawByteFixedAnchored(haystack string, yield func(Match,
 			}
 			continue
 		}
-		at += rawByteMultiAnchorSkipBytes(haystack, at, filter)
+		skipped, candidates := rawByteMultiAnchorSkipBytes(haystack, at, filter)
+		at += skipped
 		if at+1 >= len(haystack) {
 			break
 		}
-		for tags := filter.tagsAt(haystack, at); tags != 0; tags &= tags - 1 {
+		for tags := filter.tagsAt(haystack, at, candidates); tags != 0; tags &= tags - 1 {
 			patternID := bits.TrailingZeros8(tags)
 			anchor := filter.anchors[patternID]
 			for i := 0; i < int(anchor.startN); i++ {

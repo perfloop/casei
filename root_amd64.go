@@ -70,7 +70,7 @@ func pairShuftiSkip64(ptr *byte, n int, filter *pairShuftiFilter) int
 func pairShuftiWithOnesSkip64(ptr *byte, n int, filter *pairShuftiFilter) int
 func pairPairSkip64(ptr *byte, n int, filter *pairPairFilter) int
 func pairPairVBMISkip64(ptr *byte, n int, filter *pairPairVBMIFilter) int
-func pairPairConfirmVBMI64(ptr *byte, n int, filter *pairPairVBMIFilter, confirm *byte) int
+func pairPairConfirmVBMI64(ptr *byte, n int, filter *pairPairVBMIFilter, confirm *byte) (int, int)
 func pairPairWordSkip64(ptr *byte, n int, filter *pairPairFilter) int
 func pairSecondSkip32(ptr *byte, n int, filter *rootFilter) int
 func pairSecondSkip64(ptr *byte, n int, filter *rootFilter) int
@@ -81,7 +81,7 @@ func filterSkip64(ptr *byte, n int, filter *rootFilter) int
 func tripleSkip32(ptr *byte, n int, filter *tripleFilter) int
 func tripleSkip64(ptr *byte, n int, filter *tripleFilter) int
 func tripleShuftiSkip64(ptr *byte, n int, filter *tripleShuftiFilter) int
-func rawByteMultiAnchorSkip64(ptr *byte, n int, filter *rawByteMultiAnchorFilter) int
+func rawByteMultiAnchorSkip64(ptr *byte, n int, filter *rawByteMultiAnchorFilter) (int, byte)
 func asciiPairAnchorSkip64(ptr *byte, n int, filter *asciiPairAnchorFilter) int
 func asciiPairAnchorVBMISkip64(ptr *byte, n int, filter *asciiPairVBMIAnchorFilter) int
 func tripleSharedPrefixSkip64(ptr *byte, n int, filter *tripleFilter) int
@@ -465,7 +465,7 @@ func pairShuftiSkipBytes(s string, at int, filter *rootFilter) int {
 // pairPairConfirmBytes scans full 64-start blocks and returns the first
 // fully confirmed anchor, or candidates when no full-block candidate matches.
 // findUnicodePairConfirm establishes the feature and bound guards.
-func pairPairConfirmBytes(s string, at, candidates int, filter *pairPairFilter, confirm unicodePairConfirm) int {
+func pairPairConfirmBytes(s string, at, candidates int, filter *pairPairFilter, confirm unicodePairConfirm) (int, int) {
 	ptr := (*byte)(unsafe.Add(unsafe.Pointer(unsafe.StringData(s)), at))
 	return pairPairConfirmVBMI64(ptr, candidates, &filter.vbmi, unsafe.StringData(string(confirm)))
 }
@@ -624,22 +624,23 @@ func tripleShuftiSkipBytes(s string, at int, filter *tripleShuftiFilter) int {
 // calls it has already proved an all-ASCII, non-NUL haystack; this function
 // remains a conservative filter and its caller replays plan transitions.
 // rawByteMultiAnchorSkipBytes scans primary and tagged confirmation pairs in
-// 64-byte VBMI blocks. The scalar tail performs the exact pair checks, so
-// low-six-bit aliases from VPERMB can only cause an extra replay.
-func rawByteMultiAnchorSkipBytes(s string, at int, filter *rawByteMultiAnchorFilter) int {
+// 64-byte VBMI blocks. Both paths return the conservative tag bits at the first
+// surviving lane; tagsAt removes low-six-bit aliases before plan replay.
+func rawByteMultiAnchorSkipBytes(s string, at int, filter *rawByteMultiAnchorFilter) (int, byte) {
 	start := at
 	remaining := len(s) - at
 	if filter.usable() && cpu.X86.HasAVX512F && cpu.X86.HasAVX512BW && cpu.X86.HasAVX512VBMI &&
 		remaining >= 65+int(filter.maxConfirmOffset) {
 		full := ((remaining - 1 - int(filter.maxConfirmOffset)) / 64) * 64
 		ptr := (*byte)(unsafe.Add(unsafe.Pointer(unsafe.StringData(s)), at))
-		skipped := rawByteMultiAnchorSkip64(ptr, remaining, filter)
+		skipped, tags := rawByteMultiAnchorSkip64(ptr, remaining, filter)
 		at += skipped
 		if skipped < full {
-			return at - start
+			return at - start, tags
 		}
 	}
-	return at - start + rawByteMultiAnchorSkipScalar(s, at, filter)
+	skipped, tags := rawByteMultiAnchorSkipScalar(s, at, filter)
+	return at - start + skipped, tags
 }
 
 func asciiPairAnchorSkipBytes(s string, at int, filter *asciiPairAnchorFilter) int {

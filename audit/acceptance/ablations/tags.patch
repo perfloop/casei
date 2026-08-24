@@ -1,0 +1,5 @@
+diff --git a/raw_byte.go b/raw_byte.go
+--- a/raw_byte.go
++++ b/raw_byte.go
+@@ -654,0 +655 @@
++	candidates = 0xff

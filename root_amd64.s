@@ -190,77 +190,127 @@ literaldone64:
 	RET
 
 // literalSkipExact64 is the exact-byte specialization of literalSkip64. Fixed
-// literal anchors do not need a zero fold vector or its per-block VPOR. Four
-// memory-source comparisons scan independent 64-byte blocks on the no-hit path.
+// literal anchors need no fold vector. Eight unmasked memory-source compares
+// keep independent cache lines in flight before the first ordered mask test.
 TEXT ·literalSkipExact64(SB), NOSPLIT, $0-32
 	MOVQ ptr+0(FP), AX
 	MOVQ n+8(FP), DX
-	MOVQ $-1, CX
-	KMOVQ CX, K1
 	MOVQ target+16(FP), CX
-	VPBROADCASTB CX, K1, Z1
+	VPBROADCASTB CX, Z1
+	MOVQ DX, R8
+	SHRQ $9, R8
+	JZ literalexactquad64
 
-literalexactquad64:
-	CMPQ DX, $256
-	JL literalexactdouble64
-	VPCMPEQB (AX), Z1, K1, K2
-	VPCMPEQB 64(AX), Z1, K1, K3
-	VPCMPEQB 128(AX), Z1, K1, K4
-	VPCMPEQB 192(AX), Z1, K1, K5
-	KORTESTQ K2, K3
+literalexactloop64:
+	VPCMPEQB (AX), Z1, K0
+	VPCMPEQB 64(AX), Z1, K1
+	VPCMPEQB 128(AX), Z1, K2
+	VPCMPEQB 192(AX), Z1, K3
+	VPCMPEQB 256(AX), Z1, K4
+	VPCMPEQB 320(AX), Z1, K5
+	VPCMPEQB 384(AX), Z1, K6
+	VPCMPEQB 448(AX), Z1, K7
+	KORTESTQ K0, K1
 	JNE literalexactfirstpair64
+	KORTESTQ K2, K3
+	JNE literalexactsecondpair64
 	KORTESTQ K4, K5
-	JNE literalexactlastpair64
-	ADDQ $256, AX
-	SUBQ $256, DX
+	JNE literalexactthirdpair64
+	KORTESTQ K6, K7
+	JNE literalexactfourthpair64
+	ADDQ $512, AX
+	DECQ R8
+	JNZ literalexactloop64
+	ANDQ $511, DX
 	JMP literalexactquad64
+
 literalexactfirstpair64:
-	KTESTQ K2, K2
-	JNE literalexactstop64
-	KMOVQ K3, CX
+	KTESTQ K0, K0
+	JNE literalexactblock064
+	KMOVQ K1, CX
 	BSFQ CX, CX
 	ADDQ $64, AX
 	ADDQ CX, AX
 	JMP literalexactdone64
-literalexactlastpair64:
-	KTESTQ K4, K4
+literalexactsecondpair64:
+	KTESTQ K2, K2
 	JNE literalexactblock264
-	KMOVQ K5, CX
+	KMOVQ K3, CX
 	BSFQ CX, CX
 	ADDQ $192, AX
 	ADDQ CX, AX
 	JMP literalexactdone64
+literalexactthirdpair64:
+	KTESTQ K4, K4
+	JNE literalexactblock464
+	KMOVQ K5, CX
+	BSFQ CX, CX
+	ADDQ $320, AX
+	ADDQ CX, AX
+	JMP literalexactdone64
+literalexactfourthpair64:
+	KTESTQ K6, K6
+	JNE literalexactblock664
+	KMOVQ K7, CX
+	BSFQ CX, CX
+	ADDQ $448, AX
+	ADDQ CX, AX
+	JMP literalexactdone64
+literalexactblock064:
+	KMOVQ K0, CX
+	BSFQ CX, CX
+	ADDQ CX, AX
+	JMP literalexactdone64
 literalexactblock264:
-	KMOVQ K4, CX
+	KMOVQ K2, CX
 	BSFQ CX, CX
 	ADDQ $128, AX
 	ADDQ CX, AX
 	JMP literalexactdone64
+literalexactblock464:
+	KMOVQ K4, CX
+	BSFQ CX, CX
+	ADDQ $256, AX
+	ADDQ CX, AX
+	JMP literalexactdone64
+literalexactblock664:
+	KMOVQ K6, CX
+	BSFQ CX, CX
+	ADDQ $384, AX
+	ADDQ CX, AX
+	JMP literalexactdone64
+
+literalexactquad64:
+	CMPQ DX, $256
+	JL literalexactdouble64
+	VPCMPEQB (AX), Z1, K0
+	VPCMPEQB 64(AX), Z1, K1
+	VPCMPEQB 128(AX), Z1, K2
+	VPCMPEQB 192(AX), Z1, K3
+	KORTESTQ K0, K1
+	JNE literalexactfirstpair64
+	KORTESTQ K2, K3
+	JNE literalexactsecondpair64
+	ADDQ $256, AX
+	SUBQ $256, DX
 
 literalexactdouble64:
 	CMPQ DX, $128
 	JL literalexactsingle64
-	VPCMPEQB (AX), Z1, K1, K2
-	VPCMPEQB 64(AX), Z1, K1, K3
-	KORTESTQ K2, K3
+	VPCMPEQB (AX), Z1, K0
+	VPCMPEQB 64(AX), Z1, K1
+	KORTESTQ K0, K1
 	JNE literalexactfirstpair64
 	ADDQ $128, AX
 	SUBQ $128, DX
-	JMP literalexactdouble64
 
 literalexactsingle64:
 	CMPQ DX, $64
 	JL literalexactdone64
-	VPCMPEQB (AX), Z1, K1, K2
-	KTESTQ K2, K2
-	JNE literalexactstop64
+	VPCMPEQB (AX), Z1, K0
+	KTESTQ K0, K0
+	JNE literalexactblock064
 	ADDQ $64, AX
-	SUBQ $64, DX
-	JMP literalexactsingle64
-literalexactstop64:
-	KMOVQ K2, CX
-	BSFQ CX, CX
-	ADDQ CX, AX
 literalexactdone64:
 	SUBQ ptr+0(FP), AX
 	MOVQ AX, ret+24(FP)
@@ -2928,7 +2978,7 @@ pairpairvbmidone64:
 // part count are at 201 and 202 after its twenty slots. The pair-pair slots
 // are excluded from that count after their UTF-8 byte classes make the VBMI
 // low-six-bit table hits exact.
-TEXT ·pairPairConfirmVBMI64(SB), NOSPLIT, $0-40
+TEXT ·pairPairConfirmVBMI64(SB), NOSPLIT, $0-48
 	MOVQ ptr+0(FP), AX
 	MOVQ n+8(FP), DX
 	MOVQ filter+16(FP), SI
@@ -2994,6 +3044,8 @@ pairpairconfirmcandidate:
 pairpairconfirmbase:
 	MOVBLZX 201(DI), R13
 	SUBQ R13, R10
+	TESTB $2, 203(DI)
+	JNE pairpairconfirmvariable
 	LEAQ (R10)(R13*1), R11
 	MOVQ $0x80C0, R14
 	MOVWQZX (R11), R12
@@ -3035,7 +3087,62 @@ pairpairconfirmnext:
 	ADDQ $10, R11
 	DECQ R12
 	JNZ pairpairconfirmpart
+	JMP pairpairconfirmaccepted
+
+// Variable-width confirmation walks the raw forms in source order. Each
+// ten-byte part contains up to three zero-padded three-byte forms and a count
+// at byte nine. A form's UTF-8 lead byte determines whether the cursor advances
+// by one, two, or three bytes.
+pairpairconfirmvariable:
+	MOVQ R10, R13
+	MOVQ DI, R11
+	MOVBLZX 202(DI), R12
+pairpairconfirmvariablepart:
+	MOVBLZX 9(R11), R14
+	MOVQ R11, R15
+pairpairconfirmvariableform:
+	MOVBLZX 0(R15), R10
+	CMPB 0(R13), R10
+	JNE pairpairconfirmvariablenextform
+	CMPQ R10, $0x80
+	JL pairpairconfirmvariableone
+	MOVBLZX 1(R15), R10
+	CMPB 1(R13), R10
+	JNE pairpairconfirmvariablenextform
+	MOVBLZX 0(R15), R10
+	CMPQ R10, $0xe0
+	JL pairpairconfirmvariabletwo
+	MOVBLZX 2(R15), R10
+	CMPB 2(R13), R10
+	JNE pairpairconfirmvariablenextform
+	ADDQ $3, R13
+	JMP pairpairconfirmvariablenextpart
+pairpairconfirmvariabletwo:
+	ADDQ $2, R13
+	JMP pairpairconfirmvariablenextpart
+pairpairconfirmvariableone:
+	INCQ R13
+pairpairconfirmvariablenextpart:
+	ADDQ $10, R11
+	DECQ R12
+	JNZ pairpairconfirmvariablepart
+	LEAQ (AX)(R9*1), R10
+	CMPQ SI, $1
+	JNE pairpairconfirmvariablewidth
+	ADDQ $64, R10
+pairpairconfirmvariablewidth:
+	MOVBLZX 201(DI), R12
+	SUBQ R12, R10
+	SUBQ R10, R13
+	JMP pairpairconfirmreturnaccepted
+pairpairconfirmvariablenextform:
+	ADDQ $3, R15
+	DECQ R14
+	JNZ pairpairconfirmvariableform
+	JMP pairpairconfirmreject
 pairpairconfirmaccepted:
+	MOVBLZX 200(DI), R13
+pairpairconfirmreturnaccepted:
 	ADDQ R9, BX
 	CMPQ SI, $1
 	JNE pairpairconfirmdone
@@ -3085,20 +3192,28 @@ pairpairconfirmadvance64:
 	JMP pairpairconfirmsingle64
 
 pairpairconfirmdone:
+	MOVQ n+8(FP), R12
+	CMPQ BX, R12
+	JNE pairpairconfirmwidthdone
+	XORQ R13, R13
+pairpairconfirmwidthdone:
 	MOVQ BX, ret+32(FP)
+	MOVQ R13, width+40(FP)
 	VZEROUPPER
 	RET
 
 // rawByteMultiAnchorSkip64 intersects a primary pattern-tag pair with up to
 // three fixed-displacement confirmation pairs. Tables use VPERMB's low six
-// source bits; Go checks all three exact pairs before replaying a returned lane.
+// source bits. It returns the surviving tag byte with the first lane; Go then
+// checks exact primary, confirmation, and guard pairs only for those tags.
 // rawByteMultiAnchorFilter lays out primary tables at 0/64, confirmation-first
 // tables at 128/192/256, and confirmation-second tables at 320/384/448.
-TEXT ·rawByteMultiAnchorSkip64(SB), NOSPLIT, $0-32
+TEXT ·rawByteMultiAnchorSkip64(SB), NOSPLIT, $64-33
 	MOVQ ptr+0(FP), AX
 	MOVQ n+8(FP), DX
 	MOVQ filter+16(FP), SI
 	MOVQ $-1, CX
+	XORL R15, R15
 	KMOVQ CX, K1
 	VMOVDQU8 0(SI), K1, Z1
 	VMOVDQU8 64(SI), K1, Z2
@@ -3305,6 +3420,8 @@ rawbytemultianchoradvance64:
 rawbytemultianchorstop64:
 	KMOVQ K2, CX
 	BSFQ CX, CX
+	VMOVDQU8 Z9, (SP)
+	MOVBLZX (SP)(CX*1), R15
 	ADDQ CX, AX
 	JMP rawbytemultianchordone64
 // The dense body is the proven one-block primary-plus-confirmation schedule.
@@ -3359,16 +3476,12 @@ rawbytemultianchordenseloop64:
 	JNE rawbytemultianchordenseloop64
 	JMP rawbytemultianchorloop64
 rawbytemultianchordensestop64:
-	KMOVQ K2, CX
-	BSFQ CX, CX
-	ADDQ CX, AX
-	SUBQ ptr+0(FP), AX
-	MOVQ AX, ret+24(FP)
-	VZEROUPPER
-	RET
+	VMOVDQA64 Z10, K1, Z9
+	JMP rawbytemultianchorstop64
 
 rawbytemultianchordone64:
 	SUBQ ptr+0(FP), AX
 	MOVQ AX, ret+24(FP)
+	MOVB R15, tags+32(FP)
 	VZEROUPPER
 	RET

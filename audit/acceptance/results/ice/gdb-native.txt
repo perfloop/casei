@@ -1,0 +1,14 @@
+host: Ice Lake, GenuineIntel family 6 model 106
+go: go1.26.4 linux/amd64
+gdb: GNU gdb 12.1
+source checksum stream: 659a0783f5fd68734d70a9e5f4fc91865440362cf64c30227a401c7522212d38
+command: gdb -q -batch -x audit/acceptance/native-reachability.gdb casei.test
+
+Breakpoint 1 at 0x5e54e0: file root_amd64.s, line 196.
+Breakpoint 2 at 0x5e8520: file root_amd64.s, line 2982.
+Breakpoint 3 at 0x5e88a0: file root_amd64.s, line 3211.
+HIT 3
+HIT 1
+HIT 2
+PASS
+[Inferior 1 exited normally]

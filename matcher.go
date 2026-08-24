@@ -66,14 +66,16 @@ func (m *Matcher) Each(haystack string, yield func(match Match, width int) bool)
 		return m.plan.eachRawByteFixedAnchored(haystack, yield)
 	}
 	for at := 0; at <= len(haystack); {
-		match, ok := m.plan.find(haystack[at:])
+		match, width, ok := m.plan.findWithWidth(haystack[at:])
 		if !ok {
 			return true
 		}
 		match.Start += at
-		units := utf8.RuneCountInString(m.patterns[match.Pattern])
-		end := matcherMatchEnd(haystack, match.Start, units)
-		width := end - match.Start
+		if width == 0 {
+			units := utf8.RuneCountInString(m.patterns[match.Pattern])
+			width = matcherMatchEnd(haystack, match.Start, units) - match.Start
+		}
+		end := match.Start + width
 		if !yield(match, width) {
 			return false
 		}

@@ -145,15 +145,17 @@ func pairShuftiSkipBytes(s string, at int, filter *rootFilter) int {
 	return pairShuftiSkipScalar(s, at, &filter.shufti)
 }
 
-func pairPairConfirmBytes(s string, at, candidates int, filter *pairPairFilter, confirm unicodePairConfirm) int {
+func pairPairConfirmBytes(s string, at, candidates int, filter *pairPairFilter, confirm unicodePairConfirm) (int, int) {
 	start := at
 	for at-start < candidates {
-		if pairPairAt(s, at, filter) && confirm.matchesAt(s, at-confirm.anchorAt()) {
-			return at - start
+		if pairPairAt(s, at, filter) {
+			if width, ok := confirm.matchWidthAt(s, at-confirm.anchorAt()); ok {
+				return at - start, width
+			}
 		}
 		at++
 	}
-	return candidates
+	return candidates, 0
 }
 
 func pairPairSkipBytes(s string, at int, filter *pairPairFilter) int {
@@ -239,7 +241,7 @@ func tripleShuftiSkipBytes(s string, at int, filter *tripleShuftiFilter) int {
 	return tripleShuftiSkipScalar(s, at, filter)
 }
 
-func rawByteMultiAnchorSkipBytes(s string, at int, filter *rawByteMultiAnchorFilter) int {
+func rawByteMultiAnchorSkipBytes(s string, at int, filter *rawByteMultiAnchorFilter) (int, byte) {
 	return rawByteMultiAnchorSkipScalar(s, at, filter)
 }
 

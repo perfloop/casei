@@ -8,6 +8,7 @@ package arena_test
 
 import (
 	"fmt"
+	"sort"
 	"testing"
 	"time"
 
@@ -21,26 +22,40 @@ import (
 	vectorscan "github.com/tsenart/casei/arena/vectorscan"
 )
 
-// timeOp returns ns/op for one operation. It times manually rather than
-// through testing.Benchmark, which cannot be nested inside a running
-// benchmark, and takes the best of three samples to reduce sensitivity to
-// transient host load.
-func timeOp(op func()) float64 {
+// timeWindow returns ns/op for one manually timed window. testing.Benchmark
+// cannot be nested inside a running benchmark.
+func timeWindow(op func()) float64 {
 	const budget = 25 * time.Millisecond
-	best := 0.0
-	for sample := 0; sample < 3; sample++ {
-		n := 0
-		start := time.Now()
-		for time.Since(start) < budget {
-			op()
-			n++
-		}
-		ns := float64(time.Since(start).Nanoseconds()) / float64(n)
-		if best == 0 || ns < best {
-			best = ns
-		}
+	n := 0
+	start := time.Now()
+	for time.Since(start) < budget {
+		op()
+		n++
 	}
-	return best
+	return float64(time.Since(start).Nanoseconds()) / float64(n)
+}
+
+// pairedRatio measures the candidate beside one competitor six times, with
+// each operation going first in three pairs. The median paired ratio reduces
+// drift from CPU migration, frequency changes, and host load between timing
+// windows.
+func pairedRatio(candidate, competitor func()) float64 {
+	candidate()
+	competitor()
+	var ratios [6]float64
+	for round := range ratios {
+		var candidateNS, competitorNS float64
+		if round%2 == 0 {
+			candidateNS = timeWindow(candidate)
+			competitorNS = timeWindow(competitor)
+		} else {
+			competitorNS = timeWindow(competitor)
+			candidateNS = timeWindow(candidate)
+		}
+		ratios[round] = candidateNS / competitorNS
+	}
+	sort.Float64s(ratios[:])
+	return (ratios[2] + ratios[3]) / 2
 }
 
 // velozVectorBits is deliberately strict: Veloz has an SSE/scalar fallback,
@@ -132,45 +147,44 @@ func BenchmarkBar(b *testing.B) {
 	for _, s := range scenarios {
 		s := s
 		b.Run("single/"+s.name, func(b *testing.B) {
-			cand := timeOp(func() { sink = runSingleScenario(casei.IndexFold, s) })
-
-			best := timeOp(func() { sink = runSingleScenario(indexRegexp, s) })
+			candidate := func() { sink = runSingleScenario(casei.IndexFold, s) }
+			best := pairedRatio(candidate, func() { sink = runSingleScenario(indexRegexp, s) })
 			competitors := 1
-			if v := timeOp(func() { sink = runSingleScenario(indexPCRE2, s) }); v < best {
-				best = v
+			if ratio := pairedRatio(candidate, func() { sink = runSingleScenario(indexPCRE2, s) }); ratio > best {
+				best = ratio
 			}
 			competitors++
 			rure := rureSingles[s.needle]
-			rureTime := timeOp(func() { sink = runSingleScenario(indexRure, s) })
+			rureRatio := pairedRatio(candidate, func() { sink = runSingleScenario(indexRure, s) })
 			// The Rust adapter records the backend reached by this exact query.
 			// A query that did not reach memchr AVX2 is diagnostic only; it must
 			// not race a target-width field entrant under a CPU-flag label.
 			if rure.VectorBits() == 256 {
-				if rureTime < best {
-					best = rureTime
+				if rureRatio > best {
+					best = rureRatio
 				}
 				competitors++
 			}
-			if v := timeOp(func() { sink = runSingleScenario(indexVectorscan, s) }); v < best {
-				best = v
+			if ratio := pairedRatio(candidate, func() { sink = runSingleScenario(indexVectorscan, s) }); ratio > best {
+				best = ratio
 			}
 			competitors++
 			if stringZillaAvailable {
-				if v := timeOp(func() { sink = runSingleScenario(indexStringZilla, s) }); v < best {
-					best = v
+				if ratio := pairedRatio(candidate, func() { sink = runSingleScenario(indexStringZilla, s) }); ratio > best {
+					best = ratio
 				}
 				competitors++
 			}
 			if !s.utf8 && velozVectorBits() == 256 {
-				if v := timeOp(func() { sink = runSingleScenario(veloz.IndexFold, s) }); v < best {
-					best = v
+				if ratio := pairedRatio(candidate, func() { sink = runSingleScenario(veloz.IndexFold, s) }); ratio > best {
+					best = ratio
 				}
 				competitors++
 			}
 			for b.Loop() {
-				sink = runSingleScenario(casei.IndexFold, s)
+				candidate()
 			}
-			b.ReportMetric(cand/best, "x_vs_best")
+			b.ReportMetric(best, "x_vs_best")
 			b.ReportMetric(float64(competitors), "competitors")
 			b.ReportMetric(float64(competitors+1), "entrants")
 			reportSingleDispatch(b, s)
@@ -182,58 +196,58 @@ func BenchmarkBar(b *testing.B) {
 		scenarioIndex := scenarioIndex
 		b.Run("multi/"+s.name, func(b *testing.B) {
 			m := casei.NewMatcher(s.patterns)
-			cand := timeOp(func() { _, matcherFound = m.Find(s.haystack) })
+			candidate := func() { _, matcherFound = m.Find(s.haystack) }
 
 			re := regexpAltFor(s.patterns)
-			best := timeOp(func() { matcherSink = len(re.FindStringIndex(s.haystack)) })
+			best := pairedRatio(candidate, func() { matcherSink = len(re.FindStringIndex(s.haystack)) })
 			competitors := 1
 			pcre := pcre2Alts[scenarioIndex]
-			if v := timeOp(func() { _, _, matcherFound = pcre.Find(s.haystack) }); v < best {
-				best = v
+			if ratio := pairedRatio(candidate, func() { _, _, matcherFound = pcre.Find(s.haystack) }); ratio > best {
+				best = ratio
 			}
 			competitors++
 			rure := rureAlts[scenarioIndex]
-			rureTime := timeOp(func() { _, _, matcherFound = rure.Find(s.haystack) })
+			rureRatio := pairedRatio(candidate, func() { _, _, matcherFound = rure.Find(s.haystack) })
 			if rure.VectorBits() == 256 {
-				if rureTime < best {
-					best = rureTime
+				if rureRatio > best {
+					best = rureRatio
 				}
 				competitors++
 			}
 			vscan := vectorscanAlts[scenarioIndex]
-			if v := timeOp(func() { _, _, matcherFound = vscan.Find(s.haystack) }); v < best {
-				best = v
+			if ratio := pairedRatio(candidate, func() { _, _, matcherFound = vscan.Find(s.haystack) }); ratio > best {
+				best = ratio
 			}
 			competitors++
 			if stringZillaAvailable {
 				stringzilla := stringZillaAlts[scenarioIndex]
-				if v := timeOp(func() { _, _, matcherFound = stringzilla.Find(s.haystack) }); v < best {
-					best = v
+				if ratio := pairedRatio(candidate, func() { _, _, matcherFound = stringzilla.Find(s.haystack) }); ratio > best {
+					best = ratio
 				}
 				competitors++
 			}
 			supplemental := 0
 			rust := rustACAlts[scenarioIndex]
 			if !s.utf8 {
-				rustTime := timeOp(func() { _, _, matcherFound = rust.Find(s.haystack) })
+				rustRatio := pairedRatio(candidate, func() { _, _, matcherFound = rust.Find(s.haystack) })
 				// The direct Rust DFA exposes the memchr backend reached by this
 				// exact prefilter query. Do not call an unobserved scalar/SSE path
 				// an AVX2 field entrant merely because this process has AVX2.
 				if rust.VectorBits() == 256 {
-					if rustTime < best {
-						best = rustTime
+					if rustRatio > best {
+						best = rustRatio
 					}
 					competitors++
 				}
 
 				goAC := acBuild(s.patterns, true)
-				_ = timeOp(func() { _, matcherFound = acFirst(&goAC, s.haystack) })
+				_ = pairedRatio(candidate, func() { _, matcherFound = acFirst(&goAC, s.haystack) })
 				supplemental++
 			}
 			for b.Loop() {
-				_, matcherFound = m.Find(s.haystack)
+				candidate()
 			}
-			b.ReportMetric(cand/best, "x_vs_best")
+			b.ReportMetric(best, "x_vs_best")
 			b.ReportMetric(float64(competitors), "competitors")
 			b.ReportMetric(float64(competitors+1+supplemental), "entrants")
 			reportMultiDispatch(b, s, m.VectorBits(), rure, rust, vscan)

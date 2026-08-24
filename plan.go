@@ -478,64 +478,6 @@ type unicodePairAnchor struct {
 	pairPair  pairPairFilter
 }
 
-const (
-	unicodePairConfirmMaxParts     = 20
-	unicodePairConfirmPartSize     = 10
-	unicodePairConfirmSkippedParts = 2
-
-	unicodePairConfirmSkippedAt  = (unicodePairConfirmMaxParts - unicodePairConfirmSkippedParts) * unicodePairConfirmPartSize
-	unicodePairConfirmLengthAt   = unicodePairConfirmMaxParts * unicodePairConfirmPartSize
-	unicodePairConfirmAnchorAt   = unicodePairConfirmLengthAt + 1
-	unicodePairConfirmNAt        = unicodePairConfirmLengthAt + 2
-	unicodePairConfirmValidAt    = unicodePairConfirmLengthAt + 3
-	unicodePairConfirmPackedSize = unicodePairConfirmLengthAt + 4
-)
-
-// unicodePairConfirm is a bounded exact terminal transition for one literal.
-// Its bytes are stable assembly input: each ten-byte part stores three
-// little-endian raw values at 0, 2, and 4; source offset at 6; width at 7; and
-// value count at 8. The final four bytes hold length, anchor offset, part
-// count, and validity plus the number of trailing pair-pair parts. A
-// two-byte value preserves correlations between UTF-8 lead and continuation
-// bytes; independently normalizing those bytes would admit other runes.
-//
-// It is populated only when every token has one to three width-stable raw
-// forms of one or two bytes. Longer, width-changing, four-way, and opaque
-// tokens retain decoded confirmation.
-type unicodePairConfirm string
-
-func (confirm unicodePairConfirm) valid() bool {
-	if len(confirm) != unicodePairConfirmPackedSize || confirm[unicodePairConfirmValidAt]&1 == 0 ||
-		confirm[unicodePairConfirmLengthAt] == 0 || confirm[unicodePairConfirmAnchorAt] >= confirm[unicodePairConfirmLengthAt] {
-		return false
-	}
-	skipped := confirm.skippedN()
-	parts := int(confirm[unicodePairConfirmNAt])
-	return (skipped == 0 || skipped == unicodePairConfirmSkippedParts) && parts+skipped <= unicodePairConfirmMaxParts &&
-		(parts != 0 || skipped != 0)
-}
-
-func (confirm unicodePairConfirm) length() int {
-	return int(confirm[unicodePairConfirmLengthAt])
-}
-
-func (confirm unicodePairConfirm) anchorAt() int {
-	return int(confirm[unicodePairConfirmAnchorAt])
-}
-
-func (confirm unicodePairConfirm) skippedN() int {
-	return int(confirm[unicodePairConfirmValidAt] >> 1)
-}
-
-func (confirm unicodePairConfirm) partN(part int) uint8 {
-	return confirm[part*unicodePairConfirmPartSize+8]
-}
-
-func (confirm unicodePairConfirm) partValue(part, value int) uint16 {
-	at := part*unicodePairConfirmPartSize + value*2
-	return uint16(confirm[at]) | uint16(confirm[at+1])<<8
-}
-
 // asciiVBMIProbe is the AVX-512 VBMI projection for one sparse three-byte
 // ASCII-letter probe. VPERMB indexes only the low six input bits. Each table
 // therefore admits the bit-six alias too; it is a conservative filter and the
@@ -1439,118 +1381,6 @@ func patternRawForms(pattern string) (forms [][]string, widths []int) {
 	return forms, widths
 }
 
-// makeUnicodePairConfirm moves pair-pair's two raw tokens to trailing slots
-// when confirmAt is supplied. The vector transition proves those slots from
-// its low-six-bit tables plus UTF-8 byte classes; matchesAt still checks every
-// slot and remains a complete raw-token oracle for scalar replay.
-func makeUnicodePairConfirm(pattern string, anchorAt int, confirmAt ...int) unicodePairConfirm {
-	if anchorAt < 0 || anchorAt > 255 || len(pattern) > 255 || len(confirmAt) > 1 {
-		return ""
-	}
-
-	skippedAt := [unicodePairConfirmSkippedParts]int{}
-	skipN := 0
-	if len(confirmAt) != 0 {
-		if confirmAt[0] < 0 || confirmAt[0] > 255 || confirmAt[0] == anchorAt {
-			return ""
-		}
-		skippedAt[0], skippedAt[1] = anchorAt, confirmAt[0]
-		skipN = unicodePairConfirmSkippedParts
-	}
-
-	forms, _ := patternRawForms(pattern)
-	packed := make([]byte, unicodePairConfirmPackedSize)
-	at, parts, skipped := 0, 0, 0
-	for _, unit := range forms {
-		r, size := utf8.DecodeRuneInString(pattern[at:])
-		if r == utf8.RuneError && size == 1 || len(unit) == 0 || len(unit) > 3 {
-			return ""
-		}
-		width := len(unit[0])
-		if width < 1 || width > 2 || width != size {
-			return ""
-		}
-
-		var packedPart [unicodePairConfirmPartSize]byte
-		packedPart[6], packedPart[7], packedPart[8] = uint8(at), uint8(width), uint8(len(unit))
-		for i, form := range unit {
-			if len(form) != width {
-				return ""
-			}
-			value := uint16(form[0])
-			if width == 2 {
-				value |= uint16(form[1]) << 8
-			}
-			valueAt := i * 2
-			packedPart[valueAt], packedPart[valueAt+1] = uint8(value), uint8(value>>8)
-		}
-
-		isSkipped := false
-		for i := range skipN {
-			if at == skippedAt[i] {
-				isSkipped = true
-				break
-			}
-		}
-		if isSkipped {
-			if skipped == skipN {
-				return ""
-			}
-			partAt := unicodePairConfirmSkippedAt + skipped*unicodePairConfirmPartSize
-			copy(packed[partAt:], packedPart[:])
-			skipped++
-		} else {
-			if parts == unicodePairConfirmMaxParts-skipN {
-				return ""
-			}
-			partAt := parts * unicodePairConfirmPartSize
-			copy(packed[partAt:], packedPart[:])
-			parts++
-		}
-		at += size
-	}
-	if at != len(pattern) || parts+skipped == 0 || skipped != skipN {
-		return ""
-	}
-	packed[unicodePairConfirmLengthAt] = uint8(at)
-	packed[unicodePairConfirmAnchorAt] = uint8(anchorAt)
-	packed[unicodePairConfirmNAt] = uint8(parts)
-	packed[unicodePairConfirmValidAt] = 1 | uint8(skipped<<1)
-	return unicodePairConfirm(string(packed))
-}
-
-func (confirm unicodePairConfirm) matchesPartAt(haystack string, at, partAt int) bool {
-	value := uint16(haystack[at+int(confirm[partAt+6])])
-	if confirm[partAt+7] == 2 {
-		value |= uint16(haystack[at+int(confirm[partAt+6])+1]) << 8
-	}
-	if value == uint16(confirm[partAt])|uint16(confirm[partAt+1])<<8 {
-		return true
-	}
-	if confirm[partAt+8] >= 2 && value == uint16(confirm[partAt+2])|uint16(confirm[partAt+3])<<8 {
-		return true
-	}
-	return confirm[partAt+8] >= 3 && value == uint16(confirm[partAt+4])|uint16(confirm[partAt+5])<<8
-}
-
-func (confirm unicodePairConfirm) matchesAt(haystack string, at int) bool {
-	if !confirm.valid() || at < 0 || len(haystack)-at < confirm.length() {
-		return false
-	}
-	for part := range int(confirm[unicodePairConfirmNAt]) {
-		if !confirm.matchesPartAt(haystack, at, part*unicodePairConfirmPartSize) {
-			return false
-		}
-	}
-	for skipped := range confirm.skippedN() {
-		partAt := unicodePairConfirmSkippedAt + skipped*unicodePairConfirmPartSize
-		if !confirm.matchesPartAt(haystack, at, partAt) {
-			return false
-		}
-	}
-	return true
-}
-
 func tripleFromForms(forms [][]string, start int) (tripleFilter, bool) {
 	var filter tripleFilter
 	var expand func(int, [3]byte, int) bool
@@ -1649,6 +1479,8 @@ func (p *searchPlan) makeUnicodeAnchor(pattern string) {
 	if !p.asciiOnly && p.unicodePairN != 0 && p.unicodePairs[0].pairPair.valid != 0 {
 		anchor := p.unicodePairs[0]
 		if confirm := makeUnicodePairConfirm(pattern, anchor.at, anchor.confirmAt); confirm.valid() {
+			p.singlePayload = string(confirm)
+		} else if confirm := makeUnicodePairVariableConfirm(pattern, anchor.at); confirm.valid() {
 			p.singlePayload = string(confirm)
 		}
 	}
@@ -2399,40 +2231,40 @@ func (p *searchPlan) unicodePairConfirm() unicodePairConfirm {
 	return unicodePairConfirm(p.singlePayload)
 }
 
-func (p *searchPlan) findUnicodePairConfirm(haystack string, anchor *unicodePairAnchor) (Match, bool) {
+func (p *searchPlan) findUnicodePairConfirm(haystack string, anchor *unicodePairAnchor) (Match, int, bool) {
 	confirm := p.unicodePairConfirm()
-	lastStart := len(haystack) - confirm.length()
-	if lastStart < 0 {
-		return Match{}, false
+	if len(haystack) < confirm.minLength() {
+		return Match{}, 0, false
 	}
 
 	at := anchor.at
-	candidates := lastStart + 1
-	full := candidates &^ 63
-	if full != 0 {
-		skipped := pairPairConfirmBytes(haystack, at, full, &anchor.pairPair, confirm)
-		if skipped < full {
-			return Match{Pattern: 0, Start: at + skipped - anchor.at}, true
+	if lastStart := len(haystack) - confirm.maxLength(); lastStart >= 0 {
+		full := (lastStart + 1) &^ 63
+		if full != 0 {
+			skipped, width := pairPairConfirmBytes(haystack, at, full, &anchor.pairPair, confirm)
+			if skipped < full {
+				return Match{Pattern: 0, Start: at + skipped - anchor.at}, width, true
+			}
+			at += full
 		}
-		at += full
 	}
 
-	lastAnchor := lastStart + anchor.at
+	lastAnchor := len(haystack) - confirm.minLength() + anchor.at
 	for at <= lastAnchor {
 		at += pairPairSkipBytes(haystack, at, &anchor.pairPair)
 		if at > lastAnchor {
 			break
 		}
 		start := at - anchor.at
-		if confirm.matchesAt(haystack, start) {
-			return Match{Pattern: 0, Start: start}, true
+		if width, ok := confirm.matchWidthAt(haystack, start); ok {
+			return Match{Pattern: 0, Start: start}, width, true
 		}
 		at++
 	}
-	return Match{}, false
+	return Match{}, 0, false
 }
 
-func (p *searchPlan) findUnicodePairAnchor(haystack string, anchor *unicodePairAnchor) (Match, bool) {
+func (p *searchPlan) findUnicodePairAnchor(haystack string, anchor *unicodePairAnchor) (Match, int, bool) {
 	if anchor.pairPair.valid != 0 {
 		if p.unicodePairConfirm().valid() && unicodePairConfirmVectorEnabled() {
 			return p.findUnicodePairConfirm(haystack, anchor)
@@ -2444,11 +2276,11 @@ func (p *searchPlan) findUnicodePairAnchor(haystack string, anchor *unicodePairA
 			}
 			start := at - anchor.at
 			if start >= 0 && p.matchesSingleAt(haystack, start) {
-				return Match{Pattern: 0, Start: start}, true
+				return Match{Pattern: 0, Start: start}, 0, true
 			}
 			at++
 		}
-		return Match{}, false
+		return Match{}, 0, false
 	}
 	for at := 0; at+1 < len(haystack); {
 		at += filterSkipBytes(haystack, at, &anchor.filter)
@@ -2457,11 +2289,11 @@ func (p *searchPlan) findUnicodePairAnchor(haystack string, anchor *unicodePairA
 		}
 		start := at - anchor.at
 		if start >= 0 && pairFilterAt(haystack, start+anchor.confirmAt, &anchor.confirm) && p.matchesSingleAt(haystack, start) {
-			return Match{Pattern: 0, Start: start}, true
+			return Match{Pattern: 0, Start: start}, 0, true
 		}
 		at++
 	}
-	return Match{}, false
+	return Match{}, 0, false
 }
 
 func (p *searchPlan) findUnicodeAnchor(haystack string) (Match, bool) {
@@ -2479,41 +2311,53 @@ func (p *searchPlan) findUnicodeAnchor(haystack string) (Match, bool) {
 	return Match{}, false
 }
 
+func withZeroWidth(match Match, ok bool) (Match, int, bool) {
+	return match, 0, ok
+}
+
 func (p *searchPlan) find(haystack string) (Match, bool) {
+	match, _, ok := p.findWithWidth(haystack)
+	return match, ok
+}
+
+// findWithWidth is the package's one search decision tree. Most routes return
+// zero width; an exact raw confirmation returns the source width it has already
+// proved so Matcher.Each does not decode the same match again.
+func (p *searchPlan) findWithWidth(haystack string) (Match, int, bool) {
 	if p.maxUnits == 0 {
 		if p.empty >= 0 {
-			return Match{Pattern: p.empty}, true
+			return Match{Pattern: p.empty}, 0, true
 		}
-		return Match{}, false
+		return Match{}, 0, false
 	}
 	if p.opaqueContinuation {
-		return p.findUnfiltered(haystack)
+		return withZeroWidth(p.findUnfiltered(haystack))
 	}
 	if p.asciiRun {
-		return p.findASCIIRun(haystack)
+		return withZeroWidth(p.findASCIIRun(haystack))
 	}
 	if p.asciiPair.usable() && len(haystack) >= len(p.asciiNeedle) && p.asciiFixedAt(haystack, 0) {
-		return Match{Pattern: 0}, true
+		return Match{Pattern: 0}, 0, true
 	}
 	if p.asciiPairVBMIDisplaced() && len(haystack) >= 4096 && asciiPairVBMIEnabled() {
-		return p.findASCIIPairAnchor(haystack)
+		return withZeroWidth(p.findASCIIPairAnchor(haystack))
 	}
 	if !p.asciiPairVBMIDisplaced() && p.asciiPair.usable() && p.asciiPairPromising() {
-		return p.findASCIIPairAnchor(haystack)
+		return withZeroWidth(p.findASCIIPairAnchor(haystack))
 	}
 	if p.asciiStaticAnchor && len(haystack) >= 4096 {
-		return p.findASCIIByteAnchor(haystack, p.asciiStaticAt, p.asciiStaticKind, p.asciiStaticByte)
+		return withZeroWidth(p.findASCIIByteAnchor(haystack, p.asciiStaticAt, p.asciiStaticKind, p.asciiStaticByte))
 	}
 	if p.asciiByteAnchor {
 		if anchorAt, kind, needle, ok := p.chooseASCIIByteAnchor(haystack); ok {
-			return p.findASCIIByteAnchor(haystack, anchorAt, kind, needle)
+			return withZeroWidth(p.findASCIIByteAnchor(haystack, anchorAt, kind, needle))
 		}
 	}
 	if !p.asciiPairVBMIDisplaced() && p.asciiPair.usable() && len(haystack) >= 4096 && p.asciiPairSparse(haystack) {
-		return p.findASCIIPairAnchor(haystack)
+		return withZeroWidth(p.findASCIIPairAnchor(haystack))
 	}
 	if p.asciiProbe.usable() {
-		return p.findASCIIAnchor(haystack)
+		return withZeroWidth(p.findASCIIAnchor(haystack))
 	}
 	// k and s have width-changing Unicode orbit members, so their patterns do
 	// not enter the fixed ASCII probe above. The integrated high-byte check lets
@@ -2521,7 +2365,7 @@ func (p *searchPlan) find(haystack string) (Match, bool) {
 	// pass; any high byte falls through to the full Unicode plan unchanged.
 	if p.asciiOnly && (len(haystack) <= 4096 || p.asciiOnlyLong) {
 		if match, ok, handled := p.findASCIIOnlyAnchor(haystack, p.singlePayload); handled {
-			return match, ok
+			return match, 0, ok
 		}
 	}
 	// The tagged multi-anchor filter is one plan-owned raw transition scan for
@@ -2529,15 +2373,15 @@ func (p *searchPlan) find(haystack string) (Match, bool) {
 	// at the first completed leftmost candidate without selecting a second engine.
 	if p.rawByteMulti.usable() {
 		if len(haystack) >= 4096 && p.rawByteOrigin.usable() {
-			return p.findRawByteOrigin(haystack)
+			return withZeroWidth(p.findRawByteOrigin(haystack))
 		}
-		return p.findRawByteFixedAnchored(haystack)
+		return withZeroWidth(p.findRawByteFixedAnchored(haystack))
 	}
 	if anchor := p.chooseUnicodePairAnchor(haystack); anchor != nil {
 		return p.findUnicodePairAnchor(haystack, anchor)
 	}
 	if p.unicodeAnchor.n == 1 {
-		return p.findUnicodeAnchor(haystack)
+		return withZeroWidth(p.findUnicodeAnchor(haystack))
 	}
 	// A partial root triple set cannot skip a general UTF-8 stream because a
 	// non-ASCII-only root may occur later. On AVX-512 BW, the high-byte scan
@@ -2548,21 +2392,21 @@ func (p *searchPlan) find(haystack string) (Match, bool) {
 	const asciiTripleMinBytes = 64
 	if p.asciiPairAnchors.usable() && runtimeVectorBits() == 512 && len(haystack) >= asciiTripleMinBytes &&
 		rootSkipASCII(haystack, 0, rootExact, 0) == len(haystack) {
-		return p.findASCIIPairAnchored(haystack)
+		return withZeroWidth(p.findASCIIPairAnchored(haystack))
 	}
 	if p.patternCount > 1 && p.rootKind == rootGeneric && p.asciiTriplesComplete && p.asciiTriples.shufti.usable() &&
 		runtimeVectorBits() == 512 && len(haystack) >= asciiTripleMinBytes &&
 		rootSkipASCII(haystack, 0, rootExact, 0) == len(haystack) {
-		return p.findASCIITripleFiltered(haystack)
+		return withZeroWidth(p.findASCIITripleFiltered(haystack))
 	}
 	if p.triplesComplete && p.triples.usable() && (p.patternCount == 1 || p.rootKind == rootGeneric) {
-		return p.findFiltered(haystack)
+		return withZeroWidth(p.findFiltered(haystack))
 	}
 	if p.rootKind == rootGeneric && p.filter.usable() {
-		return p.findFiltered(haystack)
+		return withZeroWidth(p.findFiltered(haystack))
 	}
 
-	return p.findUnfiltered(haystack)
+	return withZeroWidth(p.findUnfiltered(haystack))
 }
 
 // findUnfiltered advances the decoded plan without raw byte filters. It is the

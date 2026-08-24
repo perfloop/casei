@@ -11,10 +11,10 @@ import (
 	"golang.org/x/sys/cpu"
 )
 
-// rawByteMultiAnchorVectorSkip models only the conservative table predicate
+// rawByteMultiAnchorVectorResult models only the conservative table predicate
 // implemented by rawByteMultiAnchorSkip64. Exact primary/guard checks belong
 // to tagsAt and intentionally occur after this candidate screen.
-func rawByteMultiAnchorVectorSkip(s string, at int, filter *rawByteMultiAnchorFilter) int {
+func rawByteMultiAnchorVectorResult(s string, at int, filter *rawByteMultiAnchorFilter) (int, byte) {
 	start := at
 	for len(s)-at >= 65+int(filter.maxConfirmOffset) {
 		for lane := 0; lane < 64; lane++ {
@@ -27,12 +27,12 @@ func rawByteMultiAnchorVectorSkip(s string, at int, filter *rawByteMultiAnchorFi
 				tags |= primary & confirm
 			}
 			if tags != 0 {
-				return at - start + lane
+				return at - start + lane, tags
 			}
 		}
 		at += 64
 	}
-	return at - start
+	return at - start, 0
 }
 
 // rawByteMultiAnchorDenseNoConfirmPrefix constructs a fixed counterexample to
@@ -58,7 +58,8 @@ func rawByteMultiAnchorDenseNoConfirmPrefix(t *testing.T, filter *rawByteMultiAn
 			}
 		}
 		candidate := string(buf[:256])
-		if occupied >= 2 && rawByteMultiAnchorVectorSkip(candidate, 0, filter) >= 192 {
+		skipped, _ := rawByteMultiAnchorVectorResult(candidate, 0, filter)
+		if occupied >= 2 && skipped >= 192 {
 			return candidate
 		}
 	}
@@ -84,13 +85,13 @@ func TestRawByteMultiAnchorDenseEpochMatchesTableModel(t *testing.T) {
 		{"uniform_dense_no_confirm", strings.Repeat(prefix, 1<<14)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			want := rawByteMultiAnchorVectorSkip(tc.haystack, 0, filter)
+			want, wantTags := rawByteMultiAnchorVectorResult(tc.haystack, 0, filter)
 			if want < len(tc.haystack)-128 {
 				t.Fatalf("fixture unexpectedly has a vector tag at %d", want)
 			}
-			got := rawByteMultiAnchorSkip64(unsafe.StringData(tc.haystack), len(tc.haystack), filter)
-			if got != want {
-				t.Fatalf("rawByteMultiAnchorSkip64 = %d, want %d", got, want)
+			got, gotTags := rawByteMultiAnchorSkip64(unsafe.StringData(tc.haystack), len(tc.haystack), filter)
+			if got != want || gotTags != wantTags {
+				t.Fatalf("rawByteMultiAnchorSkip64 = %d,%02x, want %d,%02x", got, gotTags, want, wantTags)
 			}
 		})
 	}
@@ -158,10 +159,10 @@ func TestRawByteMultiAnchorVBMISkip64MatchesTableModel(t *testing.T) {
 		}
 		haystack := string(input)
 		for at := range haystack {
-			want := rawByteMultiAnchorVectorSkip(haystack, at, filter)
-			got := rawByteMultiAnchorSkip64((*byte)(unsafe.Add(unsafe.Pointer(unsafe.StringData(haystack)), at)), len(haystack)-at, filter)
-			if got != want {
-				t.Fatalf("length %d at %d: rawByteMultiAnchorSkip64 = %d, want %d", length, at, got, want)
+			want, wantTags := rawByteMultiAnchorVectorResult(haystack, at, filter)
+			got, gotTags := rawByteMultiAnchorSkip64((*byte)(unsafe.Add(unsafe.Pointer(unsafe.StringData(haystack)), at)), len(haystack)-at, filter)
+			if got != want || gotTags != wantTags {
+				t.Fatalf("length %d at %d: rawByteMultiAnchorSkip64 = %d,%02x, want %d,%02x", length, at, got, gotTags, want, wantTags)
 			}
 		}
 	}

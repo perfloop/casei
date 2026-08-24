@@ -87,24 +87,6 @@ func rawByteNearMissCandidatesAtLeast(period, bytes int) string {
 	return rawByteNearMissCandidates(period, (bytes+period-1)/period)
 }
 
-// rawBytePublicationCandidates starts with one complete literal and leaves an
-// independently dense suffix. It is shared by enumeration tests that need a
-// concrete accepted callback before exercising later work.
-func rawBytePublicationCandidates(period int) string {
-	return rawByteCyrillicPatterns[0] + rawByteFalseCandidatesAtLeast(period, rawBytePublicationCorpusBytes)
-}
-
-// rawByteMatchedCandidatesAtLeast plants non-overlapping pattern-zero matches
-// at a fixed byte period for enumeration and tail tests.
-func rawByteMatchedCandidatesAtLeast(period, bytes int) string {
-	groups := (bytes + period - 1) / period
-	out := []byte(strings.Repeat("x", period*groups))
-	for at := 0; at+len(rawByteCyrillicPatterns[0]) <= len(out); at += period {
-		copy(out[at:], rawByteCyrillicPatterns[0])
-	}
-	return string(out)
-}
-
 func rawByteLongPrefixPatterns() []string {
 	prefix := strings.Repeat("Д", 100)
 	return []string{prefix + "a", prefix + "b"}

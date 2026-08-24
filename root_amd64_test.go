@@ -3,12 +3,68 @@
 package casei
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 	"unsafe"
 
 	"golang.org/x/sys/cpu"
 )
+
+func BenchmarkLiteralSkipExactCeiling(b *testing.B) {
+	if !cpu.X86.HasAVX512F || !cpu.X86.HasAVX512BW {
+		b.Skip("AVX-512 BW exact-byte path is disabled")
+	}
+	input := []byte(strings.Repeat("x", 5<<20))
+	target := uint64(' ') * byteOnes
+	b.Run("candidate", func(b *testing.B) {
+		b.SetBytes(int64(len(input)))
+		for b.Loop() {
+			_ = literalSkipExact64(unsafe.SliceData(input), len(input), target)
+		}
+	})
+	b.Run("index_byte", func(b *testing.B) {
+		b.SetBytes(int64(len(input)))
+		for b.Loop() {
+			_ = bytes.IndexByte(input, ' ')
+		}
+	})
+}
+
+func TestLiteralSkipExact64MatchesModel(t *testing.T) {
+	if !cpu.X86.HasAVX512F || !cpu.X86.HasAVX512BW {
+		t.Skip("AVX-512 BW exact-byte path is disabled")
+	}
+	target := uint64(' ') * byteOnes
+	check := func(input []byte, n int) {
+		t.Helper()
+		full := n &^ 63
+		want := bytes.IndexByte(input[:full], ' ')
+		if want < 0 {
+			want = full
+		}
+		if got := literalSkipExact64(unsafe.SliceData(input), n, target); got != want {
+			t.Fatalf("n=%d: skip=%d want=%d", n, got, want)
+		}
+	}
+	lengths := []int{0, 1, 63, 64, 65, 127, 128, 129, 255, 256, 257, 511, 512, 513, 1023, 1024, 1025, 4095}
+	positions := []int{0, 1, 63, 64, 127, 128, 191, 192, 255, 256, 319, 320, 383, 384, 447, 448, 511, 512, 1023, 4094}
+	for _, n := range lengths {
+		for _, alignment := range []int{0, 1, 31, 63} {
+			backing := []byte(strings.Repeat("x", alignment+n+64))
+			input := backing[alignment : alignment+n]
+			check(input, n)
+			for _, at := range positions {
+				if at >= n {
+					continue
+				}
+				input[at] = ' '
+				check(input, n)
+				input[at] = 'x'
+			}
+		}
+	}
+}
 
 func TestPairSetSkip(t *testing.T) {
 	filter := rootFilter{

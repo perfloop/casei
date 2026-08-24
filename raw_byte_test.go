@@ -203,6 +203,46 @@ func TestRawByteTokenPlanPreservesFallbackOffsetsAndTies(t *testing.T) {
 	}
 }
 
+func TestRawByteOriginGatePreservesFind(t *testing.T) {
+	plan := newSearchPlan(rawByteCyrillicPatterns)
+	if !plan.rawByteMulti.usable() || !plan.rawByteOrigin.usable() {
+		t.Fatal("eligible plan did not compile the tagged filter and origin gate")
+	}
+	matcher := NewMatcher(rawByteCyrillicPatterns)
+	check := func(name, haystack string) {
+		t.Helper()
+		want, wantOK := refFind(haystack, rawByteCyrillicPatterns)
+		for _, route := range []struct {
+			name string
+			find func(string) (Match, bool)
+		}{
+			{"direct", plan.findRawByteOrigin},
+			{"public", matcher.Find},
+		} {
+			got, gotOK := route.find(haystack)
+			if gotOK != wantOK || gotOK && got != want {
+				t.Fatalf("%s/%s: Find(%x) = %+v,%t; want %+v,%t", name, route.name, haystack, got, gotOK, want, wantOK)
+			}
+		}
+	}
+
+	check("absent", strings.Repeat("x", 5<<10))
+	check("unrelated-earlier-gate", strings.Repeat("x", 97)+" "+strings.Repeat("x", 5<<10)+rawByteCyrillicPatterns[3])
+	check("opaque-before-match", strings.Repeat("x", 5<<10)+"\xff"+rawByteCyrillicPatterns[2])
+	for alignment := 0; alignment < 64; alignment++ {
+		// U+1C81 is a three-byte rendering of the pattern's initial Д. Its
+		// varying source width exercises the gate's maximum-prefix lookback.
+		check("width-changing-prefix", strings.Repeat("x", 4096+alignment)+"ᲁЖОН УОТСОН")
+	}
+
+	if gate := rawByteOriginGateFor([]string{"абв", "где"}); gate.usable() {
+		t.Fatalf("patterns with no common fold-invariant ASCII byte compiled gate %+v", gate)
+	}
+	if gate := rawByteOriginGateFor([]string{"абв ", "где \xff"}); gate.usable() {
+		t.Fatalf("malformed pattern compiled gate %+v", gate)
+	}
+}
+
 type rawByteEachResult struct {
 	match Match
 	width int
@@ -329,12 +369,12 @@ func TestRawByteMultiAnchorSkipNeverPassesAConfirmedTag(t *testing.T) {
 	for alignment := 0; alignment < 64; alignment++ {
 		haystack := strings.Repeat("x", alignment+128) + rawByteCyrillicPatterns[alignment%len(rawByteCyrillicPatterns)] + strings.Repeat("x", 96)
 		for at := range haystack {
-			skipped := rawByteMultiAnchorSkipBytes(haystack, at, filter)
+			skipped, _ := rawByteMultiAnchorSkipBytes(haystack, at, filter)
 			if skipped < 0 || at+skipped > len(haystack) {
 				t.Fatalf("alignment %d at %d: invalid skip %d", alignment, at, skipped)
 			}
 			for candidate := at; candidate < at+skipped; candidate++ {
-				if tags := filter.tagsAt(haystack, candidate); tags != 0 {
+				if tags := filter.tagsAt(haystack, candidate, 0xff); tags != 0 {
 					t.Fatalf("alignment %d at %d: skip %d passed confirmed tag %08b at %d", alignment, at, skipped, tags, candidate)
 				}
 			}
@@ -367,12 +407,12 @@ func TestRawByteMultiAnchorScalarScreenNeverPassesConfirmedTag(t *testing.T) {
 	}
 	for inputIndex, haystack := range inputs {
 		for at := range haystack {
-			skipped := rawByteMultiAnchorSkipScalar(haystack, at, filter)
+			skipped, _ := rawByteMultiAnchorSkipScalar(haystack, at, filter)
 			if skipped < 0 || at+skipped > len(haystack) {
 				t.Fatalf("input %d at %d: invalid scalar skip %d", inputIndex, at, skipped)
 			}
 			for candidate := at; candidate < at+skipped; candidate++ {
-				if tags := filter.tagsAt(haystack, candidate); tags != 0 {
+				if tags := filter.tagsAt(haystack, candidate, 0xff); tags != 0 {
 					t.Fatalf("input %d at %d: scalar skip %d passed confirmed tag %08b at %d", inputIndex, at, skipped, tags, candidate)
 				}
 			}
