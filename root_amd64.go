@@ -70,7 +70,7 @@ func pairShuftiSkip64(ptr *byte, n int, filter *pairShuftiFilter) int
 func pairShuftiWithOnesSkip64(ptr *byte, n int, filter *pairShuftiFilter) int
 func pairPairSkip64(ptr *byte, n int, filter *pairPairFilter) int
 func pairPairVBMISkip64(ptr *byte, n int, filter *pairPairVBMIFilter) int
-func pairPairConfirmVBMI64(ptr *byte, n int, filter *pairPairVBMIFilter, confirm *byte) (int, int)
+func pairPairConfirmVBMI64(ptr *byte, n int, filter *pairPairVBMIFilter, confirm *byte) (ret, width int)
 func pairPairWordSkip64(ptr *byte, n int, filter *pairPairFilter) int
 func pairSecondSkip32(ptr *byte, n int, filter *rootFilter) int
 func pairSecondSkip64(ptr *byte, n int, filter *rootFilter) int
@@ -81,7 +81,7 @@ func filterSkip64(ptr *byte, n int, filter *rootFilter) int
 func tripleSkip32(ptr *byte, n int, filter *tripleFilter) int
 func tripleSkip64(ptr *byte, n int, filter *tripleFilter) int
 func tripleShuftiSkip64(ptr *byte, n int, filter *tripleShuftiFilter) int
-func rawByteMultiAnchorSkip64(ptr *byte, n int, filter *rawByteMultiAnchorFilter) (int, byte)
+func rawByteMultiAnchorSkip64(ptr *byte, n int, filter *rawByteMultiAnchorFilter) (ret int, tags byte)
 func asciiPairAnchorSkip64(ptr *byte, n int, filter *asciiPairAnchorFilter) int
 func asciiPairAnchorVBMISkip64(ptr *byte, n int, filter *asciiPairVBMIAnchorFilter) int
 func tripleSharedPrefixSkip64(ptr *byte, n int, filter *tripleFilter) int
