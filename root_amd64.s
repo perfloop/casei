@@ -189,6 +189,84 @@ literaldone64:
 	VZEROUPPER
 	RET
 
+// literalSkipExact64 is the exact-byte specialization of literalSkip64. Fixed
+// literal anchors do not need a zero fold vector or its per-block VPOR. Four
+// memory-source comparisons scan independent 64-byte blocks on the no-hit path.
+TEXT ·literalSkipExact64(SB), NOSPLIT, $0-32
+	MOVQ ptr+0(FP), AX
+	MOVQ n+8(FP), DX
+	MOVQ $-1, CX
+	KMOVQ CX, K1
+	MOVQ target+16(FP), CX
+	VPBROADCASTB CX, K1, Z1
+
+literalexactquad64:
+	CMPQ DX, $256
+	JL literalexactdouble64
+	VPCMPEQB (AX), Z1, K1, K2
+	VPCMPEQB 64(AX), Z1, K1, K3
+	VPCMPEQB 128(AX), Z1, K1, K4
+	VPCMPEQB 192(AX), Z1, K1, K5
+	KORTESTQ K2, K3
+	JNE literalexactfirstpair64
+	KORTESTQ K4, K5
+	JNE literalexactlastpair64
+	ADDQ $256, AX
+	SUBQ $256, DX
+	JMP literalexactquad64
+literalexactfirstpair64:
+	KTESTQ K2, K2
+	JNE literalexactstop64
+	KMOVQ K3, CX
+	BSFQ CX, CX
+	ADDQ $64, AX
+	ADDQ CX, AX
+	JMP literalexactdone64
+literalexactlastpair64:
+	KTESTQ K4, K4
+	JNE literalexactblock264
+	KMOVQ K5, CX
+	BSFQ CX, CX
+	ADDQ $192, AX
+	ADDQ CX, AX
+	JMP literalexactdone64
+literalexactblock264:
+	KMOVQ K4, CX
+	BSFQ CX, CX
+	ADDQ $128, AX
+	ADDQ CX, AX
+	JMP literalexactdone64
+
+literalexactdouble64:
+	CMPQ DX, $128
+	JL literalexactsingle64
+	VPCMPEQB (AX), Z1, K1, K2
+	VPCMPEQB 64(AX), Z1, K1, K3
+	KORTESTQ K2, K3
+	JNE literalexactfirstpair64
+	ADDQ $128, AX
+	SUBQ $128, DX
+	JMP literalexactdouble64
+
+literalexactsingle64:
+	CMPQ DX, $64
+	JL literalexactdone64
+	VPCMPEQB (AX), Z1, K1, K2
+	KTESTQ K2, K2
+	JNE literalexactstop64
+	ADDQ $64, AX
+	SUBQ $64, DX
+	JMP literalexactsingle64
+literalexactstop64:
+	KMOVQ K2, CX
+	BSFQ CX, CX
+	ADDQ CX, AX
+literalexactdone64:
+	SUBQ ptr+0(FP), AX
+	MOVQ AX, ret+24(FP)
+	VZEROUPPER
+	RET
+
 // runMask32 returns one equality bit per byte for a repeated-token block.
 TEXT ·runMask32(SB), NOSPLIT, $0-28
 	MOVQ ptr+0(FP), AX

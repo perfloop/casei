@@ -54,6 +54,7 @@ func rootSkip32(ptr *byte, n int, target, fold uint64) int
 func rootSkip64(ptr *byte, n int, target, fold uint64) int
 func literalSkip32(ptr *byte, n int, target, fold uint64) int
 func literalSkip64(ptr *byte, n int, target, fold uint64) int
+func literalSkipExact64(ptr *byte, n int, target uint64) int
 func runMask32(ptr *byte, target, fold uint64) uint32
 func runMask64(ptr *byte, target, fold uint64) uint64
 func probeSkip32(ptr *byte, n int, probe *asciiProbe) int
@@ -157,6 +158,28 @@ func literalSkipASCII(s string, at int, kind uint8, needle byte) int {
 		if value == needle {
 			break
 		}
+		at++
+	}
+	return at - start
+}
+
+// literalSkipExactASCII is the fixed-byte specialization used by a compiled
+// universal literal. It scans through high and malformed bytes just like
+// literalSkipASCII, but avoids the generic fold-zero vector operation.
+func literalSkipExactASCII(s string, at int, needle byte) int {
+	start := at
+	remaining := len(s) - at
+	target := uint64(needle) * byteOnes
+	if cpu.X86.HasAVX512F && cpu.X86.HasAVX512BW && remaining >= 64 {
+		full := remaining &^ 63
+		ptr := (*byte)(unsafe.Add(unsafe.Pointer(unsafe.StringData(s)), at))
+		skipped := literalSkipExact64(ptr, remaining, target)
+		at += skipped
+		if skipped < full {
+			return at - start
+		}
+	}
+	for at < len(s) && s[at] != needle {
 		at++
 	}
 	return at - start

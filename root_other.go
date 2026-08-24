@@ -64,6 +64,10 @@ func literalSkipASCII(s string, at int, kind uint8, needle byte) int {
 	return at - start
 }
 
+func literalSkipExactASCII(s string, at int, needle byte) int {
+	return literalSkipASCII(s, at, rootExact, needle)
+}
+
 func probeSkipBytes(s string, at, candidates int, probe *asciiProbe) int {
 	start := at
 	for at-start < candidates {

@@ -76,6 +76,7 @@ type searchPlan struct {
 	// eligible multi-pattern enumeration. It is compiled into the plan with the
 	// raw transition map; it never depends on a caller's haystack or history.
 	rawByteMulti       rawByteMultiAnchorFilter
+	rawByteOrigin      rawByteOriginGate
 	runes              map[rune]uint32
 	opaqueContinuation bool
 
@@ -2527,6 +2528,9 @@ func (p *searchPlan) find(haystack string) (Match, bool) {
 	// both Find and Each. Its exact replay decides the result, so Find can stop
 	// at the first completed leftmost candidate without selecting a second engine.
 	if p.rawByteMulti.usable() {
+		if len(haystack) >= 4096 && p.rawByteOrigin.usable() {
+			return p.findRawByteOrigin(haystack)
+		}
 		return p.findRawByteFixedAnchored(haystack)
 	}
 	if anchor := p.chooseUnicodePairAnchor(haystack); anchor != nil {

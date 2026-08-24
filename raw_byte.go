@@ -112,6 +112,9 @@ func (p *searchPlan) makeRawByteTokenPlan(patterns []string) {
 	}
 	p.singleTokens = p.opaque[:0]
 	p.makeRawByteMultiAnchorFilter(patterns)
+	if p.rawByteMulti.usable() {
+		p.rawByteOrigin = rawByteOriginGateFor(patterns)
+	}
 }
 
 func (p *searchPlan) hasRawByteTokenPlan() bool {
@@ -209,6 +212,17 @@ type rawByteMultiAnchorFilter struct {
 	anchors                    [rawByteMultiAnchorGroups]rawByteMultiAnchor
 }
 
+// rawByteOriginGate records an exact ASCII byte found in every rendering of
+// every raw-filter literal. maxPrefix bounds its latest folded source offset;
+// a Find start before the first byte minus that bound is impossible.
+type rawByteOriginGate struct {
+	byte      byte
+	maxPrefix uint16
+	valid     uint8
+}
+
+func (gate rawByteOriginGate) usable() bool { return gate.valid != 0 }
+
 func (filter *rawByteMultiAnchorFilter) usable() bool {
 	return filter != nil && filter.valid != 0
 }
@@ -234,6 +248,77 @@ func (filter *rawByteMultiAnchorFilter) tagDiverse() bool {
 		}
 	}
 	return false
+}
+
+// rawByteOriginGateFor intersects fixed ASCII runes across the literals. A
+// chosen rune encodes as the same byte in every simple-fold spelling. For each
+// literal the earliest such occurrence minimizes its worst-case prefix; the
+// global maximum is the safe Find lookback bound.
+func rawByteOriginGateFor(patterns []string) rawByteOriginGate {
+	var common [utf8.RuneSelf]bool
+	for i := range common {
+		common[i] = true
+	}
+	var maxPrefix [utf8.RuneSelf]uint16
+	for _, pattern := range patterns {
+		var seen [utf8.RuneSelf]bool
+		var localPrefix [utf8.RuneSelf]uint16
+		prefix := 0
+		for at := 0; at < len(pattern); {
+			r, size := utf8.DecodeRuneInString(pattern[at:])
+			if r == utf8.RuneError && size == 1 {
+				return rawByteOriginGate{}
+			}
+			if r < utf8.RuneSelf && unicode.SimpleFold(r) == r {
+				value := byte(r)
+				if !seen[value] || prefix < int(localPrefix[value]) {
+					seen[value] = true
+					localPrefix[value] = uint16(prefix)
+				}
+			}
+			maxWidth := 0
+			for member := r; ; member = unicode.SimpleFold(member) {
+				var encoded [utf8.UTFMax]byte
+				if width := utf8.EncodeRune(encoded[:], member); width > maxWidth {
+					maxWidth = width
+				}
+				if unicode.SimpleFold(member) == r {
+					break
+				}
+			}
+			prefix += maxWidth
+			if prefix > int(^uint16(0)) {
+				return rawByteOriginGate{}
+			}
+			at += size
+		}
+		for value := range common {
+			if !seen[value] {
+				common[value] = false
+				continue
+			}
+			if localPrefix[value] > maxPrefix[value] {
+				maxPrefix[value] = localPrefix[value]
+			}
+		}
+	}
+
+	frequency := rawByteMultiAnchorFrequency(patterns)
+	best, bestScore := -1, uint16(^uint16(0))
+	for value, present := range common {
+		if !present {
+			continue
+		}
+		score := frequency[value]
+		if best < 0 || score < bestScore || score == bestScore &&
+			(maxPrefix[value] < maxPrefix[best] || maxPrefix[value] == maxPrefix[best] && value < best) {
+			best, bestScore = value, score
+		}
+	}
+	if best < 0 {
+		return rawByteOriginGate{}
+	}
+	return rawByteOriginGate{byte: byte(best), maxPrefix: maxPrefix[best], valid: 1}
 }
 
 func rawByteMultiAnchorPairSetFor(r rune) (rawByteMultiAnchorPairSet, bool) {
@@ -652,6 +737,26 @@ func (p *searchPlan) findRawByteFixedAnchored(haystack string) (Match, bool) {
 		return false
 	})
 	return result, found
+}
+
+// findRawByteOrigin begins the tagged scan at the only suffix that can contain
+// a match. The exact-byte scan and the tagged/raw-plan replay retain authority
+// over malformed input, fold spelling, leftmost order, and pattern-ID ties.
+func (p *searchPlan) findRawByteOrigin(haystack string) (Match, bool) {
+	gate := p.rawByteOrigin
+	at := literalSkipExactASCII(haystack, 0, gate.byte)
+	if at == len(haystack) {
+		return Match{}, false
+	}
+	from := at - int(gate.maxPrefix)
+	if from < 0 {
+		from = 0
+	}
+	match, ok := p.findRawByteFixedAnchored(haystack[from:])
+	if ok {
+		match.Start += from
+	}
+	return match, ok
 }
 
 // eachRawByteFixedAnchored enumerates with one shared tagged interior-pair
