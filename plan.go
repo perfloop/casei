@@ -3032,8 +3032,8 @@ func (p *searchPlan) findPartitionedASCIIWithStats(haystack string, firstHigh in
 			if haystack[at] < utf8.RuneSelf {
 				continue
 			}
-			if recentHighCount >= asciiPartitionMaxHigh &&
-				at-recentHigh[recentHighCount%asciiPartitionMaxHigh] < asciiPartitionSampleBytes {
+			if recentHighCount >= asciiPartitionMaxHigh-1 &&
+				at-recentHigh[(recentHighCount-(asciiPartitionMaxHigh-1))%asciiPartitionMaxHigh] < asciiPartitionSampleBytes {
 				return false
 			}
 			recentHigh[recentHighCount%asciiPartitionMaxHigh] = at
