@@ -238,6 +238,16 @@ func TestASCIIPartitionRejectsDenseExceptionalInput(t *testing.T) {
 	}
 }
 
+func TestASCIIPartitionKeepsCrossSpanMatchLeftmost(t *testing.T) {
+	patterns := append(asciiPartitionPatterns(), "abcdefgh€", "defg")
+	matcher := NewMatcher(patterns)
+	haystack := strings.Repeat("x", 70) + "abcdefgh€" + strings.Repeat("x", 512)
+	want := Match{Pattern: len(asciiPartitionPatterns()), Start: 70}
+	if got, ok := matcher.Find(haystack); !ok || got != want {
+		t.Fatalf("cross-span Find = %+v,%t; want %+v,true", got, ok, want)
+	}
+}
+
 func TestASCIIPartitionFindAllocatesNothing(t *testing.T) {
 	matcher := NewMatcher(asciiPartitionPatterns())
 	haystack := strings.Repeat("x", 64) + "€" + strings.Repeat("x", 64<<10)

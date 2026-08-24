@@ -3022,6 +3022,8 @@ func (p *searchPlan) findPartitionedASCIIWithStats(haystack string, firstHigh in
 
 	cursor := 0
 	spanStart := firstHigh
+	pendingMatch := Match{}
+	pendingOK := false
 	for {
 		spanEnd := spanStart
 		for spanEnd < len(haystack) && (haystack[spanEnd] >= utf8.RuneSelf || haystack[spanEnd] == 0) {
@@ -3083,21 +3085,36 @@ func (p *searchPlan) findPartitionedASCIIWithStats(haystack string, firstHigh in
 			at = nextSpanEnd
 		}
 
+		asciiMatch := pendingMatch
+		asciiOK := pendingOK
+		pendingOK = false
 		if cursor < spanStart {
 			if stats != nil {
 				stats.asciiCandidateBytes += spanStart - cursor
 			}
-			if match, ok := p.findASCIIRegion(haystack, cursor, spanStart, starts); ok {
-				return match, true
+			regionMatch, regionOK := p.findASCIIRegion(haystack, cursor, spanStart, starts)
+			if regionOK && (!asciiOK || regionMatch.Start < asciiMatch.Start ||
+				regionMatch.Start == asciiMatch.Start && regionMatch.Pattern < asciiMatch.Pattern) {
+				asciiMatch, asciiOK = regionMatch, true
 			}
+		}
+		if asciiOK && asciiMatch.Start < windowStart {
+			return asciiMatch, true
 		}
 		if stats != nil {
 			stats.decodedWindowBytes += windowEnd - windowStart
 			stats.decodedWindows++
 		}
-		if match, ok := p.findUnfilteredWithStarts(haystack[windowStart:windowEnd], starts); ok {
-			match.Start += windowStart
-			return match, true
+		windowMatch, windowOK := p.findUnfilteredWithStarts(haystack[windowStart:windowEnd], starts)
+		if windowOK {
+			windowMatch.Start += windowStart
+		}
+		if asciiOK && (!windowOK || asciiMatch.Start < windowMatch.Start ||
+			asciiMatch.Start == windowMatch.Start && asciiMatch.Pattern < windowMatch.Pattern) {
+			return asciiMatch, true
+		}
+		if windowOK {
+			return windowMatch, true
 		}
 
 		if nextStart < 0 {
@@ -3111,8 +3128,8 @@ func (p *searchPlan) findPartitionedASCIIWithStats(haystack string, firstHigh in
 		}
 
 		// The next group starts after this group's widened window. Search the
-		// intervening ASCII suffix, including the overlap after the exceptional
-		// span, before moving to the next decoded window.
+		// ASCII gap before its decoded window; starts in that window's overlap
+		// are checked by the next iteration against cross-span matches.
 		nextWindowStart := nextStart - maxBytes
 		if nextWindowStart < 0 {
 			nextWindowStart = 0
@@ -3122,7 +3139,10 @@ func (p *searchPlan) findPartitionedASCIIWithStats(haystack string, firstHigh in
 				stats.asciiCandidateBytes += nextStart - lastHighEnd
 			}
 			if match, ok := p.findASCIIRegion(haystack, lastHighEnd, nextStart, starts); ok {
-				return match, true
+				if match.Start < nextWindowStart {
+					return match, true
+				}
+				pendingMatch, pendingOK = match, true
 			}
 		}
 		cursor = nextWindowStart
