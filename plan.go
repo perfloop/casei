@@ -3001,9 +3001,9 @@ func (p *searchPlan) findASCIIRegion(haystack string, start, end int, starts []i
 
 // findPartitionedASCII resumes after the first high byte. It visits each
 // maximal ASCII run with the existing candidate transition and decodes only a
-// coalesced window around exceptional spans. The run preceding a span ends at
-// spanStart-maxBytes, so every match start it can return is wholly before the
-// span; the decoded window owns the remaining starts and all cross-span paths.
+// coalesced window around exceptional spans. The ASCII transition stops at the
+// exceptional byte, so it can confirm matches that finish before that byte;
+// the decoded window owns starts whose source crosses the span.
 func (p *searchPlan) findPartitionedASCII(haystack string, firstHigh int) (Match, bool) {
 	return p.findPartitionedASCIIWithStats(haystack, firstHigh, nil)
 }
@@ -3083,11 +3083,11 @@ func (p *searchPlan) findPartitionedASCIIWithStats(haystack string, firstHigh in
 			at = nextSpanEnd
 		}
 
-		if cursor < windowStart {
+		if cursor < spanStart {
 			if stats != nil {
-				stats.asciiCandidateBytes += windowStart - cursor
+				stats.asciiCandidateBytes += spanStart - cursor
 			}
-			if match, ok := p.findASCIIRegion(haystack, cursor, windowStart, starts); ok {
+			if match, ok := p.findASCIIRegion(haystack, cursor, spanStart, starts); ok {
 				return match, true
 			}
 		}

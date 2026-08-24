@@ -117,6 +117,7 @@ func TestASCIIPartitionPositionDensityAndBoundaries(t *testing.T) {
 		strings.Repeat("x", 64) + "\x00" + "abc0",
 		strings.Repeat("x", 64) + "abc0" + "€" + "def1",
 		strings.Repeat("x", 64) + "€" + strings.Repeat("x", 64) + "\xff" + "ghi2",
+		strings.Repeat("x", 76) + "jkl0" + strings.Repeat("x", 5) + "\xff" + strings.Repeat("x", 512),
 		string(boundary),
 		string(interWindow),
 	} {
