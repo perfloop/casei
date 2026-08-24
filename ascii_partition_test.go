@@ -210,6 +210,33 @@ func TestASCIIPartitionReportsWorkSplit(t *testing.T) {
 	}
 }
 
+func TestASCIIPartitionRejectsDenseExceptionalInput(t *testing.T) {
+	if runtimeVectorBits() != 512 {
+		t.Skipf("ASCII partition is runtime-gated to AVX-512; vector width %d", runtimeVectorBits())
+	}
+	plan := newSearchPlan(asciiPartitionPatterns())
+	for _, tc := range []struct {
+		name     string
+		interval int
+		value    byte
+	}{
+		{name: "high", interval: 32, value: 0xe2},
+		{name: "nul", interval: 128, value: 0},
+	} {
+		input := []byte(strings.Repeat("x", 1<<20))
+		for at := 0; at < len(input); at += tc.interval {
+			input[at] = tc.value
+		}
+		var stats asciiPartitionStats
+		if _, ok := plan.findUnfilteredWithStats(string(input), &stats); ok {
+			t.Fatalf("%s setup unexpectedly matched", tc.name)
+		}
+		if stats.fallbackEntries != 1 || stats.decodedWindows != 0 {
+			t.Fatalf("%s dense input was partitioned: %+v", tc.name, stats)
+		}
+	}
+}
+
 func TestASCIIPartitionFindAllocatesNothing(t *testing.T) {
 	matcher := NewMatcher(asciiPartitionPatterns())
 	haystack := strings.Repeat("x", 64) + "€" + strings.Repeat("x", 64<<10)

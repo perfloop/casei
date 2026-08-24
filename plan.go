@@ -2440,7 +2440,7 @@ func (p *searchPlan) findWithWidth(haystack string) (Match, int, bool) {
 func (p *searchPlan) findUnfiltered(haystack string) (Match, bool) {
 	if p.asciiPartitionUsable() && !asciiPartitionTailBoundary(haystack) {
 		firstHigh := rootSkipASCII(haystack, 0, rootExact, 0)
-		if firstHigh < len(haystack) {
+		if firstHigh < len(haystack) && asciiPartitionSparseEnough(haystack, firstHigh) {
 			return p.findPartitionedASCII(haystack, firstHigh)
 		}
 	}
@@ -2465,7 +2465,7 @@ func (p *searchPlan) findUnfilteredWithStats(haystack string, stats *asciiPartit
 	}
 	if p.asciiPartitionUsable() && !asciiPartitionTailBoundary(haystack) {
 		firstHigh := rootSkipASCII(haystack, 0, rootExact, 0)
-		if firstHigh < len(haystack) {
+		if firstHigh < len(haystack) && asciiPartitionSparseEnough(haystack, firstHigh) {
 			if stats != nil {
 				stats.firstExceptional = firstHigh
 				return p.findPartitionedASCIIWithStats(haystack, firstHigh, stats)
@@ -2502,6 +2502,37 @@ func asciiPartitionTailBoundary(haystack string) bool {
 		}
 	}
 	return false
+}
+
+// asciiPartitionSparseEnough rejects exceptional-byte densities for which the
+// boundary work and repeated decoded transitions cost more than the legacy
+// executor. The sample is deliberately capped: sparse inputs retain the
+// vector ASCII gaps, while dense or NUL-containing inputs stay on their old path.
+func asciiPartitionSparseEnough(haystack string, firstExceptional int) bool {
+	const (
+		sampleBytes = 1024
+		maxHigh     = 16
+	)
+	end := firstExceptional + sampleBytes
+	if end > len(haystack) {
+		end = len(haystack)
+	}
+	high := 0
+	for at := firstExceptional; at < end; {
+		at += rootSkipASCII(haystack[:end], at, rootExact, 0)
+		if at >= end {
+			break
+		}
+		if haystack[at] == 0 {
+			return false
+		}
+		high++
+		if high >= maxHigh {
+			return false
+		}
+		at++
+	}
+	return true
 }
 
 // findUnfilteredDecodedLegacy retains the original decoded prefix and
