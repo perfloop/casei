@@ -15,7 +15,7 @@ The current receipts say:
 
 - [`runner/main.go`](runner/main.go) compiles a `Matcher` once, validates full
   non-overlapping enumeration against an independent simple-fold oracle, then
-  times `Matcher.Each` with only the count or span sink.
+  times `Matcher.Each` or a single `Matcher.Find` query with only a scalar sink.
 - [`prepare.py`](prepare.py) registers that runner on all 18 performance rows
   and three behavior checks in the pinned Rebar checkout.
 - [`results/`](results/) contains three CSV passes from each host and their

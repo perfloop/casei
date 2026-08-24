@@ -236,6 +236,20 @@ func TestASCIIPartitionRejectsDenseExceptionalInput(t *testing.T) {
 			t.Fatalf("%s dense input was partitioned: %+v", tc.name, stats)
 		}
 	}
+
+	lateDense := []byte(strings.Repeat("x", 1<<20))
+	lateDense[0] = 0xe2
+	for at := 4096; at < len(lateDense); at += 32 {
+		lateDense[at] = 0xe2
+	}
+	var stats asciiPartitionStats
+	if _, ok := plan.findUnfilteredWithStats(string(lateDense), &stats); ok {
+		t.Fatal("late dense setup unexpectedly matched")
+	}
+	if stats.fallbackEntries != 1 {
+		t.Fatalf("late dense input was not rejected while discovering spans: %+v", stats)
+	}
+
 }
 
 func TestASCIIPartitionKeepsCrossSpanMatchLeftmost(t *testing.T) {

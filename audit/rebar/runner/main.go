@@ -51,7 +51,7 @@ func run() error {
 	if !c.caseInsensitive {
 		return errors.New("casei runner only accepts case-insensitive benchmarks")
 	}
-	if c.model != "count" && c.model != "count-spans" {
+	if c.model != "count" && c.model != "count-spans" && c.model != "find" {
 		return fmt.Errorf("unsupported model %q", c.model)
 	}
 	patterns, err := literalAlternation(c.patterns)
@@ -64,6 +64,9 @@ func run() error {
 		return err
 	}
 	bench := func() int {
+		if c.model == "find" {
+			return findMatch(c.haystack, matcher)
+		}
 		return countMatches(c.haystack, matcher, spans)
 	}
 
@@ -87,6 +90,16 @@ func run() error {
 		}
 	}
 	return out.Flush()
+}
+
+// findMatch is the timed single-query operation for Find-shaped workloads.
+// verifyEnumeration still validates the complete non-overlapping contract once
+// before the runner starts its warm-up and measurement loops.
+func findMatch(haystack string, matcher *casei.Matcher) int {
+	if _, ok := matcher.Find(haystack); ok {
+		return 1
+	}
+	return 0
 }
 
 // countMatches is the timed Rebar operation: one compiled Matcher enumeration

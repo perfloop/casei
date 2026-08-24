@@ -61,6 +61,16 @@ func TestEachWidth(t *testing.T) {
 	}
 }
 
+func TestFindMatch(t *testing.T) {
+	matcher := casei.NewMatcher([]string{"needle"})
+	if got := findMatch("a needle", matcher); got != 1 {
+		t.Fatalf("findMatch(hit) = %d, want 1", got)
+	}
+	if got := findMatch("a haystack", matcher); got != 0 {
+		t.Fatalf("findMatch(miss) = %d, want 0", got)
+	}
+}
+
 func TestCountMatches(t *testing.T) {
 	patterns := []string{"ss", "s"}
 	matcher := casei.NewMatcher(patterns)

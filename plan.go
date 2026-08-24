@@ -119,6 +119,12 @@ const (
 	pairShuftiGroups    = 2
 	pairShuftiSlots     = 8
 	asciiTripleMinBytes = 64
+
+	// A rolling exceptional-byte budget keeps a sparse prefix from admitting a
+	// later dense region. The partitioner checks the same bounded neighborhood
+	// as its entry guard while it discovers subsequent spans.
+	asciiPartitionSampleBytes = 1024
+	asciiPartitionMaxHigh     = 16
 )
 
 // pairShuftiGroup stores four nibble-to-slot tables. The slot bits identify
@@ -2509,11 +2515,7 @@ func asciiPartitionTailBoundary(haystack string) bool {
 // executor. The sample is deliberately capped: sparse inputs retain the
 // vector ASCII gaps, while dense or NUL-containing inputs stay on their old path.
 func asciiPartitionSparseEnough(haystack string, firstExceptional int) bool {
-	const (
-		sampleBytes = 1024
-		maxHigh     = 16
-	)
-	end := firstExceptional + sampleBytes
+	end := firstExceptional + asciiPartitionSampleBytes
 	if end > len(haystack) {
 		end = len(haystack)
 	}
@@ -2527,7 +2529,7 @@ func asciiPartitionSparseEnough(haystack string, firstExceptional int) bool {
 			return false
 		}
 		high++
-		if high >= maxHigh {
+		if high >= asciiPartitionMaxHigh {
 			return false
 		}
 		at++
@@ -3020,6 +3022,26 @@ func (p *searchPlan) findPartitionedASCIIWithStats(haystack string, firstHigh in
 		starts = make([]int, p.maxUnits)
 	}
 
+	var recentHigh [asciiPartitionMaxHigh]int
+	recentHighCount := 0
+	recordExceptional := func(start, end int) bool {
+		for at := start; at < end; at++ {
+			if haystack[at] == 0 {
+				return false
+			}
+			if haystack[at] < utf8.RuneSelf {
+				continue
+			}
+			if recentHighCount >= asciiPartitionMaxHigh &&
+				at-recentHigh[recentHighCount%asciiPartitionMaxHigh] < asciiPartitionSampleBytes {
+				return false
+			}
+			recentHigh[recentHighCount%asciiPartitionMaxHigh] = at
+			recentHighCount++
+		}
+		return true
+	}
+
 	cursor := 0
 	spanStart := firstHigh
 	pendingMatch := Match{}
@@ -3028,6 +3050,12 @@ func (p *searchPlan) findPartitionedASCIIWithStats(haystack string, firstHigh in
 		spanEnd := spanStart
 		for spanEnd < len(haystack) && (haystack[spanEnd] >= utf8.RuneSelf || haystack[spanEnd] == 0) {
 			spanEnd++
+		}
+		if !recordExceptional(spanStart, spanEnd) {
+			if stats != nil {
+				stats.fallbackEntries++
+			}
+			return p.findUnfilteredDecodedLegacy(haystack)
 		}
 		if stats != nil {
 			for at := spanStart; at < spanEnd; at++ {
@@ -3070,6 +3098,12 @@ func (p *searchPlan) findPartitionedASCIIWithStats(haystack string, firstHigh in
 			if nextWindowStart > windowEnd {
 				nextStart = at
 				break
+			}
+			if !recordExceptional(at, nextSpanEnd) {
+				if stats != nil {
+					stats.fallbackEntries++
+				}
+				return p.findUnfilteredDecodedLegacy(haystack)
 			}
 			if stats != nil {
 				for high := at; high < nextSpanEnd; high++ {
