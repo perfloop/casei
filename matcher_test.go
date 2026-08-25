@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 )
 
 // refFind is the independent multi-needle reference: per-pattern canonical
@@ -25,6 +26,42 @@ func refFind(haystack string, patterns []string) (Match, bool) {
 		return Match{}, false
 	}
 	return best, true
+}
+
+type refEachResult struct {
+	match Match
+	width int
+}
+
+// refEach repeats the independent refFind oracle and advances by decoded
+// source units. It is deliberately separate from Matcher.findWithWidth, whose
+// optimized raw confirmation can return the width without decoding again.
+func refEach(haystack string, patterns []string) []refEachResult {
+	var results []refEachResult
+	for from := 0; from <= len(haystack); {
+		match, ok := refFind(haystack[from:], patterns)
+		if !ok {
+			return results
+		}
+		match.Start += from
+		end := match.Start
+		for range utf8.RuneCountInString(patterns[match.Pattern]) {
+			_, size := utf8.DecodeRuneInString(haystack[end:])
+			end += size
+		}
+		width := end - match.Start
+		results = append(results, refEachResult{match: match, width: width})
+		if width != 0 {
+			from = end
+			continue
+		}
+		if match.Start == len(haystack) {
+			return results
+		}
+		_, size := utf8.DecodeRuneInString(haystack[match.Start:])
+		from = match.Start + size
+	}
+	return results
 }
 
 var matcherTraps = []struct {
@@ -552,10 +589,28 @@ func FuzzMatcher(f *testing.F) {
 	f.Add("доктор Ватсон", "ватсон", "ШЕРЛОК", "z")
 	f.Fuzz(func(t *testing.T, haystack, p0, p1, p2 string) {
 		pats := []string{p0, p1, p2}
-		got, gotOK := NewMatcher(pats).Find(haystack)
+		matcher := NewMatcher(pats)
+		got, gotOK := matcher.Find(haystack)
 		want, wantOK := refFind(haystack, pats)
 		if gotOK != wantOK || (gotOK && got != want) {
 			t.Fatalf("Find(%q, %q) = %+v,%v want %+v,%v", haystack, pats, got, gotOK, want, wantOK)
+		}
+
+		var gotEach []refEachResult
+		if complete := matcher.Each(haystack, func(match Match, width int) bool {
+			gotEach = append(gotEach, refEachResult{match: match, width: width})
+			return true
+		}); !complete {
+			t.Fatal("Each stopped with a callback that always returns true")
+		}
+		wantEach := refEach(haystack, pats)
+		if len(gotEach) != len(wantEach) {
+			t.Fatalf("Each(%q, %q) returned %d matches, want %d: got=%+v want=%+v", haystack, pats, len(gotEach), len(wantEach), gotEach, wantEach)
+		}
+		for i := range wantEach {
+			if gotEach[i] != wantEach[i] {
+				t.Fatalf("Each(%q, %q) match %d = %+v, want %+v", haystack, pats, i, gotEach[i], wantEach[i])
+			}
 		}
 	})
 }

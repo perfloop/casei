@@ -1,12 +1,14 @@
-# Publication verification
+# Historical 33-row publication verification
 
-This directory contains the fresh hardware checks used for the August 2026
-publication review. These three-pass runs on each pinned host are the source of
-the per-row tables in the top-level README. Perfloop's public Case is separate:
-it co-measured the pre-engine and final source in ten pairs with random
-source-arm order, using the worst `x_vs_best` across all 33 rows as its metric.
-The purpose of this run was to rebuild the field, check that every row still
-passes, and isolate the two main speed mechanisms with the same compiled plans.
+This directory preserves the first August 2026 publication review. It covers
+the 33-row board before the three Rebar-derived rows were added. The current
+36-row claim and its raw transcripts live in
+[`audit/acceptance/`](../acceptance/README.md).
+
+Perfloop's original public Case co-measured the pre-engine and final source in
+ten pairs with random source-arm order, using the worst `x_vs_best` across all
+33 rows as its metric. This historical run rebuilt that field, checked every
+row, and isolated the two main speed mechanisms with the same compiled plans.
 
 The search source was commit
 `781eb8c36413f9a23c2d1f279ad9ef6554cac8bf`. The publication review then
@@ -79,10 +81,11 @@ and AVX2 plus AVX-512 disabled. The complete pinned arena agreement and dispatch
 suite passed on both hosts. `FuzzIndexFold` and `FuzzMatcher` each ran for 30
 seconds on both hosts.
 
-The amd64 source now contains 36 linked assembly entry points. One-shot GDB
-breakpoints observed all 36 across the normal, AVX-512-disabled, and
-BMI2-disabled test runs. Before this check, `runSkip32` and `runSkip64` were
-unreferenced source and absent from the linked test binary; they were removed.
+The amd64 source at the audited commit contained 36 linked assembly entry
+points. One-shot GDB breakpoints observed all 36 across the normal,
+AVX-512-disabled, and BMI2-disabled test runs. Before this check, `runSkip32`
+and `runSkip64` were unreferenced source and absent from the linked test binary;
+they were removed.
 [`asm-reachability.gdb`](asm-reachability.gdb) is the command file used for the
 check. The three files named `gdb-*.txt` in `results/ice` retain the `HIT` and
 final `PASS` lines captured from these runs:
@@ -96,9 +99,10 @@ gdb -q -batch -ex 'set environment GODEBUG cpu.bmi2=off' \
   -x audit/publication/asm-reachability.gdb ./casei.test
 ```
 
-The union of the reported breakpoint numbers must be 1 through 36, and each
-test process must print `PASS`. `summarize.py` checks both conditions from the
-captured receipts.
+For that historical source, the union of the reported breakpoint numbers must
+be 1 through 36, and each test process must print `PASS`. `summarize.py` checks
+both conditions from the captured receipts. Current-kernel reachability lives
+with the current acceptance record in [`audit/acceptance/`](../acceptance/README.md).
 
 ## Recompute the summaries
 

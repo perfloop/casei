@@ -51,7 +51,7 @@ func run() error {
 	if !c.caseInsensitive {
 		return errors.New("casei runner only accepts case-insensitive benchmarks")
 	}
-	if c.model != "count" && c.model != "count-spans" {
+	if c.model != "count" && c.model != "count-spans" && c.model != "find" {
 		return fmt.Errorf("unsupported model %q", c.model)
 	}
 	patterns, err := literalAlternation(c.patterns)
@@ -59,15 +59,20 @@ func run() error {
 		return err
 	}
 	matcher := casei.NewMatcher(patterns)
-	bench := func() (int, error) {
-		return countMatches(c.haystack, patterns, matcher, c.model == "count-spans")
+	spans := c.model == "count-spans"
+	if _, err := verifyEnumeration(c.haystack, patterns, matcher, spans); err != nil {
+		return err
+	}
+	bench := func() int {
+		if c.model == "find" {
+			return findMatch(c.haystack, matcher)
+		}
+		return countMatches(c.haystack, matcher, spans)
 	}
 
 	warmupStart := time.Now()
 	for i := uint64(0); i < c.maxWarmupIters; i++ {
-		if _, err := bench(); err != nil {
-			return err
-		}
+		_ = bench()
 		if time.Since(warmupStart) >= c.maxWarmupTime {
 			break
 		}
@@ -77,11 +82,8 @@ func run() error {
 	runStart := time.Now()
 	for i := uint64(0); i < c.maxIters; i++ {
 		start := time.Now()
-		count, err := bench()
+		count := bench()
 		duration := time.Since(start)
-		if err != nil {
-			return err
-		}
 		fmt.Fprintf(out, "%d,%d\n", duration.Nanoseconds(), count)
 		if time.Since(runStart) >= c.maxTime {
 			break
@@ -90,28 +92,34 @@ func run() error {
 	return out.Flush()
 }
 
-func countMatches(haystack string, patterns []string, matcher *casei.Matcher, spans bool) (int, error) {
+// findMatch is the timed single-query operation for Find-shaped workloads.
+// verifyEnumeration still validates the complete non-overlapping contract once
+// before the runner starts its warm-up and measurement loops.
+func findMatch(haystack string, matcher *casei.Matcher) int {
+	if _, ok := matcher.Find(haystack); ok {
+		return 1
+	}
+	return 0
+}
+
+// countMatches is the timed Rebar operation: one compiled Matcher enumeration
+// and only the count/span sink. verifyEnumeration runs the independent oracle
+// once before the runner starts its warm-up and measurement loops.
+func countMatches(haystack string, matcher *casei.Matcher, spans bool) int {
 	total := 0
-	for at := 0; at <= len(haystack); {
-		match, ok := matcher.Find(haystack[at:])
-		if !ok {
-			break
-		}
-		start := at + match.Start
-		width, ok := foldPrefixWidth(haystack[start:], patterns[match.Pattern])
-		if !ok || width == 0 {
-			return 0, fmt.Errorf("casei returned an unverifiable match at %d for pattern %q", start, patterns[match.Pattern])
-		}
+	matcher.Each(haystack, func(_ casei.Match, width int) bool {
 		if spans {
 			total += width
 		} else {
 			total++
 		}
-		at = start + width
-	}
-	return total, nil
+		return true
+	})
+	return total
 }
 
+// foldPrefixWidth is deliberately independent from Matcher.Each. The Rebar
+// preflight uses it to verify every source width and match boundary.
 func foldPrefixWidth(haystack, pattern string) (int, bool) {
 	consumed := 0
 	for len(pattern) > 0 {
@@ -147,6 +155,61 @@ func foldEqual(a, b rune) bool {
 		}
 	}
 	return false
+}
+
+// nextMatch is a package-independent, source-boundary oracle for the next
+// non-empty literal occurrence. At one source offset, the first matching
+// pattern index wins; offsets are then considered left to right.
+func nextMatch(haystack string, patterns []string, from int) (casei.Match, int, bool) {
+	for at := from; at <= len(haystack); {
+		for pattern, literal := range patterns {
+			if width, ok := foldPrefixWidth(haystack[at:], literal); ok && width != 0 {
+				return casei.Match{Pattern: pattern, Start: at}, width, true
+			}
+		}
+		if at == len(haystack) {
+			break
+		}
+		_, size := utf8.DecodeRuneInString(haystack[at:])
+		at += size
+	}
+	return casei.Match{}, 0, false
+}
+
+// verifyEnumeration compares every result to the canonical source scan before
+// timing begins. It validates Pattern bounds, leftmost/lowest-ID order, exact
+// source width, and the non-overlapping resume point without using Matcher.Find.
+func verifyEnumeration(haystack string, patterns []string, matcher *casei.Matcher, spans bool) (int, error) {
+	at, total := 0, 0
+	var verifyErr error
+	complete := matcher.Each(haystack, func(match casei.Match, width int) bool {
+		if match.Pattern < 0 || match.Pattern >= len(patterns) || match.Start < at || match.Start > len(haystack) || width <= 0 {
+			verifyErr = fmt.Errorf("casei returned invalid match %+v with width %d", match, width)
+			return false
+		}
+		want, expectedWidth, ok := nextMatch(haystack, patterns, at)
+		if !ok || match != want || width != expectedWidth {
+			verifyErr = fmt.Errorf("casei returned match %+v with width %d; canonical next match is %+v with width %d, ok=%t", match, width, want, expectedWidth, ok)
+			return false
+		}
+		if spans {
+			total += width
+		} else {
+			total++
+		}
+		at = match.Start + width
+		return true
+	})
+	if verifyErr != nil {
+		return 0, verifyErr
+	}
+	if !complete {
+		return 0, errors.New("casei enumeration stopped during preflight")
+	}
+	if want, width, ok := nextMatch(haystack, patterns, at); ok {
+		return 0, fmt.Errorf("casei omitted canonical match %+v with width %d", want, width)
+	}
+	return total, nil
 }
 
 func literalAlternation(raw []string) ([]string, error) {

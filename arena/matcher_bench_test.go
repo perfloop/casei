@@ -52,6 +52,56 @@ func genNeedles(n int, format string) []string {
 	return out
 }
 
+// unicodePairConfirmMissCorpus repeats a near-full-width false match at the
+// pair-pair anchor density measured on the Russian corpus. It exercises the
+// N=1 Matcher path without giving any engine a true-match early exit.
+func unicodePairConfirmMissCorpus() string {
+	const needle = "приключения лилий"
+	const haystackBytes = 1_570_556
+	const survivors = 2_134
+
+	falseLiteral := needle[:len(needle)-len("й")] + "я"
+	bytes := []byte(strings.Repeat("x", haystackBytes))
+	step := len(bytes) / survivors
+	inserted := 0
+	for at := 0; at+len(falseLiteral) <= len(bytes) && inserted < survivors; at += step {
+		copy(bytes[at:], falseLiteral)
+		inserted++
+	}
+	if inserted != survivors {
+		panic(fmt.Sprintf("inserted %d false survivors, want %d", inserted, survivors))
+	}
+	return string(bytes)
+}
+
+// rawTransitionPatterns are ordinary Unicode simple-fold literals with distinct
+// Cyrillic roots. The companion rows keep an admitted root followed by an ASCII
+// mismatch at a fixed density, and add one late full literal for the hit case.
+// They exercise a shared multi-pattern plan against every native field entrant;
+// no production path observes these fixture names or values.
+var rawTransitionPatterns = []string{
+	"Шерлок Холмс",
+	"Джон Уотсон",
+	"Ирен Адлер",
+	"инспектор Лестрейд",
+	"профессор Мориарти",
+}
+
+func rawTransitionCorpus(bytes int, lateMatch bool) string {
+	const period = 256
+	if bytes < period {
+		panic("raw transition corpus is shorter than its period")
+	}
+	out := []byte(strings.Repeat("x", ((bytes+period-1)/period)*period))
+	for at := 0; at+len("Дx") <= len(out); at += period {
+		copy(out[at:], "Дx")
+	}
+	if lateMatch {
+		copy(out[len(out)-period:], rawTransitionPatterns[0])
+	}
+	return string(out)
+}
+
 var multiScenarios = func() []multiScenario {
 	logs1m := buildLogCorpus(1 << 20)
 	prose1m := buildProseCorpus(1 << 20)
@@ -79,6 +129,9 @@ var multiScenarios = func() []multiScenario {
 		// about the tier this repository exists for.
 		{"multi_N512_miss_hazard_64kb", cyr1m[:64<<10], genHazardNeedles(512), true},
 		{"multi_N8_hit_log_1mb", plant(logs1m, "Payment Declined", 4), hit8, false},
+		{"multi_N1_unicode_pair_miss_1_5mb", unicodePairConfirmMissCorpus(), []string{"приключения лилий"}, true},
+		{"multi_N5_raw_transition_miss_5mb", rawTransitionCorpus(5<<20, false), rawTransitionPatterns, true},
+		{"multi_N5_raw_transition_late_hit_5mb", rawTransitionCorpus(5<<20, true), rawTransitionPatterns, true},
 		{"multi_N8_miss_ru_1mb", cyr1m, genNeedles(8, "щупальце%d"), true},
 		{"multi_N64_miss_ru_64kb", cyr1m[:64<<10], genNeedles(64, "щупальце%d"), true},
 		// This is the all-ASCII half of the mixed-fold hazard set. It keeps the

@@ -8,6 +8,8 @@ func runtimeVectorBits() int { return 0 }
 
 func asciiPairVBMIEnabled() bool { return false }
 
+func unicodePairConfirmVectorEnabled() bool { return false }
+
 func asciiFixedPrefix8(s string, at int, word, fold uint64) bool {
 	for i := 0; i < 8; i++ {
 		if s[at+i]|byte(fold>>(8*i)) != byte(word>>(8*i)) {
@@ -60,6 +62,10 @@ func literalSkipASCII(s string, at int, kind uint8, needle byte) int {
 		at++
 	}
 	return at - start
+}
+
+func literalSkipExactASCII(s string, at int, needle byte) int {
+	return literalSkipASCII(s, at, rootExact, needle)
 }
 
 func probeSkipBytes(s string, at, candidates int, probe *asciiProbe) int {
@@ -137,6 +143,19 @@ func findASCIIRunBytes(s string, kind uint8, needle byte, need int) int {
 
 func pairShuftiSkipBytes(s string, at int, filter *rootFilter) int {
 	return pairShuftiSkipScalar(s, at, &filter.shufti)
+}
+
+func pairPairConfirmBytes(s string, at, candidates int, filter *pairPairFilter, confirm unicodePairConfirm) (int, int) {
+	start := at
+	for at-start < candidates {
+		if pairPairAt(s, at, filter) {
+			if width, ok := confirm.matchWidthAt(s, at-confirm.anchorAt()); ok {
+				return at - start, width
+			}
+		}
+		at++
+	}
+	return candidates, 0
 }
 
 func pairPairSkipBytes(s string, at int, filter *pairPairFilter) int {
@@ -220,6 +239,10 @@ func filterSkipScalar(s string, at int, filter *rootFilter) int {
 
 func tripleShuftiSkipBytes(s string, at int, filter *tripleShuftiFilter) int {
 	return tripleShuftiSkipScalar(s, at, filter)
+}
+
+func rawByteMultiAnchorSkipBytes(s string, at int, filter *rawByteMultiAnchorFilter) (int, byte) {
+	return rawByteMultiAnchorSkipScalar(s, at, filter)
 }
 
 func asciiPairAnchorSkipBytes(s string, at int, filter *asciiPairAnchorFilter) int {

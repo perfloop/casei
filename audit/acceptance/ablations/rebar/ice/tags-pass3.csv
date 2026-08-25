@@ -1,0 +1,18 @@
+name,model,rebar_version,engine,engine_version,err,haystack_len,iters,total,median,mad,mean,stddev,min,max
+curated/01-literal/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,1570556,1000,251.42ms,134.67us,1.12us,136.72us,5.53us,132.25us,213.81us
+curated/01-literal/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-24,,1570556,1000,404.75ms,336.30us,4.20us,338.04us,11.28us,325.55us,472.89us
+curated/01-literal/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,1570556,1000,202.64ms,157.03us,1.56us,159.26us,5.22us,154.41us,240.63us
+curated/01-literal/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,1570556,1000,353.09ms,287.69us,3.31us,289.41us,10.27us,282.92us,493.62us
+curated/02-literal-alternate/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,1570556,705,852.12ms,706.90us,5.01us,708.66us,12.80us,689.51us,841.48us
+curated/02-literal-alternate/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-24,,1570556,840,605.11ms,593.08us,3.79us,595.16us,11.92us,581.48us,704.94us
+curated/02-literal-alternate/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,1570556,53,753.97ms,9.37ms,50.02us,9.46ms,159.96us,9.27ms,9.81ms
+curated/02-literal-alternate/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,1570556,336,703.96ms,1.48ms,12.47us,1.49ms,33.30us,1.46ms,1.88ms
+hyperscan/literal-casei-russian-nosom,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,613423,1000,101.25ms,29.00us,57.00ns,29.34us,1.55us,28.76us,47.30us
+hyperscan/literal-casei-russian-nosom,count,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-24,,613423,1000,102.68ms,82.16us,58.00ns,82.88us,2.13us,81.98us,114.15us
+hyperscan/literal-casei-russian-nosom,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,613423,1000,103.90ms,80.63us,50.00ns,81.25us,1.66us,80.44us,102.11us
+hyperscan/literal-casei-russian-som,count-spans,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,613423,1000,101.19ms,29.02us,52.00ns,29.35us,1.58us,28.83us,50.82us
+hyperscan/literal-casei-russian-som,count-spans,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-24,,613423,1000,104.64ms,82.09us,55.00ns,83.09us,3.30us,81.91us,133.26us
+hyperscan/literal-casei-russian-som,count-spans,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,613423,1000,103.90ms,80.78us,372.00ns,81.82us,5.32us,80.19us,175.25us
+opt/prefilter/literal-casei-russian,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,613423,1000,101.21ms,28.75us,86.00ns,29.17us,1.77us,28.54us,51.20us
+opt/prefilter/literal-casei-russian,count,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,613423,1000,52.63ms,45.02us,75.00ns,45.42us,1.48us,44.66us,61.05us
+opt/prefilter/literal-casei-russian,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,613423,1000,100.49ms,80.38us,92.00ns,81.23us,3.91us,79.97us,149.44us

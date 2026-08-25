@@ -1,0 +1,6 @@
+diff --git a/plan.go b/plan.go
+--- a/plan.go
++++ b/plan.go
+@@ -1482,2 +1482,0 @@
+-			p.singlePayload = string(confirm)
+-		} else if confirm := makeUnicodePairVariableConfirm(pattern, anchor.at); confirm.valid() {

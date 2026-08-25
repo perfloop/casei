@@ -1,0 +1,32 @@
+receipt_format: casei-native-field-v1
+source_commit: 5ab3cc8c1501a701bbd023a16d9d7da317a634ca
+source_manifest: audit/acceptance/SOURCE_SHA256SUMS
+source_manifest_sha256: 043dd919faa1d34cb26f2993f5f756e7f3265a10291e5889eecab67530cb27e9
+vendor_id: GenuineIntel
+cpu_family: 6
+cpu_model: 106
+cpu_model_name: Intel(R) Xeon(R) CPU @ 2.60GHz
+lscpu_model_name: Intel(R) Xeon(R) CPU @ 2.60GHz
+required_cpu_features: avx2 avx512f avx512bw avx512vbmi
+go: go1.26.6 linux/amd64
+cpu_affinity: 2
+
+benchmarkbar_field: Vectorscan 5.4.12, PCRE2 10.47, rure 0.2.5, rust/aho-corasick 1.1.5, StringZilla 5.1.2, veloz
+benchmarkbar_command: taskset -c 2 go test -run '^$' -bench '^BenchmarkBar$' -benchtime 30x -count 3
+benchmarkbar_rows: 36
+benchmarkbar_passes: 3
+benchmarkbar_entrants: 5-7
+benchmarkbar_dispatch: casei=512-bit, Vectorscan=512-bit VBMI
+benchmarkbar_output: audit/acceptance/results/ice/benchmarkbar.txt
+benchmarkbar_sha256: a61c8ac9eaf3f548c54ff4c92aa2ce6d24f8d11fd2d55250a27965e513a7a32c
+
+rebar_commit: 463d00f31887e84c38467805b9e3122c314b9521
+rebar_field: Hyperscan 5.4.2, PCRE2 JIT 10.47, rust/regex 1.12.4
+rebar_hyperscan_source_commit: bc3b191ab56055e8560c7cdc161c289c4d76e3d2
+rebar_command: taskset -c 2 rebar measure -e '^(casei|hyperscan|pcre2/jit|rust/regex)$' -f '<18-row audit filter>' --max-warmup-iters 100 --max-warmup-time 200ms --max-iters 1000 --max-time 500ms
+rebar_rows: 18
+rebar_passes: 3
+rebar_entrants: casei, hyperscan, pcre2/jit, rust/regex
+rebar_pass1: audit/rebar/results/ice/rebar-audit-pass1.csv sha256=a37d4082e114e1ac6624d19f6ac216109d1812411822dbf5904fd75f9d6a7a11
+rebar_pass2: audit/rebar/results/ice/rebar-audit-pass2.csv sha256=cf7580a159b36ee04957f5ab67749f5b0ca2a2a18672509ed5a958e9460a6116
+rebar_pass3: audit/rebar/results/ice/rebar-audit-pass3.csv sha256=863f3430c07039fb270fbc2f3ea3800cfd8d94358195a8ec8898fac222e9f813

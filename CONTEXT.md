@@ -56,26 +56,26 @@ substring engine — and it is absent from every caseless benchmark: no
 dedicated caseless substring engine exists in that suite at all; the
 caseless columns are contested only by general regex engines.
 
-**Direct rebar audit (2026-08-17):** `casei` was wired into every caseless
-literal or finite-alternation definition at rebar commit `463d00f`: 18
+**Direct Rebar audit (2026-08-24):** `casei` was wired into every caseless
+literal or finite-alternation definition at Rebar commit `463d00f`: 18
 performance workloads and three semantic checks. Rebar's pinned
 [performance models](https://github.com/BurntSushi/rebar/blob/463d00f31887e84c38467805b9e3122c314b9521/MODELS.md)
-enumerate every non-overlapping match, rather than return the first. Five rows
-enable Unicode folding and therefore share this repository's folding contract;
-against the selected current leaders, the loop-over-`Find` adapter wins two and
-loses three on both Ice Lake and Sapphire Rapids, with the five-pattern Russian
-row losing by roughly 9× to Hyperscan. Thirteen additional performance rows
-request ASCII-only case matching; they were run and output-verified, but
-`casei` retains stronger Unicode semantics. [`REBAR.md`](REBAR.md) records
-every row, both-host ratios,
-the incompatible `s`/`ſ` behavior check, and the causal diagnosis. Instrumented
-reproduction showed that a stateful one-pass enumerator did not improve the 9×
-row: the five-pattern plan filters on common Cyrillic roots, admits 21.7% of the
-corpus into rune decoding and token-map verification, and never gains the rare
-interior pair-pair anchors selected for a single pattern. The missing iterator
-is therefore an API gap, not the primary performance gap. These measurements
-bound the result here to the 33-row arena contract; Rebar's non-overlapping
-enumeration numbers cannot be borrowed in support of it.
+enumerate every non-overlapping match. Five rows enable Unicode folding and
+share this repository's contract. The first audit won two and lost three on
+both Ice Lake and Sapphire Rapids; its five-pattern Russian row was roughly 9×
+behind Hyperscan. Instrumentation put the loss in a shared filter over common
+Cyrillic starts and decoded confirmation, rather than in repeated API setup.
+
+That result opened the missing cells. The retained follow-up combines tagged
+interior anchors, exact pair replay, one/two/three-byte raw confirmation with
+source-width return, and an exact common-byte origin gate. The current adapter
+uses `Matcher.Each` and wins all five same-contract rows on both hosts. Its
+worst ratios are 0.8794 on Ice Lake and 0.8999 on Sapphire Rapids. Thirteen
+additional rows request ASCII-only matching; they remain visible as
+different-contract stress data, with `casei` winning 9 of all 18 rows on each
+host. [`REBAR.md`](REBAR.md) records the before/after mechanisms, complete
+table, incompatible `s`/`ſ` behavior check, and raw receipts. The arena now
+contains three focused rows derived from the gap and has 36 rows in total.
 
 **Correction (v2, after a three-way prior-art sweep):** dedicated engines
 DO exist, with different contracts:

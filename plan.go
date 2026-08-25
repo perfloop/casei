@@ -40,35 +40,43 @@ type searchPlan struct {
 	// asciiProbe is a single-pattern, byte-aligned block transition. It
 	// intersects three dispersed literal positions, then confirms the same
 	// compiled pattern at the surviving start.
-	asciiProbe         asciiProbe
-	asciiOnlyProbe     asciiProbe
-	asciiOnlyNeedle    string
-	asciiOnlyWord      uint64
-	asciiOnlyFold      uint64
-	asciiOnly          bool
-	asciiOnlyLong      bool
-	asciiPair          asciiPairProbe
-	asciiNeedle        string
-	asciiFirstWord     uint64
-	asciiFirstFold     uint64
-	asciiTailWord      uint64
-	asciiTailFold      uint64
-	asciiTailMask      uint64
-	asciiVerifyTokens  bool
-	asciiFixedPrefix   int
-	asciiByteAnchor    bool
-	asciiStaticAnchor  bool
-	asciiStaticAt      int
-	asciiStaticKind    uint8
-	asciiStaticByte    byte
-	asciiRun           bool
-	asciiRunKind       uint8
-	asciiRunByte       byte
-	unicodeAnchor      tripleFilter
-	unicodeAt          int
-	unicodePairs       [8]unicodePairAnchor
-	unicodePairN       uint8
-	singleTokens       []uint32
+	asciiProbe     asciiProbe
+	asciiOnlyProbe asciiProbe
+	// singlePayload is the literal for the all-ASCII route. That route is
+	// disabled for Unicode patterns, where this otherwise unused string instead
+	// holds the packed raw terminal confirmation for the N=1 VBMI transition.
+	singlePayload     string
+	asciiOnlyWord     uint64
+	asciiOnlyFold     uint64
+	asciiOnly         bool
+	asciiOnlyLong     bool
+	asciiPair         asciiPairProbe
+	asciiNeedle       string
+	asciiFirstWord    uint64
+	asciiFirstFold    uint64
+	asciiTailWord     uint64
+	asciiTailFold     uint64
+	asciiTailMask     uint64
+	asciiVerifyTokens bool
+	asciiFixedPrefix  int
+	asciiByteAnchor   bool
+	asciiStaticAnchor bool
+	asciiStaticAt     int
+	asciiStaticKind   uint8
+	asciiStaticByte   byte
+	asciiRun          bool
+	asciiRunKind      uint8
+	asciiRunByte      byte
+	unicodeAnchor     tripleFilter
+	unicodeAt         int
+	unicodePairs      [8]unicodePairAnchor
+	unicodePairN      uint8
+	singleTokens      []uint32
+	// rawByteMulti is the fixed, tagged interior-pair screen used only by
+	// eligible multi-pattern enumeration. It is compiled into the plan with the
+	// raw transition map; it never depends on a caller's haystack or history.
+	rawByteMulti       rawByteMultiAnchorFilter
+	rawByteOrigin      rawByteOriginGate
 	runes              map[rune]uint32
 	opaqueContinuation bool
 
@@ -81,8 +89,11 @@ type searchPlan struct {
 	dense  []uint32
 	stride int
 
-	empty        int
-	maxUnits     int
+	empty    int
+	maxUnits int
+	// maxBytes bounds the source bytes consumed by any simple-fold spelling
+	// of a compiled pattern. Boundary windows use it to preserve cross-run matches.
+	maxBytes     int
 	patternCount int
 }
 
@@ -105,8 +116,16 @@ type rootFilter struct {
 }
 
 const (
-	pairShuftiGroups = 2
-	pairShuftiSlots  = 8
+	pairShuftiGroups    = 2
+	pairShuftiSlots     = 8
+	asciiTripleMinBytes = 64
+
+	// A rolling exceptional-byte budget keeps a sparse prefix from admitting a
+	// later dense region. The partitioner checks the same bounded neighborhood
+	// as its entry guard while it discovers subsequent spans.
+	asciiPartitionSampleBytes    = 1024
+	asciiPartitionMaxHigh        = 16
+	asciiPartitionLookaheadBytes = asciiPartitionSampleBytes * asciiPartitionMaxHigh
 )
 
 // pairShuftiGroup stores four nibble-to-slot tables. The slot bits identify
@@ -885,9 +904,15 @@ func newSearchPlan(patterns []string) *searchPlan {
 			continue
 		}
 
-		state, units := 0, 0
+		state, units, maxBytes := 0, 0, 0
 		for at := 0; at < len(pattern); {
 			token, size := p.patternToken(pattern, at, &nextToken)
+			r, _ := utf8.DecodeRuneInString(pattern[at:])
+			unitBytes := size
+			if r != utf8.RuneError || size != 1 {
+				unitBytes = maxFoldRuneWidth(r)
+			}
+			maxBytes += unitBytes
 			next, ok := p.nodes[state].edges[token]
 			if !ok {
 				next = len(p.nodes)
@@ -912,6 +937,9 @@ func newSearchPlan(patterns []string) *searchPlan {
 		if units > p.maxUnits {
 			p.maxUnits = units
 		}
+		if maxBytes > p.maxBytes {
+			p.maxBytes = maxBytes
+		}
 	}
 
 	p.finish(nextToken)
@@ -922,7 +950,22 @@ func newSearchPlan(patterns []string) *searchPlan {
 		p.makeASCIIAnchor(patterns[0])
 		p.makeUnicodeAnchor(patterns[0])
 	}
+	p.makeRawByteTokenPlan(patterns)
 	return p
+}
+
+// maxFoldRuneWidth returns the widest UTF-8 encoding in r's simple-fold orbit.
+func maxFoldRuneWidth(r rune) int {
+	maxWidth := 1
+	for member := r; ; member = unicode.SimpleFold(member) {
+		if width := utf8.RuneLen(member); width > maxWidth {
+			maxWidth = width
+		}
+		if unicode.SimpleFold(member) == r {
+			break
+		}
+	}
+	return maxWidth
 }
 
 // patternToken emits one token for a pattern unit and advances at by its
@@ -1206,7 +1249,7 @@ func (p *searchPlan) makeASCIIOnlyProbe(pattern string) {
 			p.asciiOnlyWord |= uint64(value) << (8 * at)
 		}
 	}
-	p.asciiOnlyNeedle = pattern
+	p.singlePayload = pattern
 	p.asciiOnly = true
 }
 
@@ -1467,6 +1510,14 @@ func (p *searchPlan) makeUnicodePairAnchor(pattern string) {
 
 func (p *searchPlan) makeUnicodeAnchor(pattern string) {
 	p.makeUnicodePairAnchor(pattern)
+	if !p.asciiOnly && p.unicodePairN != 0 && p.unicodePairs[0].pairPair.valid != 0 {
+		anchor := p.unicodePairs[0]
+		if confirm := makeUnicodePairConfirm(pattern, anchor.at, anchor.confirmAt); confirm.valid() {
+			p.singlePayload = string(confirm)
+		} else if confirm := makeUnicodePairVariableConfirm(pattern, anchor.at); confirm.valid() {
+			p.singlePayload = string(confirm)
+		}
+	}
 	forms, widths := patternRawForms(pattern)
 	offset, fixedPrefix := 0, true
 	var best tripleFilter
@@ -1901,6 +1952,12 @@ func (p *searchPlan) haystackToken(s string, at int) (uint32, int) {
 	}
 	r, size := utf8.DecodeRuneInString(s[at:])
 	if r == utf8.RuneError && size == 1 {
+		// An eligible raw-byte plan has no opaque pattern bytes. Its opaque
+		// storage holds direct two-byte tokens instead, so malformed input must
+		// remain the ordinary zero-token reset.
+		if p.hasRawByteTokenPlan() {
+			return 0, 1
+		}
 		return p.opaque[byteValue], 1
 	}
 	return p.runes[r], size
@@ -2197,8 +2254,55 @@ func pairFilterAt(haystack string, at int, filter *rootFilter) bool {
 	return false
 }
 
-func (p *searchPlan) findUnicodePairAnchor(haystack string, anchor *unicodePairAnchor) (Match, bool) {
+// findUnicodePairConfirm keeps the exact N=1 raw confirmation in the VBMI
+// transition for full vector blocks. The scalar tail remains bounded and uses
+// the same compiled raw forms, while unavailable vector hosts retain the
+// decoded executor below.
+func (p *searchPlan) unicodePairConfirm() unicodePairConfirm {
+	if p.asciiOnly {
+		return ""
+	}
+	return unicodePairConfirm(p.singlePayload)
+}
+
+func (p *searchPlan) findUnicodePairConfirm(haystack string, anchor *unicodePairAnchor) (Match, int, bool) {
+	confirm := p.unicodePairConfirm()
+	if len(haystack) < confirm.minLength() {
+		return Match{}, 0, false
+	}
+
+	at := anchor.at
+	if lastStart := len(haystack) - confirm.maxLength(); lastStart >= 0 {
+		full := (lastStart + 1) &^ 63
+		if full != 0 {
+			skipped, width := pairPairConfirmBytes(haystack, at, full, &anchor.pairPair, confirm)
+			if skipped < full {
+				return Match{Pattern: 0, Start: at + skipped - anchor.at}, width, true
+			}
+			at += full
+		}
+	}
+
+	lastAnchor := len(haystack) - confirm.minLength() + anchor.at
+	for at <= lastAnchor {
+		at += pairPairSkipBytes(haystack, at, &anchor.pairPair)
+		if at > lastAnchor {
+			break
+		}
+		start := at - anchor.at
+		if width, ok := confirm.matchWidthAt(haystack, start); ok {
+			return Match{Pattern: 0, Start: start}, width, true
+		}
+		at++
+	}
+	return Match{}, 0, false
+}
+
+func (p *searchPlan) findUnicodePairAnchor(haystack string, anchor *unicodePairAnchor) (Match, int, bool) {
 	if anchor.pairPair.valid != 0 {
+		if p.unicodePairConfirm().valid() && unicodePairConfirmVectorEnabled() {
+			return p.findUnicodePairConfirm(haystack, anchor)
+		}
 		for at := 0; at+int(anchor.pairPair.offset)+1 < len(haystack); {
 			at += pairPairSkipBytes(haystack, at, &anchor.pairPair)
 			if at+int(anchor.pairPair.offset)+1 >= len(haystack) {
@@ -2206,11 +2310,11 @@ func (p *searchPlan) findUnicodePairAnchor(haystack string, anchor *unicodePairA
 			}
 			start := at - anchor.at
 			if start >= 0 && p.matchesSingleAt(haystack, start) {
-				return Match{Pattern: 0, Start: start}, true
+				return Match{Pattern: 0, Start: start}, 0, true
 			}
 			at++
 		}
-		return Match{}, false
+		return Match{}, 0, false
 	}
 	for at := 0; at+1 < len(haystack); {
 		at += filterSkipBytes(haystack, at, &anchor.filter)
@@ -2219,11 +2323,11 @@ func (p *searchPlan) findUnicodePairAnchor(haystack string, anchor *unicodePairA
 		}
 		start := at - anchor.at
 		if start >= 0 && pairFilterAt(haystack, start+anchor.confirmAt, &anchor.confirm) && p.matchesSingleAt(haystack, start) {
-			return Match{Pattern: 0, Start: start}, true
+			return Match{Pattern: 0, Start: start}, 0, true
 		}
 		at++
 	}
-	return Match{}, false
+	return Match{}, 0, false
 }
 
 func (p *searchPlan) findUnicodeAnchor(haystack string) (Match, bool) {
@@ -2241,56 +2345,77 @@ func (p *searchPlan) findUnicodeAnchor(haystack string) (Match, bool) {
 	return Match{}, false
 }
 
+func withZeroWidth(match Match, ok bool) (Match, int, bool) {
+	return match, 0, ok
+}
+
 func (p *searchPlan) find(haystack string) (Match, bool) {
+	match, _, ok := p.findWithWidth(haystack)
+	return match, ok
+}
+
+// findWithWidth is the package's one search decision tree. Most routes return
+// zero width; an exact raw confirmation returns the source width it has already
+// proved so Matcher.Each does not decode the same match again.
+func (p *searchPlan) findWithWidth(haystack string) (Match, int, bool) {
 	if p.maxUnits == 0 {
 		if p.empty >= 0 {
-			return Match{Pattern: p.empty}, true
+			return Match{Pattern: p.empty}, 0, true
 		}
-		return Match{}, false
+		return Match{}, 0, false
 	}
 	if p.opaqueContinuation {
-		return p.findUnfiltered(haystack)
+		return withZeroWidth(p.findUnfiltered(haystack))
 	}
 	if p.asciiRun {
-		return p.findASCIIRun(haystack)
+		return withZeroWidth(p.findASCIIRun(haystack))
 	}
 	if p.asciiPair.usable() && len(haystack) >= len(p.asciiNeedle) && p.asciiFixedAt(haystack, 0) {
-		return Match{Pattern: 0}, true
+		return Match{Pattern: 0}, 0, true
 	}
 	if p.asciiPairVBMIDisplaced() && len(haystack) >= 4096 && asciiPairVBMIEnabled() {
-		return p.findASCIIPairAnchor(haystack)
+		return withZeroWidth(p.findASCIIPairAnchor(haystack))
 	}
 	if !p.asciiPairVBMIDisplaced() && p.asciiPair.usable() && p.asciiPairPromising() {
-		return p.findASCIIPairAnchor(haystack)
+		return withZeroWidth(p.findASCIIPairAnchor(haystack))
 	}
 	if p.asciiStaticAnchor && len(haystack) >= 4096 {
-		return p.findASCIIByteAnchor(haystack, p.asciiStaticAt, p.asciiStaticKind, p.asciiStaticByte)
+		return withZeroWidth(p.findASCIIByteAnchor(haystack, p.asciiStaticAt, p.asciiStaticKind, p.asciiStaticByte))
 	}
 	if p.asciiByteAnchor {
 		if anchorAt, kind, needle, ok := p.chooseASCIIByteAnchor(haystack); ok {
-			return p.findASCIIByteAnchor(haystack, anchorAt, kind, needle)
+			return withZeroWidth(p.findASCIIByteAnchor(haystack, anchorAt, kind, needle))
 		}
 	}
 	if !p.asciiPairVBMIDisplaced() && p.asciiPair.usable() && len(haystack) >= 4096 && p.asciiPairSparse(haystack) {
-		return p.findASCIIPairAnchor(haystack)
+		return withZeroWidth(p.findASCIIPairAnchor(haystack))
 	}
 	if p.asciiProbe.usable() {
-		return p.findASCIIAnchor(haystack)
+		return withZeroWidth(p.findASCIIAnchor(haystack))
 	}
 	// k and s have width-changing Unicode orbit members, so their patterns do
 	// not enter the fixed ASCII probe above. The integrated high-byte check lets
 	// a short or structured ASCII haystack use the same vector transition in one
 	// pass; any high byte falls through to the full Unicode plan unchanged.
 	if p.asciiOnly && (len(haystack) <= 4096 || p.asciiOnlyLong) {
-		if match, ok, handled := p.findASCIIOnlyAnchor(haystack, p.asciiOnlyNeedle); handled {
-			return match, ok
+		if match, ok, handled := p.findASCIIOnlyAnchor(haystack, p.singlePayload); handled {
+			return match, 0, ok
 		}
+	}
+	// The tagged multi-anchor filter is one plan-owned raw transition scan for
+	// both Find and Each. Its exact replay decides the result, so Find can stop
+	// at the first completed leftmost candidate without selecting a second engine.
+	if p.rawByteMulti.usable() {
+		if len(haystack) >= 4096 && p.rawByteOrigin.usable() {
+			return withZeroWidth(p.findRawByteOrigin(haystack))
+		}
+		return withZeroWidth(p.findRawByteFixedAnchored(haystack))
 	}
 	if anchor := p.chooseUnicodePairAnchor(haystack); anchor != nil {
 		return p.findUnicodePairAnchor(haystack, anchor)
 	}
 	if p.unicodeAnchor.n == 1 {
-		return p.findUnicodeAnchor(haystack)
+		return withZeroWidth(p.findUnicodeAnchor(haystack))
 	}
 	// A partial root triple set cannot skip a general UTF-8 stream because a
 	// non-ASCII-only root may occur later. On AVX-512 BW, the high-byte scan
@@ -2298,29 +2423,159 @@ func (p *searchPlan) find(haystack string) (Match, bool) {
 	// the separately covered ASCII roots for the bounded Shufti transition. It
 	// still advances this one compiled plan at every survivor; it is a block
 	// transition, not a second matcher.
-	const asciiTripleMinBytes = 64
 	if p.asciiPairAnchors.usable() && runtimeVectorBits() == 512 && len(haystack) >= asciiTripleMinBytes &&
 		rootSkipASCII(haystack, 0, rootExact, 0) == len(haystack) {
-		return p.findASCIIPairAnchored(haystack)
+		return withZeroWidth(p.findASCIIPairAnchored(haystack))
 	}
 	if p.patternCount > 1 && p.rootKind == rootGeneric && p.asciiTriplesComplete && p.asciiTriples.shufti.usable() &&
 		runtimeVectorBits() == 512 && len(haystack) >= asciiTripleMinBytes &&
 		rootSkipASCII(haystack, 0, rootExact, 0) == len(haystack) {
-		return p.findASCIITripleFiltered(haystack)
+		return withZeroWidth(p.findASCIITripleFiltered(haystack))
 	}
 	if p.triplesComplete && p.triples.usable() && (p.patternCount == 1 || p.rootKind == rootGeneric) {
-		return p.findFiltered(haystack)
+		return withZeroWidth(p.findFiltered(haystack))
 	}
 	if p.rootKind == rootGeneric && p.filter.usable() {
-		return p.findFiltered(haystack)
+		return withZeroWidth(p.findFiltered(haystack))
 	}
 
-	return p.findUnfiltered(haystack)
+	return withZeroWidth(p.findUnfiltered(haystack))
+}
+
+// asciiPartitionWindowWorthwhile keeps a widened window from dominating short
+// haystacks with unusually wide compiled patterns.
+func asciiPartitionWindowWorthwhile(length, maxBytes int) bool {
+	// A widened window spends up to maxBytes on either side of an exceptional
+	// span. Keep at least three quarters of a sufficiently long haystack
+	// available for ASCII-run work; short inputs and very wide compiled patterns
+	// otherwise turn the partition into extra work.
+	return length >= 2*asciiPartitionSampleBytes && maxBytes > 0 && maxBytes <= length/8
 }
 
 // findUnfiltered advances the decoded plan without raw byte filters. It is the
 // boundary-safe path for plans containing opaque UTF-8 continuation bytes.
 func (p *searchPlan) findUnfiltered(haystack string) (Match, bool) {
+	if p.asciiPartitionUsable() && asciiPartitionWindowWorthwhile(len(haystack), p.maxBytes) && !asciiPartitionTailBoundary(haystack) {
+		firstHigh := rootSkipASCII(haystack, 0, rootExact, 0)
+		if firstHigh < len(haystack) && asciiPartitionSparseEnough(haystack, firstHigh) {
+			return p.findPartitionedASCII(haystack, firstHigh)
+		}
+	}
+	return p.findUnfilteredDecodedLegacy(haystack)
+}
+
+// asciiPartitionStats is an optional diagnostic view of the partition route.
+// It is populated only by focused package benchmarks; normal searches pass nil
+// and retain the same hot path without counters.
+type asciiPartitionStats struct {
+	highBytes           int
+	firstExceptional    int
+	asciiCandidateBytes int
+	decodedWindowBytes  int
+	decodedWindows      int
+	fallbackEntries     int
+}
+
+func (p *searchPlan) findUnfilteredWithStats(haystack string, stats *asciiPartitionStats) (Match, bool) {
+	if stats != nil {
+		stats.firstExceptional = -1
+	}
+	if p.asciiPartitionUsable() && asciiPartitionWindowWorthwhile(len(haystack), p.maxBytes) && !asciiPartitionTailBoundary(haystack) {
+		firstHigh := rootSkipASCII(haystack, 0, rootExact, 0)
+		if firstHigh < len(haystack) && asciiPartitionSparseEnough(haystack, firstHigh) {
+			if stats != nil {
+				stats.firstExceptional = firstHigh
+				return p.findPartitionedASCIIWithStats(haystack, firstHigh, stats)
+			}
+			return p.findPartitionedASCII(haystack, firstHigh)
+		}
+	}
+	if stats != nil {
+		stats.fallbackEntries++
+		for at := 0; at < len(haystack); at++ {
+			if haystack[at] >= utf8.RuneSelf {
+				stats.highBytes++
+				if stats.firstExceptional < 0 {
+					stats.firstExceptional = at
+				}
+			}
+		}
+	}
+	return p.findUnfilteredDecodedLegacy(haystack)
+}
+
+// asciiPartitionTailBoundary keeps the old decoded executor for dense input
+// and for a final boundary with no block-sized run after it. Earlier runs are
+// still eligible when the tail is clean, while the check itself is bounded by
+// the existing ASCII block threshold.
+func asciiPartitionTailBoundary(haystack string) bool {
+	if len(haystack) < asciiTripleMinBytes {
+		return true
+	}
+	start := len(haystack) - asciiTripleMinBytes
+	for at := start; at < len(haystack); at++ {
+		if haystack[at] >= utf8.RuneSelf || haystack[at] == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// asciiPartitionSparseEnough rejects exceptional-byte densities for which the
+// boundary work and repeated decoded transitions cost more than the legacy
+// executor. The samples are deliberately capped and spread through the input:
+// sparse inputs retain the vector ASCII gaps, while a later dense region is
+// rejected before the first partitioned window is spent on it.
+func asciiPartitionSparseEnough(haystack string, firstExceptional int) bool {
+	sparseSample := func(start, end int) bool {
+		high := 0
+		for at := start; at < end; {
+			at += rootSkipASCII(haystack[:end], at, rootExact, 0)
+			if at >= end {
+				break
+			}
+			if haystack[at] == 0 {
+				return false
+			}
+			high++
+			if high >= asciiPartitionMaxHigh {
+				return false
+			}
+			at++
+		}
+		return true
+	}
+
+	end := firstExceptional + asciiPartitionSampleBytes
+	if end > len(haystack) {
+		end = len(haystack)
+	}
+	if !sparseSample(firstExceptional, end) {
+		return false
+	}
+	if len(haystack)-firstExceptional <= asciiPartitionSampleBytes {
+		return true
+	}
+
+	// A bounded set of fixed-fraction samples catches a dense suffix or middle
+	// without turning admission into a second full haystack scan. Keep samples
+	// disjoint from the first window and clamp them at the input boundary.
+	for _, start := range [...]int{len(haystack) / 4, len(haystack) / 2, len(haystack) - asciiPartitionSampleBytes} {
+		if start < end {
+			continue
+		}
+		if !sparseSample(start, start+asciiPartitionSampleBytes) {
+			return false
+		}
+	}
+	return true
+}
+
+// findUnfilteredDecodedLegacy retains the original decoded prefix and
+// fallback shape for plans that cannot profit from ASCII-run re-entry. Keeping
+// this owner separate prevents the partition state and its boundary checks
+// from changing ordinary fallback work.
+func (p *searchPlan) findUnfilteredDecodedLegacy(haystack string) (Match, bool) {
 	state, unit := 0, 0
 	bestUnitStart := -1
 	best := Match{Pattern: -1, Start: -1}
@@ -2397,7 +2652,103 @@ func (p *searchPlan) findUnfiltered(haystack string) (Match, bool) {
 		}
 		return best, true
 	}
-	return p.findNonASCII(haystack, at, unit, state, bestUnitStart, best)
+
+	var inlineStarts [256]int
+	starts := inlineStarts[:]
+	if p.maxUnits > len(starts) {
+		starts = make([]int, p.maxUnits)
+	}
+	return p.findNonASCIIDecoded(haystack, at, unit, state, bestUnitStart, best, starts)
+}
+
+// findUnfilteredWithStarts is the decoded executor used for a bounded window.
+// A caller can provide its offset ring so each window reuses the same stack
+// storage rather than allocating a new ring.
+func (p *searchPlan) findUnfilteredWithStarts(haystack string, starts []int) (Match, bool) {
+	state, unit := 0, 0
+	bestUnitStart := -1
+	best := Match{Pattern: -1, Start: -1}
+	if p.empty >= 0 {
+		// An empty pattern is a candidate at start zero, not an immediate
+		// answer: a lower-index non-empty pattern may also start at zero.
+		bestUnitStart = 0
+		best = Match{Pattern: p.empty, Start: 0}
+	}
+
+	// Common text stays in this no-allocation path. Because each preceding
+	// unit is one byte, a terminal's source start is direct arithmetic rather
+	// than a lookup in the variable-width offset ring used after the first
+	// non-ASCII byte.
+	at := 0
+	for at < len(haystack) && haystack[at] < utf8.RuneSelf {
+		// A root-to-root block cannot emit a non-empty terminal. Advance over
+		// sixteen such bytes at once; every other block remains on the exact
+		// same transition path below.
+		if state == 0 {
+			if p.rootKind != rootGeneric {
+				for at < len(haystack) {
+					skipped := rootSkipASCII(haystack, at, p.rootKind, p.rootNeedle)
+					if p.pairKind != rootGeneric {
+						skipped = pairSkipASCII(haystack, at, p.rootKind, p.rootNeedle, p.pairKind, p.pairNeedle)
+					}
+					if skipped == 0 {
+						break
+					}
+					if bestUnitStart >= 0 && unit+skipped-1 >= bestUnitStart+p.maxUnits-1 {
+						return best, true
+					}
+					at += skipped
+					unit += skipped
+				}
+			} else {
+				for at+16 <= len(haystack) {
+					block := haystack[at : at+16]
+					if p.rootByte[block[0]]|p.rootByte[block[1]]|p.rootByte[block[2]]|p.rootByte[block[3]]|
+						p.rootByte[block[4]]|p.rootByte[block[5]]|p.rootByte[block[6]]|p.rootByte[block[7]]|
+						p.rootByte[block[8]]|p.rootByte[block[9]]|p.rootByte[block[10]]|p.rootByte[block[11]]|
+						p.rootByte[block[12]]|p.rootByte[block[13]]|p.rootByte[block[14]]|p.rootByte[block[15]] != 0 {
+						break
+					}
+					if bestUnitStart >= 0 && unit+15 >= bestUnitStart+p.maxUnits-1 {
+						return best, true
+					}
+					at += len(block)
+					unit += len(block)
+				}
+			}
+			if at == len(haystack) || haystack[at] >= utf8.RuneSelf {
+				break
+			}
+		}
+		state = p.advance(state, p.ascii[haystack[at]])
+		if output := p.nodes[state].output; output.pattern >= 0 {
+			startUnit := unit - output.units + 1
+			if bestUnitStart < 0 || startUnit < bestUnitStart ||
+				startUnit == bestUnitStart && output.pattern < best.Pattern {
+				bestUnitStart = startUnit
+				best = Match{Pattern: output.pattern, Start: startUnit}
+			}
+		}
+		if bestUnitStart >= 0 && unit >= bestUnitStart+p.maxUnits-1 {
+			return best, true
+		}
+		at++
+		unit++
+	}
+	if at == len(haystack) {
+		if bestUnitStart < 0 {
+			return Match{}, false
+		}
+		return best, true
+	}
+	if starts == nil {
+		var inlineStarts [256]int
+		starts = inlineStarts[:]
+		if p.maxUnits > len(starts) {
+			starts = make([]int, p.maxUnits)
+		}
+	}
+	return p.findNonASCII(haystack, at, unit, state, bestUnitStart, best, starts)
 }
 
 // findASCIITripleFiltered is the all-ASCII specialization of the shared plan.
@@ -2439,6 +2790,70 @@ func (p *searchPlan) findASCIITripleFiltered(haystack string) (Match, bool) {
 			if best.Pattern < 0 || start < best.Start ||
 				start == best.Start && output.pattern < best.Pattern {
 				best = Match{Pattern: output.pattern, Start: start}
+			}
+		}
+		at += size
+	}
+	if best.Pattern < 0 {
+		return Match{}, false
+	}
+	return best, true
+}
+
+// tripleSkipASCIIRegion scans candidate starts in [start,end). The byte scout
+// may inspect the two following bytes needed by overlapping triple loads, but
+// the returned skip is clamped to the known-ASCII region. The decoded boundary
+// window owns starts whose source crosses the following exceptional span.
+func tripleSkipASCIIRegion(s string, start, end int, filter *tripleFilter) int {
+	if start >= end {
+		return 0
+	}
+	scanEnd := end + 2
+	if scanEnd > len(s) {
+		scanEnd = len(s)
+	}
+	skipped := tripleSkipBytes(s[start:scanEnd], 0, filter)
+	if limit := end - start; skipped > limit {
+		return limit
+	}
+	return skipped
+}
+
+// findASCIITripleFilteredRange is the bounded form used for a maximal ASCII
+// run. Its vector scout may read two bytes beyond end from the original
+// haystack, but it never advances a candidate beyond end; a decoded window
+// handles matches whose source crosses the following exceptional span.
+func (p *searchPlan) findASCIITripleFilteredRange(haystack string, start, end int) (Match, bool) {
+	var inlineStarts [256]int
+	starts := inlineStarts[:]
+	if p.maxUnits > len(starts) {
+		starts = make([]int, p.maxUnits)
+	}
+
+	state, history := 0, 0
+	best := Match{Pattern: -1, Start: -1}
+	for at := start; at < end; {
+		if state == 0 {
+			if best.Pattern >= 0 && at > best.Start {
+				return best, true
+			}
+			history = 0
+			skipped := tripleSkipASCIIRegion(haystack, at, end, &p.asciiTriples)
+			at += skipped
+			if at == end {
+				break
+			}
+		}
+
+		starts[history%len(starts)] = at
+		token, size := p.haystackToken(haystack, at)
+		state = p.advance(state, token)
+		history++
+		if output := p.nodes[state].output; output.pattern >= 0 {
+			startAt := starts[(history-output.units)%len(starts)]
+			if best.Pattern < 0 || startAt < best.Start ||
+				startAt == best.Start && output.pattern < best.Pattern {
+				best = Match{Pattern: output.pattern, Start: startAt}
 			}
 		}
 		at += size
@@ -2537,6 +2952,7 @@ func (p *searchPlan) findFiltered(haystack string) (Match, bool) {
 	if p.empty >= 0 {
 		best = Match{Pattern: p.empty, Start: 0}
 	}
+	raw := p.hasRawByteTokenPlan()
 	for at := 0; at < len(haystack); {
 		if state == 0 {
 			// Once no prefix is live, a previously found start cannot be
@@ -2566,8 +2982,39 @@ func (p *searchPlan) findFiltered(haystack string) (Match, bool) {
 		}
 
 		starts[history%len(starts)] = at
-		token, size := p.haystackToken(haystack, at)
-		state = p.advance(state, token)
+		size := 0
+		if raw {
+			// Keep the raw classification in this loop so the source-byte loads
+			// and dense transition stay in one generated body. Wider and malformed
+			// input falls through to the complete decoded transition below.
+			value := haystack[at]
+			if value < utf8.RuneSelf {
+				token := p.ascii[value]
+				if token == 0 {
+					state = 0
+				} else {
+					state = int(p.dense[state*p.stride+int(token)])
+				}
+				size = 1
+			} else if value >= 0xc2 && value <= 0xdf && at+1 < len(haystack) {
+				trail := haystack[at+1]
+				if trail >= 0x80 && trail < 0xc0 {
+					row := p.opaque[value]
+					if row == 0 {
+						state = 0
+					} else if token := p.opaque[(int(row)-1)*rawByteTrailClasses+int(trail-0x80)]; token == 0 {
+						state = 0
+					} else {
+						state = int(p.dense[state*p.stride+int(token)])
+					}
+					size = 2
+				}
+			}
+		}
+		if size == 0 {
+			token, decodedSize := p.haystackToken(haystack, at)
+			state, size = p.advance(state, token), decodedSize
+		}
 		history++
 		if output := p.nodes[state].output; output.pattern >= 0 {
 			start := starts[(history-output.units)%len(starts)]
@@ -2584,15 +3031,243 @@ func (p *searchPlan) findFiltered(haystack string) (Match, bool) {
 	return best, true
 }
 
-// findNonASCII resumes the plan at its first non-ASCII byte. The ASCII prefix
-// has one source byte per unit, so its still-live starts can be reconstructed
-// into the offset ring without a second traversal of the haystack.
-func (p *searchPlan) findNonASCII(haystack string, at, unit, state, bestUnitStart int, best Match) (Match, bool) {
+func (p *searchPlan) asciiPartitionUsable() bool {
+	if p.empty >= 0 || p.opaqueContinuation || p.rootKind != rootGeneric || p.patternCount <= 1 ||
+		!p.asciiTriplesComplete || !p.asciiTriples.shufti.usable() {
+		return false
+	}
+	return runtimeVectorBits() == 512
+}
+
+// findASCIIRegion runs the strongest existing byte candidate transition that
+// is sound on a known-ASCII region. The caller has already separated all bytes
+// at or above UTF-8's RuneSelf, so the all-ASCII routes do not need to prove
+// that property again.
+func (p *searchPlan) findASCIIRegion(haystack string, start, end int, starts []int) (Match, bool) {
+	if end-start >= asciiTripleMinBytes {
+		return p.findASCIITripleFilteredRange(haystack, start, end)
+	}
+	match, ok := p.findUnfilteredWithStarts(haystack[start:end], starts)
+	if ok {
+		match.Start += start
+	}
+	return match, ok
+}
+
+// findPartitionedASCII resumes after the first high byte. It visits each
+// maximal ASCII run with the existing candidate transition and decodes only a
+// coalesced window around exceptional spans. The ASCII transition stops at the
+// exceptional byte, so it can confirm matches that finish before that byte;
+// the decoded window owns starts whose source crosses the span.
+func (p *searchPlan) findPartitionedASCII(haystack string, firstHigh int) (Match, bool) {
+	return p.findPartitionedASCIIWithStats(haystack, firstHigh, nil)
+}
+
+func (p *searchPlan) findPartitionedASCIIWithStats(haystack string, firstHigh int, stats *asciiPartitionStats) (Match, bool) {
+	maxBytes := p.maxBytes
+	if maxBytes < 1 || firstHigh >= len(haystack) {
+		return Match{}, false
+	}
+
 	var inlineStarts [256]int
 	starts := inlineStarts[:]
 	if p.maxUnits > len(starts) {
 		starts = make([]int, p.maxUnits)
 	}
+
+	var recentHigh [asciiPartitionMaxHigh]int
+	recentHighCount := 0
+	checkExceptional := func(start, end int, recent [asciiPartitionMaxHigh]int, count int) ([asciiPartitionMaxHigh]int, int, bool) {
+		for at := start; at < end; at++ {
+			if haystack[at] == 0 {
+				return recent, count, false
+			}
+			if haystack[at] < utf8.RuneSelf {
+				continue
+			}
+			if count >= asciiPartitionMaxHigh-1 &&
+				at-recent[(count-(asciiPartitionMaxHigh-1))%asciiPartitionMaxHigh] < asciiPartitionSampleBytes {
+				return recent, count, false
+			}
+			recent[count%asciiPartitionMaxHigh] = at
+			count++
+		}
+		// Malformed bytes have no stable decoded window to amortize. Keep their
+		// established opaque-byte executor rather than paying one transition per
+		// isolated high byte. The density checks above run first so a contiguous
+		// exceptional suffix is rejected without validating it in full.
+		return recent, count, utf8.ValidString(haystack[start:end])
+	}
+	recordExceptional := func(start, end int) bool {
+		var ok bool
+		recentHigh, recentHighCount, ok = checkExceptional(start, end, recentHigh, recentHighCount)
+		return ok
+	}
+
+	cursor := 0
+	fallback := func() (Match, bool) {
+		if stats != nil {
+			stats.fallbackEntries++
+		}
+		match, ok := p.findUnfilteredDecodedLegacy(haystack[cursor:])
+		if ok {
+			match.Start += cursor
+		}
+		return match, ok
+	}
+	spanStart := firstHigh
+	pendingMatch := Match{}
+	pendingOK := false
+	for {
+		spanEnd := spanStart
+		for spanEnd < len(haystack) && (haystack[spanEnd] >= utf8.RuneSelf || haystack[spanEnd] == 0) {
+			spanEnd++
+		}
+		if !recordExceptional(spanStart, spanEnd) {
+			return fallback()
+		}
+		if stats != nil {
+			for at := spanStart; at < spanEnd; at++ {
+				if haystack[at] >= utf8.RuneSelf {
+					stats.highBytes++
+				}
+			}
+		}
+		windowStart := spanStart - maxBytes
+		if windowStart < 0 {
+			windowStart = 0
+		}
+		windowEnd := spanEnd + maxBytes
+		if windowEnd > len(haystack) {
+			windowEnd = len(haystack)
+		}
+		lastHighEnd := spanEnd
+
+		// Coalesce exceptional spans whose widened windows touch. This leaves
+		// one decoded transition for a cluster rather than restarting it at
+		// every high byte.
+		nextStart := -1
+		for at := spanEnd; at < len(haystack); {
+			at += rootSkipASCII(haystack, at, rootExact, 0)
+			if at == len(haystack) {
+				break
+			}
+			nextSpanEnd := at
+			for nextSpanEnd < len(haystack) && (haystack[nextSpanEnd] >= utf8.RuneSelf || haystack[nextSpanEnd] == 0) {
+				nextSpanEnd++
+			}
+			nextWindowStart := at - maxBytes
+			if nextWindowStart < 0 {
+				nextWindowStart = 0
+			}
+			nextWindowEnd := nextSpanEnd + maxBytes
+			if nextWindowEnd > len(haystack) {
+				nextWindowEnd = len(haystack)
+			}
+			// Probe nearby next spans before spending the current group's window. A
+			// dense or malformed span must not make us partition work and then
+			// restart the legacy decoder from the same safe cursor. For a distant
+			// span, process this group first so a later fallback can resume after
+			// its widened window instead of rescanning this ASCII gap.
+			if nextWindowStart > windowEnd && at-spanStart > asciiPartitionLookaheadBytes {
+				nextStart = at
+				break
+			}
+			probeHigh, probeCount, ok := checkExceptional(at, nextSpanEnd, recentHigh, recentHighCount)
+			if !ok {
+				return fallback()
+			}
+			if nextWindowStart > windowEnd {
+				nextStart = at
+				break
+			}
+			recentHigh, recentHighCount = probeHigh, probeCount
+			if stats != nil {
+				for high := at; high < nextSpanEnd; high++ {
+					if haystack[high] >= utf8.RuneSelf {
+						stats.highBytes++
+					}
+				}
+			}
+			if nextWindowEnd > windowEnd {
+				windowEnd = nextWindowEnd
+			}
+			lastHighEnd = nextSpanEnd
+			at = nextSpanEnd
+		}
+
+		asciiMatch := pendingMatch
+		asciiOK := pendingOK
+		pendingOK = false
+		if cursor < spanStart {
+			if stats != nil {
+				stats.asciiCandidateBytes += spanStart - cursor
+			}
+			regionMatch, regionOK := p.findASCIIRegion(haystack, cursor, spanStart, starts)
+			if regionOK && (!asciiOK || regionMatch.Start < asciiMatch.Start ||
+				regionMatch.Start == asciiMatch.Start && regionMatch.Pattern < asciiMatch.Pattern) {
+				asciiMatch, asciiOK = regionMatch, true
+			}
+		}
+		if asciiOK && asciiMatch.Start < windowStart {
+			return asciiMatch, true
+		}
+		if stats != nil {
+			stats.decodedWindowBytes += windowEnd - windowStart
+			stats.decodedWindows++
+		}
+		windowMatch, windowOK := p.findUnfilteredWithStarts(haystack[windowStart:windowEnd], starts)
+		if windowOK {
+			windowMatch.Start += windowStart
+		}
+		if asciiOK && (!windowOK || asciiMatch.Start < windowMatch.Start ||
+			asciiMatch.Start == windowMatch.Start && asciiMatch.Pattern < windowMatch.Pattern) {
+			return asciiMatch, true
+		}
+		if windowOK {
+			return windowMatch, true
+		}
+
+		if nextStart < 0 {
+			if lastHighEnd < len(haystack) {
+				if stats != nil {
+					stats.asciiCandidateBytes += len(haystack) - lastHighEnd
+				}
+				return p.findASCIIRegion(haystack, lastHighEnd, len(haystack), starts)
+			}
+			return Match{}, false
+		}
+
+		// The next group starts after this group's widened window. Search the
+		// ASCII gap before its decoded window; starts in that window's overlap
+		// are checked by the next iteration against cross-span matches.
+		nextWindowStart := nextStart - maxBytes
+		if nextWindowStart < 0 {
+			nextWindowStart = 0
+		}
+		if lastHighEnd < nextStart {
+			if stats != nil {
+				stats.asciiCandidateBytes += nextStart - lastHighEnd
+			}
+			if match, ok := p.findASCIIRegion(haystack, lastHighEnd, nextStart, starts); ok {
+				if match.Start < nextWindowStart {
+					return match, true
+				}
+				pendingMatch, pendingOK = match, true
+			}
+		}
+		cursor = nextWindowStart
+		spanStart = nextStart
+	}
+}
+
+// findNonASCII resumes the plan at its first non-ASCII byte. It retains the
+// original decoded executor for bounded windows and short known-ASCII regions.
+func (p *searchPlan) findNonASCII(haystack string, at, unit, state, bestUnitStart int, best Match, starts []int) (Match, bool) {
+	return p.findNonASCIIDecoded(haystack, at, unit, state, bestUnitStart, best, starts)
+}
+
+func (p *searchPlan) findNonASCIIDecoded(haystack string, at, unit, state, bestUnitStart int, best Match, starts []int) (Match, bool) {
 	first := unit - p.maxUnits + 1
 	if first < 0 {
 		first = 0

@@ -1,0 +1,7 @@
+diff --git a/plan.go b/plan.go
+--- a/plan.go
++++ b/plan.go
+@@ -2375,3 +2375,0 @@
+-		if len(haystack) >= 4096 && p.rawByteOrigin.usable() {
+-			return withZeroWidth(p.findRawByteOrigin(haystack))
+-		}
