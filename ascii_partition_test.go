@@ -250,6 +250,17 @@ func TestASCIIPartitionRejectsDenseExceptionalInput(t *testing.T) {
 		t.Fatalf("late dense input was not rejected while discovering spans: %+v", stats)
 	}
 
+	contiguous := []byte(strings.Repeat("x", 1<<20))
+	copy(contiguous[0:3], "€")
+	copy(contiguous[4096:], strings.Repeat("€", 1<<16))
+	stats = asciiPartitionStats{}
+	if _, ok := plan.findUnfilteredWithStats(string(contiguous), &stats); ok {
+		t.Fatal("contiguous dense setup unexpectedly matched")
+	}
+	if stats.fallbackEntries != 1 {
+		t.Fatalf("contiguous dense input was not rejected early: %+v", stats)
+	}
+
 	lateMalformed := []byte(strings.Repeat("x", 1<<16))
 	copy(lateMalformed[0:3], "€")
 	lateMalformed[4096] = 0xff

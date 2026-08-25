@@ -3025,12 +3025,6 @@ func (p *searchPlan) findPartitionedASCIIWithStats(haystack string, firstHigh in
 	var recentHigh [asciiPartitionMaxHigh]int
 	recentHighCount := 0
 	recordExceptional := func(start, end int) bool {
-		// Malformed bytes have no stable decoded window to amortize. Keep their
-		// established opaque-byte executor rather than paying one transition per
-		// isolated high byte.
-		if !utf8.ValidString(haystack[start:end]) {
-			return false
-		}
 		for at := start; at < end; at++ {
 			if haystack[at] == 0 {
 				return false
@@ -3045,7 +3039,11 @@ func (p *searchPlan) findPartitionedASCIIWithStats(haystack string, firstHigh in
 			recentHigh[recentHighCount%asciiPartitionMaxHigh] = at
 			recentHighCount++
 		}
-		return true
+		// Malformed bytes have no stable decoded window to amortize. Keep their
+		// established opaque-byte executor rather than paying one transition per
+		// isolated high byte. The density checks above run first so a contiguous
+		// exceptional suffix is rejected without validating it in full.
+		return utf8.ValidString(haystack[start:end])
 	}
 
 	cursor := 0
