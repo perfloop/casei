@@ -123,8 +123,9 @@ const (
 	// A rolling exceptional-byte budget keeps a sparse prefix from admitting a
 	// later dense region. The partitioner checks the same bounded neighborhood
 	// as its entry guard while it discovers subsequent spans.
-	asciiPartitionSampleBytes = 1024
-	asciiPartitionMaxHigh     = 16
+	asciiPartitionSampleBytes    = 1024
+	asciiPartitionMaxHigh        = 16
+	asciiPartitionLookaheadBytes = asciiPartitionSampleBytes * asciiPartitionMaxHigh
 )
 
 // pairShuftiGroup stores four nibble-to-slot tables. The slot bits identify
@@ -2512,27 +2513,50 @@ func asciiPartitionTailBoundary(haystack string) bool {
 
 // asciiPartitionSparseEnough rejects exceptional-byte densities for which the
 // boundary work and repeated decoded transitions cost more than the legacy
-// executor. The sample is deliberately capped: sparse inputs retain the
-// vector ASCII gaps, while dense or NUL-containing inputs stay on their old path.
+// executor. The samples are deliberately capped and spread through the input:
+// sparse inputs retain the vector ASCII gaps, while a later dense region is
+// rejected before the first partitioned window is spent on it.
 func asciiPartitionSparseEnough(haystack string, firstExceptional int) bool {
+	sparseSample := func(start, end int) bool {
+		high := 0
+		for at := start; at < end; {
+			at += rootSkipASCII(haystack[:end], at, rootExact, 0)
+			if at >= end {
+				break
+			}
+			if haystack[at] == 0 {
+				return false
+			}
+			high++
+			if high >= asciiPartitionMaxHigh {
+				return false
+			}
+			at++
+		}
+		return true
+	}
+
 	end := firstExceptional + asciiPartitionSampleBytes
 	if end > len(haystack) {
 		end = len(haystack)
 	}
-	high := 0
-	for at := firstExceptional; at < end; {
-		at += rootSkipASCII(haystack[:end], at, rootExact, 0)
-		if at >= end {
-			break
+	if !sparseSample(firstExceptional, end) {
+		return false
+	}
+	if len(haystack)-firstExceptional <= asciiPartitionSampleBytes {
+		return true
+	}
+
+	// A bounded set of fixed-fraction samples catches a dense suffix or middle
+	// without turning admission into a second full haystack scan. Keep samples
+	// disjoint from the first window and clamp them at the input boundary.
+	for _, start := range [...]int{len(haystack) / 4, len(haystack) / 2, len(haystack) - asciiPartitionSampleBytes} {
+		if start < end {
+			continue
 		}
-		if haystack[at] == 0 {
+		if !sparseSample(start, start+asciiPartitionSampleBytes) {
 			return false
 		}
-		high++
-		if high >= asciiPartitionMaxHigh {
-			return false
-		}
-		at++
 	}
 	return true
 }
@@ -3043,29 +3067,44 @@ func (p *searchPlan) findPartitionedASCIIWithStats(haystack string, firstHigh in
 
 	var recentHigh [asciiPartitionMaxHigh]int
 	recentHighCount := 0
-	recordExceptional := func(start, end int) bool {
+	checkExceptional := func(start, end int, recent [asciiPartitionMaxHigh]int, count int) ([asciiPartitionMaxHigh]int, int, bool) {
 		for at := start; at < end; at++ {
 			if haystack[at] == 0 {
-				return false
+				return recent, count, false
 			}
 			if haystack[at] < utf8.RuneSelf {
 				continue
 			}
-			if recentHighCount >= asciiPartitionMaxHigh-1 &&
-				at-recentHigh[(recentHighCount-(asciiPartitionMaxHigh-1))%asciiPartitionMaxHigh] < asciiPartitionSampleBytes {
-				return false
+			if count >= asciiPartitionMaxHigh-1 &&
+				at-recent[(count-(asciiPartitionMaxHigh-1))%asciiPartitionMaxHigh] < asciiPartitionSampleBytes {
+				return recent, count, false
 			}
-			recentHigh[recentHighCount%asciiPartitionMaxHigh] = at
-			recentHighCount++
+			recent[count%asciiPartitionMaxHigh] = at
+			count++
 		}
 		// Malformed bytes have no stable decoded window to amortize. Keep their
 		// established opaque-byte executor rather than paying one transition per
 		// isolated high byte. The density checks above run first so a contiguous
 		// exceptional suffix is rejected without validating it in full.
-		return utf8.ValidString(haystack[start:end])
+		return recent, count, utf8.ValidString(haystack[start:end])
+	}
+	recordExceptional := func(start, end int) bool {
+		var ok bool
+		recentHigh, recentHighCount, ok = checkExceptional(start, end, recentHigh, recentHighCount)
+		return ok
 	}
 
 	cursor := 0
+	fallback := func() (Match, bool) {
+		if stats != nil {
+			stats.fallbackEntries++
+		}
+		match, ok := p.findUnfilteredDecodedLegacy(haystack[cursor:])
+		if ok {
+			match.Start += cursor
+		}
+		return match, ok
+	}
 	spanStart := firstHigh
 	pendingMatch := Match{}
 	pendingOK := false
@@ -3075,14 +3114,7 @@ func (p *searchPlan) findPartitionedASCIIWithStats(haystack string, firstHigh in
 			spanEnd++
 		}
 		if !recordExceptional(spanStart, spanEnd) {
-			if stats != nil {
-				stats.fallbackEntries++
-			}
-			match, ok := p.findUnfilteredDecodedLegacy(haystack[cursor:])
-			if ok {
-				match.Start += cursor
-			}
-			return match, ok
+			return fallback()
 		}
 		if stats != nil {
 			for at := spanStart; at < spanEnd; at++ {
@@ -3122,20 +3154,24 @@ func (p *searchPlan) findPartitionedASCIIWithStats(haystack string, firstHigh in
 			if nextWindowEnd > len(haystack) {
 				nextWindowEnd = len(haystack)
 			}
+			// Probe nearby next spans before spending the current group's window. A
+			// dense or malformed span must not make us partition work and then
+			// restart the legacy decoder from the same safe cursor. For a distant
+			// span, process this group first so a later fallback can resume after
+			// its widened window instead of rescanning this ASCII gap.
+			if nextWindowStart > windowEnd && at-spanStart > asciiPartitionLookaheadBytes {
+				nextStart = at
+				break
+			}
+			probeHigh, probeCount, ok := checkExceptional(at, nextSpanEnd, recentHigh, recentHighCount)
+			if !ok {
+				return fallback()
+			}
 			if nextWindowStart > windowEnd {
 				nextStart = at
 				break
 			}
-			if !recordExceptional(at, nextSpanEnd) {
-				if stats != nil {
-					stats.fallbackEntries++
-				}
-				match, ok := p.findUnfilteredDecodedLegacy(haystack[cursor:])
-				if ok {
-					match.Start += cursor
-				}
-				return match, ok
-			}
+			recentHigh, recentHighCount = probeHigh, probeCount
 			if stats != nil {
 				for high := at; high < nextSpanEnd; high++ {
 					if haystack[high] >= utf8.RuneSelf {

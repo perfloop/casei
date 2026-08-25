@@ -1,7 +1,7 @@
 host: Sapphire Rapids, GenuineIntel family 6 model 143
 go: go1.26.4 linux/amd64
 gdb: GNU gdb 15.1
-source checksum stream: 6c8b874f4c2e29cbd003580e2a0b6a6c85768735f04016379385c0e58384f82f
+source checksum stream: e797ffa1edc73b5195db9f066ad549ec5b4ccf7e29777e35c567a11cb5f16f2e
 command: gdb -q -batch -x audit/acceptance/native-reachability.gdb casei.test
 
 Breakpoint 1 at 0x5e54e0: file root_amd64.s, line 196.

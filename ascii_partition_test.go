@@ -261,6 +261,35 @@ func TestASCIIPartitionRejectsDenseExceptionalInput(t *testing.T) {
 		t.Fatalf("contiguous dense input was not rejected early: %+v", stats)
 	}
 
+	// A sparse first span must not make the partitioner spend a decoded window
+	// before it discovers a later contiguous valid-UTF-8 region is dense.
+	sparsePrefixDenseSuffix := []byte(strings.Repeat("x", 1<<20))
+	copy(sparsePrefixDenseSuffix[64:], "€")
+	copy(sparsePrefixDenseSuffix[4096:], strings.Repeat("€", 1<<16))
+	stats = asciiPartitionStats{}
+	if _, ok := plan.findUnfilteredWithStats(string(sparsePrefixDenseSuffix), &stats); ok {
+		t.Fatal("sparse-prefix setup unexpectedly matched")
+	}
+	if stats.fallbackEntries != 1 || stats.decodedWindows != 0 {
+		t.Fatalf("sparse-prefix dense input was partitioned before fallback: %+v", stats)
+	}
+
+	sampledDenseRegion := []byte(strings.Repeat("x", 1<<20))
+	copy(sampledDenseRegion[64:], "€")
+	for at := 200000; at+3 < 700000; at += 8 {
+		copy(sampledDenseRegion[at:], "€")
+	}
+	if asciiPartitionSparseEnough(string(sampledDenseRegion), 64) {
+		t.Fatal("sampled dense region passed admission")
+	}
+	stats = asciiPartitionStats{}
+	if _, ok := plan.findUnfilteredWithStats(string(sampledDenseRegion), &stats); ok {
+		t.Fatal("sampled dense setup unexpectedly matched")
+	}
+	if stats.fallbackEntries != 1 || stats.decodedWindows != 0 {
+		t.Fatalf("sampled dense input was admitted before fallback: %+v", stats)
+	}
+
 	lateMalformed := []byte(strings.Repeat("x", 1<<16))
 	copy(lateMalformed[0:3], "€")
 	lateMalformed[4096] = 0xff
