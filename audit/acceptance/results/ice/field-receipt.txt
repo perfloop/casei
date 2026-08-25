@@ -1,7 +1,7 @@
 receipt_format: casei-native-field-v1
-source_commit: 62d2ebe2b02d64bbb3fd19137b2920f30114c6d2
+source_commit: 5ab3cc8c1501a701bbd023a16d9d7da317a634ca
 source_manifest: audit/acceptance/SOURCE_SHA256SUMS
-source_manifest_sha256: 6c7ea99523a3dd2a212c807a1724051d4777e2ef2ea4cecc9092cf2492e595af
+source_manifest_sha256: 043dd919faa1d34cb26f2993f5f756e7f3265a10291e5889eecab67530cb27e9
 vendor_id: GenuineIntel
 cpu_family: 6
 cpu_model: 106
@@ -18,7 +18,7 @@ benchmarkbar_passes: 3
 benchmarkbar_entrants: 5-7
 benchmarkbar_dispatch: casei=512-bit, Vectorscan=512-bit VBMI
 benchmarkbar_output: audit/acceptance/results/ice/benchmarkbar.txt
-benchmarkbar_sha256: ac1a78fec008de451c42bf26e91824097b78293ca25432dd7d7b66de53dfc573
+benchmarkbar_sha256: a61c8ac9eaf3f548c54ff4c92aa2ce6d24f8d11fd2d55250a27965e513a7a32c
 
 rebar_commit: 463d00f31887e84c38467805b9e3122c314b9521
 rebar_field: Hyperscan 5.4.2, PCRE2 JIT 10.47, rust/regex 1.12.4
@@ -27,6 +27,6 @@ rebar_command: taskset -c 2 rebar measure -e '^(casei|hyperscan|pcre2/jit|rust/r
 rebar_rows: 18
 rebar_passes: 3
 rebar_entrants: casei, hyperscan, pcre2/jit, rust/regex
-rebar_pass1: audit/rebar/results/ice/rebar-audit-pass1.csv sha256=c39645ae469d309c3119502e6db6e9883f001e0c36283273145a422815421de9
-rebar_pass2: audit/rebar/results/ice/rebar-audit-pass2.csv sha256=7756260895dffe6fbb7c3f6cffe526312cd5d04adf6d4ed3536f8e34c6393a21
-rebar_pass3: audit/rebar/results/ice/rebar-audit-pass3.csv sha256=985362e6a9d92c0ce64a8a5c65b3478702af381a7781a959d121ea02e474cccb
+rebar_pass1: audit/rebar/results/ice/rebar-audit-pass1.csv sha256=a37d4082e114e1ac6624d19f6ac216109d1812411822dbf5904fd75f9d6a7a11
+rebar_pass2: audit/rebar/results/ice/rebar-audit-pass2.csv sha256=cf7580a159b36ee04957f5ab67749f5b0ca2a2a18672509ed5a958e9460a6116
+rebar_pass3: audit/rebar/results/ice/rebar-audit-pass3.csv sha256=863f3430c07039fb270fbc2f3ea3800cfd8d94358195a8ec8898fac222e9f813

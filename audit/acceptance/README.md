@@ -5,8 +5,8 @@ README claim.
 
 | host | rows | worst median | worst sample | median speedup | entrants |
 |---|---:|---:|---:|---:|---:|
-| Ice Lake, family 6/model 106 | 36/36 | 0.9608 | 0.9646 | 1.80× | 5-7 |
-| Sapphire Rapids, family 6/model 143 | 36/36 | 0.9710 | 0.9803 | 1.56× | 5-7 |
+| Ice Lake, family 6/model 106 | 36/36 | 0.9624 | 0.9736 | 1.80× | 5-7 |
+| Sapphire Rapids, family 6/model 143 | 36/36 | 0.9716 | 0.9799 | 1.56× | 5-7 |
 
 Every row has three samples. Every sample has `x_vs_best < 1`. `casei` reports
 512-bit dispatch, Vectorscan reports a 512-bit VBMI database, and the verifier
@@ -68,7 +68,7 @@ and [`results/spr/gdb-native.txt`](results/spr/gdb-native.txt). Each receipt
 must contain `HIT 1`, `HIT 2`, `HIT 3`, and a final `PASS`.
 [`SOURCE_SHA256SUMS`](SOURCE_SHA256SUMS) pins the source, direct tests, and GDB
 command file used to build both binaries. Both hosts reported the same checksum
-stream, `6c7ea99523a3dd2a212c807a1724051d4777e2ef2ea4cecc9092cf2492e595af`.
+stream, `043dd919faa1d34cb26f2993f5f756e7f3265a10291e5889eecab67530cb27e9`.
 
 ## Why failed runs are kept
 

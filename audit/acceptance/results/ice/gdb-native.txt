@@ -1,7 +1,7 @@
 host: Ice Lake, GenuineIntel family 6 model 106
 go: go1.26.6 linux/amd64
 gdb: GNU gdb 15.1
-source checksum stream: 6c7ea99523a3dd2a212c807a1724051d4777e2ef2ea4cecc9092cf2492e595af
+source checksum stream: 043dd919faa1d34cb26f2993f5f756e7f3265a10291e5889eecab67530cb27e9
 command: gdb -q -batch -x audit/acceptance/native-reachability.gdb casei.test
 
 warning: File "/usr/local/go/src/runtime/runtime-gdb.py" auto-loading has been declined by your `auto-load safe-path' set to "$debugdir:$datadir/auto-load".
@@ -14,11 +14,11 @@ line to your configuration file "/home/ts_perfloop_com/.config/gdb/gdbinit".
 For more information about this security protection see the
 "Auto-loading safe path" section in the GDB manual.  E.g., run from the shell:
 	info "(gdb)Auto-loading safe path"
-Breakpoint 1 at 0x5edb00: file /home/ts_perfloop_com/casei/root_amd64.s, line 196.
-Breakpoint 2 at 0x5f0b40: file /home/ts_perfloop_com/casei/root_amd64.s, line 2982.
-Breakpoint 3 at 0x5f0ec0: file /home/ts_perfloop_com/casei/root_amd64.s, line 3211.
+Breakpoint 1 at 0x5edb40: file /home/ts_perfloop_com/casei/root_amd64.s, line 196.
+Breakpoint 2 at 0x5f0b80: file /home/ts_perfloop_com/casei/root_amd64.s, line 2982.
+Breakpoint 3 at 0x5f0f00: file /home/ts_perfloop_com/casei/root_amd64.s, line 3211.
 HIT 3
 HIT 1
 HIT 2
 PASS
-[Inferior 1 (process 35133) exited normally]
+[Inferior 1 (process 37824) exited normally]

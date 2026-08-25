@@ -15,8 +15,8 @@ question as `casei`.
 
 | host | wins | median `casei / best` | worst row |
 |---|---:|---:|---:|
-| Ice Lake | 5/5 | 0.6539 | 0.8785 |
-| Sapphire Rapids | 5/5 | 0.6586 | 0.8968 |
+| Ice Lake | 5/5 | 0.6441 | 0.8794 |
+| Sapphire Rapids | 5/5 | 0.6716 | 0.8999 |
 
 Values below 1.0 are wins. The selected field is Hyperscan 5.4.2, PCRE2 10.47
 JIT, and rust/regex 1.12.4.
@@ -63,7 +63,7 @@ one Russian pattern
         |
         +-> pair-pair screen
         +-> raw one/two/three-byte fold confirmation
-        +-> confirmed source width ----------------------------> 0.28x to 0.90x
+        +-> confirmed source width ----------------------------> 0.29x to 0.90x
 ```
 
 The multi-pattern screen returns pattern tags, not matches. The existing plan
@@ -122,24 +122,24 @@ the fastest by its three-pass median. Bold values are wins.
 
 | Rebar row | requested folding | Ice Lake | Sapphire Rapids |
 |---|---|---:|---:|
-| `curated/01-literal/sherlock-casei-en` | ASCII-only* | 4.50× (Hyperscan) | 4.99× (Hyperscan) |
-| `curated/01-literal/sherlock-casei-ru` | Unicode | **0.86×** (PCRE2-JIT) | **0.90×** (PCRE2-JIT) |
-| `curated/02-literal-alternate/sherlock-casei-en` | ASCII-only* | 4.77× (Hyperscan) | 4.86× (Hyperscan) |
+| `curated/01-literal/sherlock-casei-en` | ASCII-only* | 4.48× (Hyperscan) | 4.93× (Hyperscan) |
+| `curated/01-literal/sherlock-casei-ru` | Unicode | **0.87×** (PCRE2-JIT) | **0.90×** (PCRE2-JIT) |
+| `curated/02-literal-alternate/sherlock-casei-en` | ASCII-only* | 4.69× (Hyperscan) | 4.91× (Hyperscan) |
 | `curated/02-literal-alternate/sherlock-casei-ru` | Unicode | **0.88×** (Hyperscan) | **0.84×** (Hyperscan) |
-| `hyperscan/literal-casei-english-nosom` | ASCII-only* | 3.55× (Hyperscan) | 4.41× (Hyperscan) |
-| `hyperscan/literal-casei-english-som` | ASCII-only* | 3.55× (Hyperscan) | 4.37× (Hyperscan) |
+| `hyperscan/literal-casei-english-nosom` | ASCII-only* | 3.55× (Hyperscan) | 4.32× (Hyperscan) |
+| `hyperscan/literal-casei-english-som` | ASCII-only* | 3.53× (Hyperscan) | 4.39× (Hyperscan) |
 | `hyperscan/literal-casei-russian-nosom` | Unicode | **0.36×** (rust/regex) | **0.29×** (Hyperscan) |
-| `hyperscan/literal-casei-russian-som` | Unicode | **0.36×** (rust/regex) | **0.28×** (Hyperscan) |
-| `imported/leipzig/tom-sawyer-huckle-fin-insensitive` | ASCII-only* | 2.34× (Hyperscan) | 2.10× (Hyperscan) |
-| `imported/leipzig/twain-insensitive` | ASCII-only* | 1.12× (Hyperscan) | 1.09× (Hyperscan) |
-| `imported/sherlock/name-alt3-casei` | ASCII-only* | **0.70×** (rust/regex) | **0.64×** (rust/regex) |
-| `imported/sherlock/name-alt5-casei` | ASCII-only* | **0.90×** (rust/regex) | **0.85×** (rust/regex) |
-| `imported/sherlock/name-holmes-casei` | ASCII-only* | **0.55×** (PCRE2-JIT) | **0.54×** (PCRE2-JIT) |
-| `imported/sherlock/name-sherlock-casei` | ASCII-only* | 1.55× (PCRE2-JIT) | 1.83× (PCRE2-JIT) |
-| `imported/sherlock/name-sherlock-holmes-casei` | ASCII-only* | 2.51× (PCRE2-JIT) | 3.00× (PCRE2-JIT) |
-| `imported/sherlock/the-casei` | ASCII-only* | **0.77×** (PCRE2-JIT) | **0.66×** (PCRE2-JIT) |
-| `opt/prefilter/literal-casei-english` | ASCII-only* | 1.89× (PCRE2-JIT) | 2.33× (PCRE2-JIT) |
-| `opt/prefilter/literal-casei-russian` | Unicode | **0.65×** (PCRE2-JIT) | **0.66×** (PCRE2-JIT) |
+| `hyperscan/literal-casei-russian-som` | Unicode | **0.36×** (rust/regex) | **0.29×** (Hyperscan) |
+| `imported/leipzig/tom-sawyer-huckle-fin-insensitive` | ASCII-only* | 2.37× (Hyperscan) | 2.10× (Hyperscan) |
+| `imported/leipzig/twain-insensitive` | ASCII-only* | 1.11× (Hyperscan) | 1.08× (Hyperscan) |
+| `imported/sherlock/name-alt3-casei` | ASCII-only* | **0.70×** (rust/regex) | **0.63×** (rust/regex) |
+| `imported/sherlock/name-alt5-casei` | ASCII-only* | **0.89×** (rust/regex) | **0.85×** (rust/regex) |
+| `imported/sherlock/name-holmes-casei` | ASCII-only* | **0.57×** (PCRE2-JIT) | **0.55×** (PCRE2-JIT) |
+| `imported/sherlock/name-sherlock-casei` | ASCII-only* | 1.54× (PCRE2-JIT) | 1.84× (PCRE2-JIT) |
+| `imported/sherlock/name-sherlock-holmes-casei` | ASCII-only* | 2.50× (PCRE2-JIT) | 3.01× (PCRE2-JIT) |
+| `imported/sherlock/the-casei` | ASCII-only* | **0.78×** (PCRE2-JIT) | **0.66×** (PCRE2-JIT) |
+| `opt/prefilter/literal-casei-english` | ASCII-only* | 1.90× (PCRE2-JIT) | 2.34× (PCRE2-JIT) |
+| `opt/prefilter/literal-casei-russian` | Unicode | **0.64×** (PCRE2-JIT) | **0.67×** (PCRE2-JIT) |
 
 `*` Rebar disables Unicode-aware folding. `casei` would match Unicode fold
 mates that these definitions exclude. The recorded corpora happen to produce
