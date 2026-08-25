@@ -382,6 +382,68 @@ func TestRawByteMultiAnchorSkipNeverPassesAConfirmedTag(t *testing.T) {
 	}
 }
 
+func TestRawByteMultiAnchorScalarScreenUnionsConfirmationGroups(t *testing.T) {
+	pair := func(first, second byte) rawByteMultiAnchorPairSet {
+		return rawByteMultiAnchorPairSet{
+			pairs: [rawByteMultiAnchorForms]uint16{uint16(first) | uint16(second)<<8},
+			n:     1,
+		}
+	}
+	const (
+		aliasTag = byte(1 << iota)
+		matchTag
+	)
+	aliasPrimary := pair(0x01, 0x02) // Low six bits alias "AB".
+	matchPrimary := pair('A', 'B')
+	aliasConfirm := pair('C', 'D')
+	matchConfirm := pair('E', 'F')
+	guard := pair('G', 'H')
+	filter := rawByteMultiAnchorFilter{
+		confirmOffset: [rawByteMultiAnchorConfirmGroups]uint8{2, 4},
+		confirmN:      2,
+		valid:         1,
+	}
+	rawByteMultiAnchorAddTable(&filter.first, aliasPrimary, false, aliasTag)
+	rawByteMultiAnchorAddTable(&filter.second, aliasPrimary, true, aliasTag)
+	rawByteMultiAnchorAddTable(&filter.first, matchPrimary, false, matchTag)
+	rawByteMultiAnchorAddTable(&filter.second, matchPrimary, true, matchTag)
+	rawByteMultiAnchorAddTable(&filter.confirmFirst[0], aliasConfirm, false, aliasTag)
+	rawByteMultiAnchorAddTable(&filter.confirmSecond[0], aliasConfirm, true, aliasTag)
+	rawByteMultiAnchorAddTable(&filter.confirmFirst[1], matchConfirm, false, matchTag)
+	rawByteMultiAnchorAddTable(&filter.confirmSecond[1], matchConfirm, true, matchTag)
+	filter.anchors[0] = rawByteMultiAnchor{
+		primary:       aliasPrimary,
+		confirm:       aliasConfirm,
+		guard:         guard,
+		starts:        [rawByteMultiAnchorStartOffsets]uint8{0},
+		confirmOffset: [rawByteMultiAnchorConfirmGroups]uint8{2},
+		guardOffset:   [rawByteMultiAnchorStartOffsets]uint8{6},
+		startN:        1,
+		confirmN:      1,
+		guardN:        1,
+	}
+	filter.anchors[1] = rawByteMultiAnchor{
+		primary:       matchPrimary,
+		confirm:       matchConfirm,
+		guard:         guard,
+		starts:        [rawByteMultiAnchorStartOffsets]uint8{0},
+		confirmOffset: [rawByteMultiAnchorConfirmGroups]uint8{4},
+		guardOffset:   [rawByteMultiAnchorStartOffsets]uint8{6},
+		startN:        1,
+		confirmN:      1,
+		guardN:        1,
+	}
+
+	haystack := "ABCDEFGH"
+	skipped, candidates := rawByteMultiAnchorSkipScalar(haystack, 0, &filter)
+	if skipped != 0 || candidates != aliasTag|matchTag {
+		t.Fatalf("scalar screen = (%d, %08b), want (0, %08b)", skipped, candidates, aliasTag|matchTag)
+	}
+	if tags := filter.tagsAt(haystack, 0, candidates); tags != matchTag {
+		t.Fatalf("exact tags = %08b, want %08b", tags, matchTag)
+	}
+}
+
 // TestRawByteMultiAnchorScalarScreenNeverPassesConfirmedTag proves the table
 // screen used after a vector tail (and on portable hosts) can stop early on an
 // alias but never skips an exact tagged anchor. The later tagsAt replay remains

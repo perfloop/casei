@@ -687,6 +687,7 @@ func rawByteMultiAnchorSkipScalar(s string, at int, filter *rawByteMultiAnchorFi
 		tags := filter.first[s[at]&0x3f]
 		if tags != 0 {
 			tags &= filter.second[s[at+1]&0x3f]
+			var candidates byte
 			for group := 0; tags != 0 && group < int(filter.confirmN); group++ {
 				offset := int(filter.confirmOffset[group])
 				if at+offset+1 >= len(s) {
@@ -694,9 +695,10 @@ func rawByteMultiAnchorSkipScalar(s string, at int, filter *rawByteMultiAnchorFi
 				}
 				confirmed := filter.confirmFirst[group][s[at+offset]&0x3f] &
 					filter.confirmSecond[group][s[at+offset+1]&0x3f]
-				if candidates := tags & confirmed; candidates != 0 {
-					return at - start, candidates
-				}
+				candidates |= tags & confirmed
+			}
+			if candidates != 0 {
+				return at - start, candidates
 			}
 		}
 		at++
