@@ -2446,9 +2446,10 @@ func (p *searchPlan) findWithWidth(haystack string) (Match, int, bool) {
 // haystacks with unusually wide compiled patterns.
 func asciiPartitionWindowWorthwhile(length, maxBytes int) bool {
 	// A widened window spends up to maxBytes on either side of an exceptional
-	// span. Keep at least half of a short haystack available for ASCII-run work;
-	// very wide compiled patterns otherwise turn the partition into extra work.
-	return maxBytes > 0 && maxBytes <= length/4
+	// span. Keep at least three quarters of a sufficiently long haystack
+	// available for ASCII-run work; short inputs and very wide compiled patterns
+	// otherwise turn the partition into extra work.
+	return length >= 2*asciiPartitionSampleBytes && maxBytes > 0 && maxBytes <= length/8
 }
 
 // findUnfiltered advances the decoded plan without raw byte filters. It is the

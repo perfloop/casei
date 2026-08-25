@@ -68,7 +68,7 @@ and [`results/spr/gdb-native.txt`](results/spr/gdb-native.txt). Each receipt
 must contain `HIT 1`, `HIT 2`, `HIT 3`, and a final `PASS`.
 [`SOURCE_SHA256SUMS`](SOURCE_SHA256SUMS) pins the source, direct tests, and GDB
 command file used to build both binaries. Both hosts reported the same checksum
-stream, `539bcd48febc3a82ab83b7ab39d90907f88930d891f7f562e1985f2a2f6d4e6e`.
+stream, `90b3797f8d90e24009f7f5bc5958066b8de1c55b655a8300f33761f062921059`.
 
 ## Why failed runs are kept
 

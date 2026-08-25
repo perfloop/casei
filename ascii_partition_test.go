@@ -296,14 +296,19 @@ func TestASCIIPartitionRejectsDenseExceptionalInput(t *testing.T) {
 	if !widePlan.asciiPartitionUsable() || widePlan.maxBytes < 100000 {
 		t.Fatalf("wide pattern did not retain the partition shape: usable=%t maxBytes=%d", widePlan.asciiPartitionUsable(), widePlan.maxBytes)
 	}
-	wideHaystack := []byte(strings.Repeat("x", 131072))
-	copy(wideHaystack[64:], "€")
-	stats = asciiPartitionStats{}
-	if _, ok := widePlan.findUnfilteredWithStats(string(wideHaystack), &stats); ok {
-		t.Fatal("wide-pattern setup unexpectedly matched")
-	}
-	if stats.fallbackEntries != 1 || stats.decodedWindows != 0 {
-		t.Fatalf("wide pattern admitted a whole-input decoded window: %+v", stats)
+	for _, tc := range []struct {
+		length int
+		highAt int
+	}{{length: 256, highAt: 189}, {length: 131072, highAt: 64}} {
+		wideHaystack := []byte(strings.Repeat("x", tc.length))
+		copy(wideHaystack[tc.highAt:], "€")
+		stats = asciiPartitionStats{}
+		if _, ok := widePlan.findUnfilteredWithStats(string(wideHaystack), &stats); ok {
+			t.Fatalf("wide-pattern setup unexpectedly matched at length %d", tc.length)
+		}
+		if stats.fallbackEntries != 1 || stats.decodedWindows != 0 {
+			t.Fatalf("wide pattern admitted a whole-input decoded window at length %d: %+v", tc.length, stats)
+		}
 	}
 
 	lateMalformed := []byte(strings.Repeat("x", 1<<16))
