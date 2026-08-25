@@ -6,7 +6,7 @@ This directory contains the adapter and measurements behind
 The current receipts say:
 
 - `casei` wins all 5/5 rows with the same Unicode contract on both hosts;
-- the worst same-contract ratio is 0.8766 on Ice Lake and 0.8919 on Sapphire
+- the worst same-contract ratio is 0.8785 on Ice Lake and 0.8968 on Sapphire
   Rapids;
 - across all 18 representable stress rows, including 13 ASCII-only contracts,
   `casei` wins 9/18 on each host.

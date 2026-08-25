@@ -1,14 +1,24 @@
 host: Sapphire Rapids, GenuineIntel family 6 model 143
-go: go1.26.4 linux/amd64
+go: go1.26.6 linux/amd64
 gdb: GNU gdb 15.1
-source checksum stream: 90b3797f8d90e24009f7f5bc5958066b8de1c55b655a8300f33761f062921059
+source checksum stream: 6c7ea99523a3dd2a212c807a1724051d4777e2ef2ea4cecc9092cf2492e595af
 command: gdb -q -batch -x audit/acceptance/native-reachability.gdb casei.test
 
-Breakpoint 1 at 0x5e54e0: file root_amd64.s, line 196.
-Breakpoint 2 at 0x5e8520: file root_amd64.s, line 2982.
-Breakpoint 3 at 0x5e88a0: file root_amd64.s, line 3211.
+warning: File "/usr/local/go/src/runtime/runtime-gdb.py" auto-loading has been declined by your `auto-load safe-path' set to "$debugdir:$datadir/auto-load".
+To enable execution of this file add
+	add-auto-load-safe-path /usr/local/go/src/runtime/runtime-gdb.py
+line to your configuration file "/home/tomas/.config/gdb/gdbinit".
+To completely disable this security protection add
+	set auto-load safe-path /
+line to your configuration file "/home/tomas/.config/gdb/gdbinit".
+For more information about this security protection see the
+"Auto-loading safe path" section in the GDB manual.  E.g., run from the shell:
+	info "(gdb)Auto-loading safe path"
+Breakpoint 1 at 0x5edb00: file /home/tomas/casei-pr10-spr-0823.9nVjRd/casei/root_amd64.s, line 196.
+Breakpoint 2 at 0x5f0b40: file /home/tomas/casei-pr10-spr-0823.9nVjRd/casei/root_amd64.s, line 2982.
+Breakpoint 3 at 0x5f0ec0: file /home/tomas/casei-pr10-spr-0823.9nVjRd/casei/root_amd64.s, line 3211.
 HIT 3
 HIT 1
 HIT 2
 PASS
-[Inferior 1 exited normally]
+[Inferior 1 (process 13262) exited normally]

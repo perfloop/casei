@@ -70,7 +70,7 @@ That result opened the missing cells. The retained follow-up combines tagged
 interior anchors, exact pair replay, one/two/three-byte raw confirmation with
 source-width return, and an exact common-byte origin gate. The current adapter
 uses `Matcher.Each` and wins all five same-contract rows on both hosts. Its
-worst ratios are 0.8766 on Ice Lake and 0.8919 on Sapphire Rapids. Thirteen
+worst ratios are 0.8785 on Ice Lake and 0.8968 on Sapphire Rapids. Thirteen
 additional rows request ASCII-only matching; they remain visible as
 different-contract stress data, with `casei` winning 9 of all 18 rows on each
 host. [`REBAR.md`](REBAR.md) records the before/after mechanisms, complete

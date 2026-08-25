@@ -4,9 +4,9 @@ source_manifest: audit/acceptance/SOURCE_SHA256SUMS
 source_manifest_sha256: 6c7ea99523a3dd2a212c807a1724051d4777e2ef2ea4cecc9092cf2492e595af
 vendor_id: GenuineIntel
 cpu_family: 6
-cpu_model: 143
-cpu_model_name: Intel(R) Xeon(R) Platinum 8481C CPU @ 2.70GHz
-lscpu_model_name: unknown (KVM virtualized CPUID)
+cpu_model: 106
+cpu_model_name: Intel(R) Xeon(R) CPU @ 2.60GHz
+lscpu_model_name: Intel(R) Xeon(R) CPU @ 2.60GHz
 required_cpu_features: avx2 avx512f avx512bw avx512vbmi
 go: go1.26.6 linux/amd64
 cpu_affinity: 2
@@ -17,8 +17,8 @@ benchmarkbar_rows: 36
 benchmarkbar_passes: 3
 benchmarkbar_entrants: 5-7
 benchmarkbar_dispatch: casei=512-bit, Vectorscan=512-bit VBMI
-benchmarkbar_output: audit/acceptance/results/spr/benchmarkbar.txt
-benchmarkbar_sha256: 115cb39c11dd113cd55630a4cf9880dce300b5cac045c5d656b8bf2d74b45b2b
+benchmarkbar_output: audit/acceptance/results/ice/benchmarkbar.txt
+benchmarkbar_sha256: ac1a78fec008de451c42bf26e91824097b78293ca25432dd7d7b66de53dfc573
 
 rebar_commit: 463d00f31887e84c38467805b9e3122c314b9521
 rebar_field: Hyperscan 5.4.2, PCRE2 JIT 10.47, rust/regex 1.12.4
@@ -27,6 +27,6 @@ rebar_command: taskset -c 2 rebar measure -e '^(casei|hyperscan|pcre2/jit|rust/r
 rebar_rows: 18
 rebar_passes: 3
 rebar_entrants: casei, hyperscan, pcre2/jit, rust/regex
-rebar_pass1: audit/rebar/results/spr/rebar-audit-pass1.csv sha256=d0811ea426296248bf3dd600b1e2cd6fdfeca7b9727ac3c03af91f03f416f24e
-rebar_pass2: audit/rebar/results/spr/rebar-audit-pass2.csv sha256=0d5c850cae6d8aa376a95a86babcc47ddd61faeaaac99a573fd955a3e3f9b7fe
-rebar_pass3: audit/rebar/results/spr/rebar-audit-pass3.csv sha256=64620492bbddc5f7cee17eaa3598c30c4457eabbd7d51c2c5233813f3de1f2ad
+rebar_pass1: audit/rebar/results/ice/rebar-audit-pass1.csv sha256=c39645ae469d309c3119502e6db6e9883f001e0c36283273145a422815421de9
+rebar_pass2: audit/rebar/results/ice/rebar-audit-pass2.csv sha256=7756260895dffe6fbb7c3f6cffe526312cd5d04adf6d4ed3536f8e34c6393a21
+rebar_pass3: audit/rebar/results/ice/rebar-audit-pass3.csv sha256=985362e6a9d92c0ce64a8a5c65b3478702af381a7781a959d121ea02e474cccb

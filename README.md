@@ -15,8 +15,8 @@ veloz, and Rust Aho-Corasick where their contracts apply.
 
 | host | rows won | worst median `x_vs_best` | worst sample | median speedup |
 |---|---:|---:|---:|---:|
-| Ice Lake | 36/36 | 0.9614 | 0.9622 | 1.79× |
-| Sapphire Rapids | 36/36 | 0.9693 | 0.9716 | 1.55× |
+| Ice Lake | 36/36 | 0.9608 | 0.9646 | 1.80× |
+| Sapphire Rapids | 36/36 | 0.9710 | 0.9803 | 1.56× |
 
 `x_vs_best` is casei time divided by the fastest other implementation on the
 same workload. Lower is better. Every one of the 216 measured row samples was
@@ -29,7 +29,7 @@ five Rebar rows that request the same Unicode folding relation on both CPUs.
 
 | Rebar selection | Ice Lake | Sapphire Rapids |
 |---|---:|---:|
-| same Unicode contract | 5/5 wins, worst 0.8766 | 5/5 wins, worst 0.8919 |
+| same Unicode contract | 5/5 wins, worst 0.8785 | 5/5 wins, worst 0.8968 |
 | all 18 representable stress rows | 9/18 wins | 9/18 wins |
 
 The other 13 Rebar rows request ASCII-only case matching. `casei` keeps Unicode

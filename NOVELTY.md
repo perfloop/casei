@@ -1637,9 +1637,9 @@ exact byte.
 The gate ships only as part of the combined result with tagged survivor bits,
 variable-width raw confirmation, and the wider sparse tagged schedule. No
 isolated novelty claim is made for it. The combined source passed every sample
-of the 36-row paired field on both hosts: worst medians were 0.9614 on Ice Lake
-and 0.9693 on Sapphire Rapids. It also moved all five same-contract Rebar rows
-below 1.0 on both hosts, with worst ratios 0.8766 and 0.8919. Those external
+of the 36-row paired field on both hosts: worst medians were 0.9608 on Ice Lake
+and 0.9710 on Sapphire Rapids. It also moved all five same-contract Rebar rows
+below 1.0 on both hosts, with worst ratios 0.8785 and 0.8968. Those external
 rows are the result the prior construction did not hold.
 
 The retained route is falsified by a missed fold spelling, a start earlier than

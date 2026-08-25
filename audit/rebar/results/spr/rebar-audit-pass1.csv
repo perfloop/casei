@@ -1,61 +1,61 @@
 name,model,rebar_version,engine,engine_version,err,haystack_len,iters,total,median,mad,mean,stddev,min,max
-curated/01-literal/sherlock-casei-en,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,899232,1000,305.52ms,224.82us,3.92us,227.63us,20.17us,217.31us,728.83us
-curated/01-literal/sherlock-casei-en,count,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-25,,899232,1000,102.56ms,45.04us,590.00ns,52.83us,95.68us,43.71us,2.26ms
-curated/01-literal/sherlock-casei-en,count,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,899232,1000,152.13ms,74.77us,1.61us,88.24us,89.38us,72.50us,2.12ms
-curated/01-literal/sherlock-casei-en,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,899232,1000,203.83ms,137.73us,106.00ns,139.33us,4.11us,137.35us,196.64us
-curated/01-literal/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,1570556,1000,201.82ms,120.17us,1.78us,122.17us,5.40us,117.19us,163.41us
-curated/01-literal/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-25,,1570556,1000,407.06ms,325.82us,6.93us,328.20us,14.18us,313.46us,505.79us
-curated/01-literal/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,1570556,1000,203.54ms,131.52us,1.05us,139.04us,16.03us,130.05us,492.55us
-curated/01-literal/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,1570556,1000,356.77ms,299.73us,3.01us,299.93us,4.63us,295.46us,347.17us
-curated/02-literal-alternate/sherlock-casei-en,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,899232,1000,607.61ms,454.97us,6.00us,456.62us,14.84us,439.97us,701.65us
-curated/02-literal-alternate/sherlock-casei-en,count,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-25,,899232,1000,152.91ms,97.21us,2.59us,98.15us,3.77us,93.28us,119.28us
-curated/02-literal-alternate/sherlock-casei-en,count,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,899232,219,713.17ms,2.28ms,13.39us,2.29ms,41.47us,2.24ms,2.57ms
-curated/02-literal-alternate/sherlock-casei-en,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,899232,1000,560.26ms,481.04us,4.15us,484.08us,20.09us,474.11us,717.49us
-curated/02-literal-alternate/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,1570556,1000,755.77ms,490.21us,4.47us,499.22us,32.01us,478.84us,1.12ms
-curated/02-literal-alternate/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-25,,1570556,799,610.55ms,622.42us,6.46us,626.16us,22.35us,606.34us,894.80us
-curated/02-literal-alternate/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,1570556,53,763.57ms,9.33ms,122.27us,9.52ms,684.18us,9.11ms,13.77ms
-curated/02-literal-alternate/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,1570556,303,712.87ms,1.65ms,12.46us,1.66ms,40.15us,1.62ms,2.11ms
-hyperscan/literal-casei-english-nosom,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,613357,1000,153.07ms,88.20us,2.92us,95.94us,29.11us,83.10us,393.81us
-hyperscan/literal-casei-english-nosom,count,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-25,,613357,1000,51.65ms,20.01us,105.00ns,20.51us,2.18us,19.77us,56.61us
-hyperscan/literal-casei-english-nosom,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,613357,1000,102.75ms,66.20us,63.00ns,81.74us,87.99us,66.01us,1.81ms
-hyperscan/literal-casei-english-som,count-spans,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,613357,1000,153.54ms,86.14us,2.04us,96.24us,41.09us,83.18us,540.52us
-hyperscan/literal-casei-english-som,count-spans,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-25,,613357,1000,51.62ms,20.29us,41.00ns,20.53us,1.32us,20.11us,36.47us
-hyperscan/literal-casei-english-som,count-spans,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,613357,1000,102.47ms,66.21us,46.00ns,67.14us,2.71us,66.01us,84.79us
-hyperscan/literal-casei-russian-nosom,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,613423,1000,51.52ms,24.00us,399.00ns,24.96us,10.05us,23.17us,328.29us
-hyperscan/literal-casei-russian-nosom,count,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-25,,613423,1000,151.99ms,83.19us,47.00ns,84.41us,3.04us,83.04us,114.16us
-hyperscan/literal-casei-russian-nosom,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,613423,1000,102.65ms,83.24us,77.00ns,84.53us,6.21us,82.99us,246.57us
-hyperscan/literal-casei-russian-som,count-spans,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,613423,1000,101.69ms,24.89us,261.00ns,33.66us,128.66us,24.07us,2.07ms
-hyperscan/literal-casei-russian-som,count-spans,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-25,,613423,1000,153.03ms,83.09us,78.00ns,84.16us,2.71us,82.88us,105.07us
-hyperscan/literal-casei-russian-som,count-spans,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,613423,1000,102.62ms,83.40us,82.00ns,84.48us,3.30us,83.11us,123.31us
-imported/leipzig/twain-insensitive,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,16013977,726,810.04ms,676.44us,17.73us,687.88us,80.69us,641.69us,2.38ms
-imported/leipzig/twain-insensitive,count,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-25,,16013977,795,611.00ms,627.77us,3.98us,629.35us,24.50us,615.49us,1.23ms
-imported/leipzig/twain-insensitive,count,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,16013977,473,661.60ms,1.06ms,87.31us,1.06ms,132.37us,882.31us,2.94ms
-imported/leipzig/twain-insensitive,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,16013977,276,713.08ms,1.81ms,3.79us,1.82ms,23.04us,1.80ms,2.02ms
-imported/leipzig/tom-sawyer-huckle-fin-insensitive,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,16013977,126,1.57s,3.97ms,41.52us,3.97ms,84.18us,3.83ms,4.54ms
-imported/leipzig/tom-sawyer-huckle-fin-insensitive,count,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-25,,16013977,271,712.94ms,1.84ms,4.00us,1.85ms,120.10us,1.83ms,3.81ms
-imported/leipzig/tom-sawyer-huckle-fin-insensitive,count,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,16013977,9,814.45ms,56.37ms,180.70us,57.00ms,1.40ms,56.09ms,60.46ms
-imported/leipzig/tom-sawyer-huckle-fin-insensitive,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,16013977,25,763.17ms,20.32ms,65.80us,20.35ms,112.72us,20.22ms,20.65ms
-imported/sherlock/name-sherlock-casei,count-spans,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,594933,1000,152.73ms,105.14us,2.01us,107.10us,7.09us,101.09us,223.24us
-imported/sherlock/name-sherlock-casei,count-spans,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,594933,1000,102.37ms,49.97us,330.00ns,50.80us,2.87us,49.38us,86.03us
-imported/sherlock/name-sherlock-casei,count-spans,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,594933,1000,102.78ms,75.37us,52.00ns,76.34us,3.48us,75.19us,157.33us
-imported/sherlock/name-holmes-casei,count-spans,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,594933,1000,101.93ms,41.50us,296.00ns,42.57us,3.82us,40.87us,87.23us
-imported/sherlock/name-holmes-casei,count-spans,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,594933,1000,102.48ms,60.71us,1.05us,70.25us,51.96us,59.13us,1.19ms
-imported/sherlock/name-holmes-casei,count-spans,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,594933,1000,153.28ms,111.38us,110.00ns,112.68us,3.57us,111.03us,173.90us
-imported/sherlock/name-sherlock-holmes-casei,count-spans,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,594933,1000,152.99ms,112.96us,2.33us,114.23us,6.24us,109.05us,202.41us
-imported/sherlock/name-sherlock-holmes-casei,count-spans,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,594933,1000,51.81ms,37.07us,67.00ns,37.55us,1.98us,36.81us,60.22us
-imported/sherlock/name-sherlock-holmes-casei,count-spans,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,594933,1000,102.81ms,77.03us,64.00ns,77.97us,2.75us,76.83us,127.44us
-imported/sherlock/name-alt3-casei,count-spans,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,594933,1000,455.56ms,339.90us,4.43us,359.97us,162.32us,330.75us,2.44ms
-imported/sherlock/name-alt3-casei,count-spans,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,594933,177,712.51ms,2.84ms,56.39us,2.83ms,62.26us,2.74ms,3.00ms
-imported/sherlock/name-alt3-casei,count-spans,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,594933,921,609.69ms,531.54us,3.88us,543.27us,114.10us,520.29us,2.85ms
-imported/sherlock/name-alt5-casei,count-spans,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,594933,1000,303.66ms,208.21us,4.92us,228.34us,125.96us,199.93us,2.97ms
-imported/sherlock/name-alt5-casei,count-spans,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,594933,348,660.92ms,1.43ms,8.71us,1.44ms,20.59us,1.41ms,1.64ms
-imported/sherlock/name-alt5-casei,count-spans,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,594933,1000,305.82ms,247.55us,2.88us,249.57us,13.72us,240.71us,625.24us
-imported/sherlock/the-casei,count-spans,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,594933,1000,355.89ms,304.28us,4.08us,305.13us,8.19us,291.27us,419.70us
-imported/sherlock/the-casei,count-spans,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,594933,1000,558.97ms,457.12us,4.43us,458.34us,15.20us,441.20us,824.62us
-imported/sherlock/the-casei,count-spans,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,594933,957,560.53ms,521.80us,2.16us,522.50us,3.87us,513.72us,538.78us
-opt/prefilter/literal-casei-english,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,613357,1000,153.07ms,88.47us,2.87us,92.86us,12.36us,83.19us,155.16us
-opt/prefilter/literal-casei-english,count,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,613357,1000,102.64ms,37.45us,343.00ns,55.24us,80.40us,36.83us,1.17ms
-opt/prefilter/literal-casei-english,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,613357,1000,103.38ms,66.20us,55.00ns,67.97us,4.46us,66.02us,97.25us
-opt/prefilter/literal-casei-russian,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,613423,1000,102.52ms,27.89us,4.58us,35.13us,13.23us,23.15us,83.01us
-opt/prefilter/literal-casei-russian,count,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,613423,1000,102.78ms,46.00us,10.94us,70.97us,49.98us,34.89us,275.43us
-opt/prefilter/literal-casei-russian,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,613423,1000,102.94ms,82.94us,86.00ns,84.44us,8.77us,82.68us,262.78us
+curated/01-literal/sherlock-casei-en,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,899232,1000,301.28ms,224.99us,2.79us,226.03us,4.85us,217.24us,256.38us
+curated/01-literal/sherlock-casei-en,count,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-25,,899232,1000,100.46ms,45.17us,185.00ns,45.55us,2.34us,43.95us,90.44us
+curated/01-literal/sherlock-casei-en,count,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,899232,1000,100.47ms,82.14us,1.48us,82.45us,2.75us,78.64us,106.24us
+curated/01-literal/sherlock-casei-en,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,899232,1000,200.58ms,137.69us,112.00ns,139.16us,3.74us,137.34us,183.36us
+curated/01-literal/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,1570556,1000,200.55ms,120.98us,1.61us,122.20us,3.74us,117.39us,147.78us
+curated/01-literal/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-25,,1570556,1000,400.82ms,332.09us,4.08us,333.41us,7.28us,321.30us,379.12us
+curated/01-literal/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,1570556,1000,201.35ms,134.90us,510.00ns,136.41us,3.40us,133.87us,167.10us
+curated/01-literal/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,1570556,1000,350.81ms,301.49us,2.56us,301.20us,4.37us,296.06us,330.06us
+curated/02-literal-alternate/sherlock-casei-en,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,899232,1000,601.27ms,452.97us,3.33us,453.82us,6.32us,441.00us,493.13us
+curated/02-literal-alternate/sherlock-casei-en,count,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-25,,899232,1000,150.52ms,93.56us,2.18us,94.50us,3.65us,90.43us,119.09us
+curated/02-literal-alternate/sherlock-casei-en,count,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,899232,220,751.19ms,2.28ms,6.13us,2.28ms,10.99us,2.26ms,2.34ms
+curated/02-literal-alternate/sherlock-casei-en,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,899232,1000,551.99ms,481.94us,2.54us,482.61us,5.02us,472.00us,515.31us
+curated/02-literal-alternate/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,1570556,965,752.10ms,526.01us,6.94us,517.82us,18.79us,480.73us,565.58us
+curated/02-literal-alternate/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-25,,1570556,798,601.07ms,623.77us,4.00us,626.74us,18.92us,609.98us,879.18us
+curated/02-literal-alternate/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,1570556,54,751.96ms,9.38ms,19.99us,9.39ms,45.68us,9.31ms,9.55ms
+curated/02-literal-alternate/sherlock-casei-ru,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,1570556,304,701.92ms,1.64ms,10.45us,1.65ms,26.31us,1.62ms,1.76ms
+hyperscan/literal-casei-english-nosom,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,613357,1000,151.37ms,88.14us,1.16us,88.80us,3.83us,82.63us,121.34us
+hyperscan/literal-casei-english-nosom,count,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-25,,613357,1000,50.37ms,19.98us,43.00ns,20.23us,1.26us,19.79us,39.42us
+hyperscan/literal-casei-english-nosom,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,613357,1000,100.44ms,66.18us,49.00ns,66.83us,1.89us,66.00us,85.02us
+hyperscan/literal-casei-english-som,count-spans,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,613357,1000,150.50ms,87.84us,2.51us,88.83us,5.05us,83.08us,123.12us
+hyperscan/literal-casei-english-som,count-spans,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-25,,613357,1000,50.41ms,20.08us,58.00ns,20.32us,1.55us,19.81us,46.58us
+hyperscan/literal-casei-english-som,count-spans,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,613357,1000,100.41ms,66.24us,43.00ns,66.90us,2.00us,66.03us,87.97us
+hyperscan/literal-casei-russian-nosom,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,613423,1000,50.36ms,24.07us,553.00ns,24.47us,1.94us,23.35us,41.68us
+hyperscan/literal-casei-russian-nosom,count,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-25,,613423,1000,100.42ms,83.33us,59.00ns,84.22us,2.38us,83.16us,110.61us
+hyperscan/literal-casei-russian-nosom,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,613423,1000,101.29ms,83.46us,227.00ns,84.23us,2.66us,83.01us,125.04us
+hyperscan/literal-casei-russian-som,count-spans,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,613423,1000,50.36ms,23.79us,82.00ns,24.21us,1.83us,23.56us,40.33us
+hyperscan/literal-casei-russian-som,count-spans,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-25,,613423,1000,100.40ms,83.47us,79.00ns,84.36us,2.78us,83.27us,133.74us
+hyperscan/literal-casei-russian-som,count-spans,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,613423,1000,100.42ms,83.49us,83.00ns,84.72us,13.80us,83.25us,515.64us
+imported/leipzig/twain-insensitive,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,16013977,697,803.20ms,715.79us,6.02us,716.88us,29.28us,704.30us,1.38ms
+imported/leipzig/twain-insensitive,count,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-25,,16013977,757,602.18ms,658.00us,3.36us,660.59us,7.73us,646.33us,719.98us
+imported/leipzig/twain-insensitive,count,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,16013977,547,652.14ms,914.36us,1.53us,915.20us,7.69us,902.09us,0.98ms
+imported/leipzig/twain-insensitive,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,16013977,275,752.05ms,1.82ms,2.46us,1.82ms,7.54us,1.81ms,1.85ms
+imported/leipzig/tom-sawyer-huckle-fin-insensitive,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,16013977,127,1.55s,3.94ms,44.17us,3.94ms,58.17us,3.81ms,4.09ms
+imported/leipzig/tom-sawyer-huckle-fin-insensitive,count,0.1.0 (rev 463d00f318),hyperscan,5.4.2 2026-08-25,,16013977,267,752.25ms,1.88ms,2.48us,1.88ms,8.48us,1.86ms,1.92ms
+imported/leipzig/tom-sawyer-huckle-fin-insensitive,count,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,16013977,9,751.80ms,55.71ms,78.51us,55.68ms,135.84us,55.44ms,55.90ms
+imported/leipzig/tom-sawyer-huckle-fin-insensitive,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,16013977,25,751.32ms,20.47ms,33.36us,20.47ms,57.69us,20.37ms,20.60ms
+imported/sherlock/name-sherlock-casei,count-spans,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,594933,1000,150.49ms,105.82us,1.87us,106.39us,3.31us,101.30us,131.94us
+imported/sherlock/name-sherlock-casei,count-spans,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,594933,1000,100.46ms,58.64us,1.24us,59.44us,2.62us,56.64us,90.90us
+imported/sherlock/name-sherlock-casei,count-spans,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,594933,1000,100.42ms,75.71us,51.00ns,76.42us,1.90us,75.52us,93.50us
+imported/sherlock/name-holmes-casei,count-spans,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,594933,1000,100.45ms,41.09us,185.00ns,41.69us,2.09us,40.52us,67.36us
+imported/sherlock/name-holmes-casei,count-spans,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,594933,1000,100.43ms,75.46us,2.11us,76.32us,3.50us,72.04us,119.37us
+imported/sherlock/name-holmes-casei,count-spans,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,594933,1000,150.50ms,111.71us,141.00ns,112.74us,2.22us,111.21us,130.61us
+imported/sherlock/name-sherlock-holmes-casei,count-spans,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,594933,1000,150.50ms,112.76us,888.00ns,113.61us,3.36us,108.92us,134.13us
+imported/sherlock/name-sherlock-holmes-casei,count-spans,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,594933,1000,50.35ms,37.63us,264.00ns,38.14us,1.91us,36.97us,59.71us
+imported/sherlock/name-sherlock-holmes-casei,count-spans,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,594933,1000,100.40ms,77.08us,53.00ns,77.87us,2.15us,76.88us,101.04us
+imported/sherlock/name-alt3-casei,count-spans,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,594933,1000,451.38ms,341.75us,3.27us,342.07us,5.14us,332.18us,373.01us
+imported/sherlock/name-alt3-casei,count-spans,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,594933,182,751.10ms,2.75ms,7.20us,2.75ms,12.69us,2.71ms,2.81ms
+imported/sherlock/name-alt3-casei,count-spans,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,594933,932,601.02ms,536.88us,3.44us,536.68us,5.91us,520.03us,601.00us
+imported/sherlock/name-alt5-casei,count-spans,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,594933,1000,301.58ms,206.97us,2.71us,207.52us,4.41us,199.39us,256.59us
+imported/sherlock/name-alt5-casei,count-spans,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,594933,337,651.95ms,1.48ms,9.78us,1.48ms,19.78us,1.45ms,1.57ms
+imported/sherlock/name-alt5-casei,count-spans,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,594933,1000,301.65ms,244.03us,2.31us,243.86us,3.26us,240.06us,267.54us
+imported/sherlock/the-casei,count-spans,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,594933,1000,351.02ms,308.67us,3.28us,308.97us,5.47us,295.05us,335.42us
+imported/sherlock/the-casei,count-spans,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,594933,1000,551.99ms,466.73us,3.89us,467.02us,6.61us,450.39us,521.44us
+imported/sherlock/the-casei,count-spans,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,594933,912,601.13ms,520.25us,5.50us,548.27us,57.21us,507.73us,739.24us
+opt/prefilter/literal-casei-english,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,613357,1000,150.55ms,88.36us,3.26us,96.02us,16.77us,82.72us,153.53us
+opt/prefilter/literal-casei-english,count,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,613357,1000,50.36ms,37.85us,207.00ns,38.31us,1.70us,37.33us,57.56us
+opt/prefilter/literal-casei-english,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,613357,1000,100.41ms,66.17us,44.00ns,66.88us,2.20us,66.00us,88.14us
+opt/prefilter/literal-casei-russian,count,0.1.0 (rev 463d00f318),casei,casei-rebar 1,,613423,1000,50.38ms,23.64us,97.00ns,24.06us,1.89us,23.38us,44.55us
+opt/prefilter/literal-casei-russian,count,0.1.0 (rev 463d00f318),pcre2/jit,10.47 2025-10-21,,613423,1000,50.37ms,36.23us,88.00ns,36.69us,1.96us,35.96us,57.60us
+opt/prefilter/literal-casei-russian,count,0.1.0 (rev 463d00f318),rust/regex,1.12.4,,613423,1000,100.42ms,83.59us,100.00ns,84.45us,2.36us,83.27us,104.72us
