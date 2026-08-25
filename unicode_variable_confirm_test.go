@@ -53,9 +53,14 @@ func TestUnicodePairVariableConfirm(t *testing.T) {
 			if !ok || got != (Match{Pattern: 0, Start: offset}) || width != wantWidth {
 				t.Fatalf("offset %d rendering %x: findWithWidth=%+v,%d,%t", offset, rendering, got, width, ok)
 			}
-			got, width, ok = plan.findUnicodePairConfirm(haystack, anchor)
-			if !ok || got != (Match{Pattern: 0, Start: offset}) || width != len(rendering) {
-				t.Fatalf("offset %d rendering %x: direct confirmation=%+v,%d,%t", offset, rendering, got, width, ok)
+			// findUnicodePairConfirm is the VBMI route selected by
+			// findUnicodePairAnchor. Do not call it directly on hosts that
+			// cannot execute its full-block kernel.
+			if unicodePairConfirmVectorEnabled() {
+				got, width, ok = plan.findUnicodePairConfirm(haystack, anchor)
+				if !ok || got != (Match{Pattern: 0, Start: offset}) || width != len(rendering) {
+					t.Fatalf("offset %d rendering %x: direct confirmation=%+v,%d,%t", offset, rendering, got, width, ok)
+				}
 			}
 			calls := 0
 			if completed := matcher.Each(haystack, func(match Match, width int) bool {
