@@ -2766,6 +2766,25 @@ func (p *searchPlan) findASCIITripleFiltered(haystack string) (Match, bool) {
 	return best, true
 }
 
+// tripleSkipASCIIRegion scans candidate starts in [start,end). The byte scout
+// may inspect the two following bytes needed by overlapping triple loads, but
+// the returned skip is clamped to the known-ASCII region. The decoded boundary
+// window owns starts whose source crosses the following exceptional span.
+func tripleSkipASCIIRegion(s string, start, end int, filter *tripleFilter) int {
+	if start >= end {
+		return 0
+	}
+	scanEnd := end + 2
+	if scanEnd > len(s) {
+		scanEnd = len(s)
+	}
+	skipped := tripleSkipBytes(s[start:scanEnd], 0, filter)
+	if limit := end - start; skipped > limit {
+		return limit
+	}
+	return skipped
+}
+
 // findASCIITripleFilteredRange is the bounded form used for a maximal ASCII
 // run. Its vector scout may read two bytes beyond end from the original
 // haystack, but it never advances a candidate beyond end; a decoded window
