@@ -238,9 +238,9 @@ func TestASCIIPartitionRejectsDenseExceptionalInput(t *testing.T) {
 	}
 
 	lateDense := []byte(strings.Repeat("x", 1<<20))
-	lateDense[0] = 0xe2
-	for at := 4096; at < len(lateDense); at += 32 {
-		lateDense[at] = 0xe2
+	copy(lateDense[0:3], "€")
+	for at := 4096; at < len(lateDense)-2; at += 32 {
+		copy(lateDense[at:at+3], "€")
 	}
 	var stats asciiPartitionStats
 	if _, ok := plan.findUnfilteredWithStats(string(lateDense), &stats); ok {
@@ -248,6 +248,16 @@ func TestASCIIPartitionRejectsDenseExceptionalInput(t *testing.T) {
 	}
 	if stats.fallbackEntries != 1 {
 		t.Fatalf("late dense input was not rejected while discovering spans: %+v", stats)
+	}
+
+	lateMalformed := []byte(strings.Repeat("x", 1<<16))
+	copy(lateMalformed[0:3], "€")
+	lateMalformed[4096] = 0xff
+	copy(lateMalformed[4100:], "jkl0")
+	matcher := NewMatcher(asciiPartitionPatterns())
+	want, wantOK := refFind(string(lateMalformed), asciiPartitionPatterns())
+	if got, gotOK := matcher.Find(string(lateMalformed)); gotOK != wantOK || gotOK && got != want {
+		t.Fatalf("late malformed Find = %+v,%t; want %+v,%t", got, gotOK, want, wantOK)
 	}
 
 }
