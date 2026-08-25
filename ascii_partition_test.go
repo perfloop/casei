@@ -290,6 +290,22 @@ func TestASCIIPartitionRejectsDenseExceptionalInput(t *testing.T) {
 		t.Fatalf("sampled dense input was admitted before fallback: %+v", stats)
 	}
 
+	widePatterns := asciiPartitionPatterns()
+	widePatterns[0] = strings.Repeat("q", 100000) + "0"
+	widePlan := newSearchPlan(widePatterns)
+	if !widePlan.asciiPartitionUsable() || widePlan.maxBytes < 100000 {
+		t.Fatalf("wide pattern did not retain the partition shape: usable=%t maxBytes=%d", widePlan.asciiPartitionUsable(), widePlan.maxBytes)
+	}
+	wideHaystack := []byte(strings.Repeat("x", 131072))
+	copy(wideHaystack[64:], "€")
+	stats = asciiPartitionStats{}
+	if _, ok := widePlan.findUnfilteredWithStats(string(wideHaystack), &stats); ok {
+		t.Fatal("wide-pattern setup unexpectedly matched")
+	}
+	if stats.fallbackEntries != 1 || stats.decodedWindows != 0 {
+		t.Fatalf("wide pattern admitted a whole-input decoded window: %+v", stats)
+	}
+
 	lateMalformed := []byte(strings.Repeat("x", 1<<16))
 	copy(lateMalformed[0:3], "€")
 	lateMalformed[4096] = 0xff

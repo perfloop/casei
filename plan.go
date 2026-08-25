@@ -2442,10 +2442,19 @@ func (p *searchPlan) findWithWidth(haystack string) (Match, int, bool) {
 	return withZeroWidth(p.findUnfiltered(haystack))
 }
 
+// asciiPartitionWindowWorthwhile keeps a widened window from dominating short
+// haystacks with unusually wide compiled patterns.
+func asciiPartitionWindowWorthwhile(length, maxBytes int) bool {
+	// A widened window spends up to maxBytes on either side of an exceptional
+	// span. Keep at least half of a short haystack available for ASCII-run work;
+	// very wide compiled patterns otherwise turn the partition into extra work.
+	return maxBytes > 0 && maxBytes <= length/4
+}
+
 // findUnfiltered advances the decoded plan without raw byte filters. It is the
 // boundary-safe path for plans containing opaque UTF-8 continuation bytes.
 func (p *searchPlan) findUnfiltered(haystack string) (Match, bool) {
-	if p.asciiPartitionUsable() && !asciiPartitionTailBoundary(haystack) {
+	if p.asciiPartitionUsable() && asciiPartitionWindowWorthwhile(len(haystack), p.maxBytes) && !asciiPartitionTailBoundary(haystack) {
 		firstHigh := rootSkipASCII(haystack, 0, rootExact, 0)
 		if firstHigh < len(haystack) && asciiPartitionSparseEnough(haystack, firstHigh) {
 			return p.findPartitionedASCII(haystack, firstHigh)
@@ -2470,7 +2479,7 @@ func (p *searchPlan) findUnfilteredWithStats(haystack string, stats *asciiPartit
 	if stats != nil {
 		stats.firstExceptional = -1
 	}
-	if p.asciiPartitionUsable() && !asciiPartitionTailBoundary(haystack) {
+	if p.asciiPartitionUsable() && asciiPartitionWindowWorthwhile(len(haystack), p.maxBytes) && !asciiPartitionTailBoundary(haystack) {
 		firstHigh := rootSkipASCII(haystack, 0, rootExact, 0)
 		if firstHigh < len(haystack) && asciiPartitionSparseEnough(haystack, firstHigh) {
 			if stats != nil {
