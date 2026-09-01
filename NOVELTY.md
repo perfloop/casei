@@ -1323,6 +1323,74 @@ The fused classified frontier and its adjacent variants are not novel by
 themselves. They remain eligible as components under the measured-result bar.
 No performance claim is made here.
 
+## Follow-up assessment: exception-partitioned ASCII re-entry
+
+### Status
+
+**Negative assessment for a standalone partitioned ASCII executor.** The
+construction keeps a proven ASCII candidate probe on clean gaps, decodes a
+bounded source-width halo around exceptional UTF-8 spans, and resumes after
+each coalesced span. This is a useful combination for the repository's
+width-changing simple-fold contract, but it is the staged ASCII-island and
+danger-zone shape already identified above, not a new matcher or a port of
+external folding code.
+
+### Construction assessed
+
+For a single ASCII source literal whose simple-fold orbit can change width, the
+executor first probes a long haystack as ASCII. A high-byte cluster becomes an
+exceptional span. The shared decoded plan owns the interval from
+`spanStart-p.maxBytes` through `spanEnd+p.maxBytes`; touching halos are joined.
+The ASCII owner searches the gaps and the decoded owner confirms every halo.
+The first probe's no-match prefix is resumed from its source-width halo, and a
+dense, malformed, or boundary-poor input returns to the established Unicode
+candidate route.
+
+The halo is a proof bound, not a speculative folded buffer. It preserves byte
+offsets and lets `Each` derive the exact consumed source width from the decoded
+match. The shared plan remains the sole semantic authority; the ASCII route is
+only a candidate filter on bytes that are known to be complete ASCII units.
+
+### Closest known constructions
+
+| Construction | Source | Relation to the assessed plan |
+| --- | --- | --- |
+| Vector ASCII search with non-ASCII fallback | .NET `Ordinal.cs`, cited and inspected above | It uses a vector ASCII candidate path and leaves non-ASCII input to a full ignore-case owner. The present executor retains the path over separate safe gaps instead of abandoning the whole haystack. |
+| Folded islands with danger-zone handoff | StringZilla `utf8_uncased/haswell.h`, cited and inspected above | It folds safe chunks, alarms on width hazards, and sends danger zones to a serial owner. Coalesced `p.maxBytes` halos are the repository-specific byte-boundary form of that scheduling shape. |
+| SIMD candidate plus confirmation | Teddy/FDR/Snort, cataloged in `CONTEXT.md` §§1d and 3--5 | The vector ASCII probe is a no-false-negative filter. The shared decoded plan confirms survivors and owns ordering. |
+| Fold-orbit quotient and raw UTF-8 form paths | The earlier assessments in this file | A clean gap is the ASCII part of the quotient stream; a halo replays complete fold units or the finite UTF-8 prefix states. Neither creates a new accepted transition. |
+
+These sources establish the control shape, not this repository's semantics.
+None is imported, linked, executed, or treated as a correctness oracle by the
+candidate module.
+
+### Reduction and falsification
+
+Within a clean gap, every byte is one complete unit and the existing ASCII
+candidate transition is sufficient. Inside a halo, the decoded plan emits the
+same simple-fold units and source offsets as the ordinary full scan. Enlarging
+the interval by the maximum source width covers every match start that could
+cross a span; coalescing changes only scheduling. Resuming after a cluster is
+therefore a partition of the existing filter/confirmation path, not a third
+state representation.
+
+The negative would be falsified by a partition transition that recognizes a
+match, source start, or `Each` width that cannot be obtained from the existing
+fold-unit or UTF-8-prefix paths, or by an exact published construction with the
+same simple-fold, malformed-byte, leftmost, and non-overlap contract. A missed
+match near either halo edge, a changed pattern tie, or a malformed-byte
+fallback disagreement would instead refute the implementation's proof.
+
+### Decision
+
+The standalone novelty claim is closed. The construction remains eligible as
+an engineering combination only if the complete field and contract evidence
+show a result the prior whole-input route does not hold. The current Case's
+benchmark is deliberately limited to the sparse valid-UTF-8 workload that can
+amortize the partition; structured ASCII literals retain their established
+probe, while dense, early-exception, tail, malformed, and feature-off shapes
+remain negative controls rather than broadened performance claims.
+
 ## Retained implementation transition and evidence
 
 ### Retained transition

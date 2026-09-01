@@ -2142,31 +2142,58 @@ func (p *searchPlan) findASCIIAnchor(haystack string) (Match, bool) {
 	return Match{}, false
 }
 
-func (p *searchPlan) findASCIIOnlyAnchor(haystack, needle string) (Match, bool, bool) {
+// findASCIIOnlyAnchorWithHigh runs the existing ASCII candidate transition
+// and reports the first high byte when no ASCII match was found. Keeping the
+// stop position lets the partitioned executor hand only the suffix around that
+// byte to the decoded owner instead of rescanning the whole input to discover
+// the same boundary.
+func (p *searchPlan) findASCIIOnlyAnchorWithHigh(haystack, needle string) (Match, bool, int) {
 	limit := len(haystack) - len(needle) + 1
 	if limit < 0 {
-		return Match{}, false, true
+		return Match{}, false, -1
 	}
 	for at := 0; at < limit; {
 		skipped, ascii := asciiOnlyProbeSkipBytes(haystack, at, limit-at, &p.asciiOnlyProbe)
 		at += skipped
 		if !ascii {
-			return Match{}, false, false
+			return Match{}, false, at
 		}
 		if at == limit {
 			break
 		}
 		if p.asciiOnlyPatternAt(haystack, at, needle) {
-			return Match{Pattern: 0, Start: at}, true, true
+			return Match{Pattern: 0, Start: at}, true, -1
 		}
 		at++
 	}
-	for _, value := range haystack[limit:] {
+	for offset, value := range haystack[limit:] {
 		if value >= utf8.RuneSelf {
-			return Match{}, false, false
+			return Match{}, false, limit + offset
 		}
 	}
-	return Match{}, false, true
+	return Match{}, false, -1
+}
+
+func (p *searchPlan) findASCIIOnlyAnchor(haystack, needle string) (Match, bool, bool) {
+	match, ok, firstHigh := p.findASCIIOnlyAnchorWithHigh(haystack, needle)
+	return match, ok, firstHigh < 0
+}
+
+func (p *searchPlan) findASCIIOnlyRegion(haystack string, start, end int) (Match, bool) {
+	if start >= end {
+		return Match{}, false
+	}
+	match, ok, handled := p.findASCIIOnlyAnchor(haystack[start:end], p.singlePayload)
+	if !handled {
+		// The coordinator only supplies a known-ASCII region. Keep the decoded
+		// owner as a defensive fallback if a future boundary change violates
+		// that precondition.
+		match, ok = p.findUnfilteredWithStarts(haystack[start:end], nil)
+	}
+	if ok {
+		match.Start += start
+	}
+	return match, ok
 }
 
 func (p *searchPlan) asciiOnlyPatternAt(haystack string, at int, needle string) bool {
@@ -2394,14 +2421,69 @@ func (p *searchPlan) findWithWidth(haystack string) (Match, int, bool) {
 		return withZeroWidth(p.findASCIIAnchor(haystack))
 	}
 	// k and s have width-changing Unicode orbit members, so their patterns do
-	// not enter the fixed ASCII probe above. The integrated high-byte check lets
-	// a short or structured ASCII haystack use the same vector transition in one
-	// pass; any high byte falls through to the full Unicode plan unchanged.
-	if p.asciiOnly && (len(haystack) <= 4096 || p.asciiOnlyLong) {
+	// not enter the fixed ASCII probe above. Long N=1 ASCII literals use the
+	// same probe on clean gaps and decode only source-width halos around sparse
+	// exceptional spans; dense or unproven input remains on the full plan.
+	partitionRejected := false
+	if p.asciiOnlyPartitionUsable() && len(haystack) > 4096 {
+		if match, ok, handled := p.findASCIIOnlyPartitioned(haystack); handled {
+			return match, 0, ok
+		}
+		partitionRejected = true
+	}
+	// The integrated high-byte check lets a short or feature-limited structured
+	// ASCII haystack use the same vector transition in one pass; any high byte
+	// falls through to the full Unicode plan unchanged.
+	if !partitionRejected && p.asciiOnly && (len(haystack) <= 4096 || p.asciiOnlyLong) {
 		if match, ok, handled := p.findASCIIOnlyAnchor(haystack, p.singlePayload); handled {
 			return match, 0, ok
 		}
 	}
+	// The tagged multi-anchor filter is one plan-owned raw transition scan for
+	// both Find and Each. Its exact replay decides the result, so Find can stop
+	// at the first completed leftmost candidate without selecting a second engine.
+	if p.rawByteMulti.usable() {
+		if len(haystack) >= 4096 && p.rawByteOrigin.usable() {
+			return withZeroWidth(p.findRawByteOrigin(haystack))
+		}
+		return withZeroWidth(p.findRawByteFixedAnchored(haystack))
+	}
+	if anchor := p.chooseUnicodePairAnchor(haystack); anchor != nil {
+		return p.findUnicodePairAnchor(haystack, anchor)
+	}
+	if p.unicodeAnchor.n == 1 {
+		return withZeroWidth(p.findUnicodeAnchor(haystack))
+	}
+	// A partial root triple set cannot skip a general UTF-8 stream because a
+	// non-ASCII-only root may occur later. On AVX-512 BW, the high-byte scan
+	// first proves that the complete input is ASCII and NUL-free, leaving only
+	// the separately covered ASCII roots for the bounded Shufti transition. It
+	// still advances this one compiled plan at every survivor; it is a block
+	// transition, not a second matcher.
+	if p.asciiPairAnchors.usable() && runtimeVectorBits() == 512 && len(haystack) >= asciiTripleMinBytes &&
+		rootSkipASCII(haystack, 0, rootExact, 0) == len(haystack) {
+		return withZeroWidth(p.findASCIIPairAnchored(haystack))
+	}
+	if p.patternCount > 1 && p.rootKind == rootGeneric && p.asciiTriplesComplete && p.asciiTriples.shufti.usable() &&
+		runtimeVectorBits() == 512 && len(haystack) >= asciiTripleMinBytes &&
+		rootSkipASCII(haystack, 0, rootExact, 0) == len(haystack) {
+		return withZeroWidth(p.findASCIITripleFiltered(haystack))
+	}
+	if p.triplesComplete && p.triples.usable() && (p.patternCount == 1 || p.rootKind == rootGeneric) {
+		return withZeroWidth(p.findFiltered(haystack))
+	}
+	if p.rootKind == rootGeneric && p.filter.usable() {
+		return withZeroWidth(p.findFiltered(haystack))
+	}
+
+	return withZeroWidth(p.findUnfiltered(haystack))
+}
+
+// findWithWidthAfterASCIIOnly is the continuation of findWithWidth after the
+// N=1 ASCII-only probe. Keeping this suffix in one helper lets a rejected or
+// malformed partition retain the existing Unicode candidate routes instead of
+// falling directly to the slow decoded loop.
+func (p *searchPlan) findWithWidthAfterASCIIOnly(haystack string) (Match, int, bool) {
 	// The tagged multi-anchor filter is one plan-owned raw transition scan for
 	// both Find and Each. Its exact replay decides the result, so Find can stop
 	// at the first completed leftmost candidate without selecting a second engine.
@@ -2502,6 +2584,17 @@ func (p *searchPlan) findUnfilteredWithStats(haystack string, stats *asciiPartit
 		}
 	}
 	return p.findUnfilteredDecodedLegacy(haystack)
+}
+
+// asciiPartitionEarlyBoundary rejects an exceptional byte in the first
+// sample before the all-or-nothing candidate probe pays for the rest of the
+// haystack. An early exception leaves too little clean prefix for partitioning.
+func asciiPartitionEarlyBoundary(haystack string) bool {
+	end := len(haystack)
+	if end > asciiPartitionSampleBytes {
+		end = asciiPartitionSampleBytes
+	}
+	return rootSkipASCII(haystack[:end], 0, rootExact, 0) < end
 }
 
 // asciiPartitionTailBoundary keeps the old decoded executor for dense input
@@ -3044,6 +3137,9 @@ func (p *searchPlan) asciiPartitionUsable() bool {
 // at or above UTF-8's RuneSelf, so the all-ASCII routes do not need to prove
 // that property again.
 func (p *searchPlan) findASCIIRegion(haystack string, start, end int, starts []int) (Match, bool) {
+	if p.asciiOnly {
+		return p.findASCIIOnlyRegion(haystack, start, end)
+	}
 	if end-start >= asciiTripleMinBytes {
 		return p.findASCIITripleFilteredRange(haystack, start, end)
 	}
@@ -3052,6 +3148,40 @@ func (p *searchPlan) findASCIIRegion(haystack string, start, end int, starts []i
 		match.Start += start
 	}
 	return match, ok
+}
+
+// asciiOnlyPartitionUsable is the long-input N=1 letter-only gate. Structured
+// ASCII literals already use their established all-or-nothing probe, so adding
+// partition admission there would repeat its bounded checks on every call.
+// AVX-512 is required here to retain the probe's 64-byte block transition while
+// the decoded owner handles exceptional windows.
+func (p *searchPlan) asciiOnlyPartitionUsable() bool {
+	return p.patternCount == 1 && p.asciiOnly && !p.asciiOnlyLong && p.asciiOnlyProbe.usable() && runtimeVectorBits() == 512
+}
+
+// findASCIIOnlyPartitioned admits only a long input with a clean prefix and
+// tail before running the existing all-ASCII candidate probe. If that probe
+// encounters a high byte, the same plan resumes with the shared partition
+// coordinator, which uses the ASCII-only region owner and decoded source-width
+// halos around exceptional spans. Dense or unproven input stays on the
+// established decoded owner.
+func (p *searchPlan) findASCIIOnlyPartitioned(haystack string) (Match, bool, bool) {
+	if asciiPartitionTailBoundary(haystack) || asciiPartitionEarlyBoundary(haystack) {
+		// Do not pay an all-or-nothing probe when there is no useful clean run
+		// before the first exception or after the final boundary. The existing
+		// Unicode candidate route already owns those shapes efficiently.
+		return Match{}, false, false
+	}
+	match, ok, firstHigh := p.findASCIIOnlyAnchorWithHigh(haystack, p.singlePayload)
+	if ok || firstHigh < 0 {
+		return match, ok, true
+	}
+	if !asciiPartitionWindowWorthwhile(len(haystack), p.maxBytes) ||
+		!asciiPartitionSparseEnough(haystack, firstHigh) {
+		return Match{}, false, false
+	}
+	match, ok = p.findPartitionedASCII(haystack, firstHigh)
+	return match, ok, true
 }
 
 // findPartitionedASCII resumes after the first high byte. It visits each
@@ -3105,11 +3235,27 @@ func (p *searchPlan) findPartitionedASCIIWithStats(haystack string, firstHigh in
 	}
 
 	cursor := 0
+	if p.asciiOnly {
+		// The N=1 entry probe has already proved that no fixed ASCII match
+		// starts before firstHigh. Retain only the first source-width halo: it
+		// owns the starts that could cross the exceptional span and also keeps
+		// the malformed-span fallback able to confirm those starts.
+		cursor = firstHigh - maxBytes
+		if cursor < 0 {
+			cursor = 0
+		}
+	}
 	fallback := func() (Match, bool) {
 		if stats != nil {
 			stats.fallbackEntries++
 		}
-		match, ok := p.findUnfilteredDecodedLegacy(haystack[cursor:])
+		var match Match
+		var ok bool
+		if p.asciiOnly {
+			match, _, ok = p.findWithWidthAfterASCIIOnly(haystack[cursor:])
+		} else {
+			match, ok = p.findUnfilteredDecodedLegacy(haystack[cursor:])
+		}
 		if ok {
 			match.Start += cursor
 		}

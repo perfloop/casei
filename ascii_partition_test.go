@@ -350,3 +350,145 @@ func TestASCIIPartitionRejectsOpaqueContinuationPlans(t *testing.T) {
 		t.Fatal("opaque continuation plan entered the ASCII partition route")
 	}
 }
+
+func TestASCIIOnlyPartitionAdmission(t *testing.T) {
+	plan := newSearchPlan([]string{"Sherlock Holmes"})
+	if !plan.asciiOnly || plan.asciiOnlyLong {
+		t.Fatalf("letter-only ASCII plan = asciiOnly:%t long:%t", plan.asciiOnly, plan.asciiOnlyLong)
+	}
+	if plan.maxBytes <= len(plan.singlePayload) {
+		t.Fatalf("width-changing ASCII plan did not widen: maxBytes=%d payload=%d", plan.maxBytes, len(plan.singlePayload))
+	}
+	if runtimeVectorBits() != 512 {
+		t.Skipf("ASCII-only partition is runtime-gated to AVX-512; vector width %d", runtimeVectorBits())
+	}
+	if !plan.asciiOnlyPartitionUsable() {
+		t.Fatal("long N=1 ASCII-only partition was not admitted")
+	}
+	structured := newSearchPlan([]string{"[keys[i%"})
+	if !structured.asciiOnly || !structured.asciiOnlyLong || structured.asciiOnlyPartitionUsable() {
+		t.Fatalf("structured ASCII plan changed admission: asciiOnly=%t long=%t usable=%t", structured.asciiOnly, structured.asciiOnlyLong, structured.asciiOnlyPartitionUsable())
+	}
+}
+
+func TestASCIIOnlyPartitionDifferential(t *testing.T) {
+	patterns := []string{"Sherlock Holmes"}
+	plan := newSearchPlan(patterns)
+	matcher := NewMatcher(patterns)
+	maxBytes := plan.maxBytes
+	cases := []string{
+		strings.Repeat("x", 5000),
+		strings.Repeat("x", 5000) + "ſherlocK Holmeſ" + strings.Repeat("x", 5000),
+		strings.Repeat("x", 5000) + "SherlocK Holmes" + strings.Repeat("x", 5000),
+		strings.Repeat("x", 5000) + "€ſK" + strings.Repeat("x", 5000) + "sHERLOCK hOLMES",
+		strings.Repeat("x", 5000) + "€" + strings.Repeat("x", maxBytes) + "ſherlocK Holmeſ" + strings.Repeat("x", 5000),
+		strings.Repeat("x", 5000) + "€" + strings.Repeat("x", 2*maxBytes) + "K" + strings.Repeat("x", 5000),
+		strings.Repeat("x", 5000) + "€" + strings.Repeat("x", 5000) + "\xff" + strings.Repeat("x", 5000),
+		strings.Repeat("x", 5000) + "€" + strings.Repeat("x", 5000) + "\x00" + strings.Repeat("x", 5000),
+		strings.Repeat("x", 1023) + "€" + strings.Repeat("x", 5000),
+		strings.Repeat("x", 1024) + "€" + strings.Repeat("x", 5000),
+	}
+	for i, haystack := range cases {
+		want, wantOK := decodedPlanFind(plan, haystack)
+		got, gotOK := matcher.Find(haystack)
+		if gotOK != wantOK || gotOK && got != want {
+			t.Fatalf("case %d Find = %+v,%t; decoded = %+v,%t", i, got, gotOK, want, wantOK)
+		}
+		ref, refOK := refFind(haystack, patterns)
+		if gotOK != refOK || gotOK && got != ref {
+			t.Fatalf("case %d Find = %+v,%t; reference = %+v,%t", i, got, gotOK, ref, refOK)
+		}
+	}
+}
+
+func TestASCIIOnlyPartitionWorkSplitAndFallback(t *testing.T) {
+	if runtimeVectorBits() != 512 {
+		t.Skipf("ASCII-only partition is runtime-gated to AVX-512; vector width %d", runtimeVectorBits())
+	}
+	plan := newSearchPlan([]string{"Sherlock Holmes"})
+	input := []byte(strings.Repeat("x", 1<<16))
+	copy(input[4096:], "ſK")
+	haystack := string(input)
+	_, _, firstHigh := plan.findASCIIOnlyAnchorWithHigh(haystack, plan.singlePayload)
+	if firstHigh != 4096 {
+		t.Fatalf("first exceptional byte = %d, want 4096", firstHigh)
+	}
+	var stats asciiPartitionStats
+	if _, ok := plan.findPartitionedASCIIWithStats(haystack, firstHigh, &stats); ok {
+		t.Fatal("partition setup unexpectedly matched")
+	}
+	if stats.decodedWindows == 0 || stats.decodedWindowBytes == 0 || stats.asciiCandidateBytes <= stats.decodedWindowBytes {
+		t.Fatalf("partition work split = %+v", stats)
+	}
+
+	for _, haystack := range []string{
+		"€" + strings.Repeat("x", (1<<20)-3),
+		strings.Repeat("x", (1<<20)-3) + "€",
+	} {
+		if _, _, handled := plan.findASCIIOnlyPartitioned(haystack); handled {
+			t.Fatalf("unprofitable input entered partition route: len=%d", len(haystack))
+		}
+	}
+
+	denseSuffix := []byte(strings.Repeat("x", 1<<16))
+	copy(denseSuffix[4096:], "€")
+	for at := 8192; at+len("€") <= len(denseSuffix)-64; at += 32 {
+		copy(denseSuffix[at:], "€")
+	}
+	matcher := NewMatcher([]string{"Sherlock Holmes"})
+	want, wantOK := refFind(string(denseSuffix), []string{"Sherlock Holmes"})
+	if got, gotOK := matcher.Find(string(denseSuffix)); gotOK != wantOK || gotOK && got != want {
+		t.Fatalf("dense-suffix Find = %+v,%t; want %+v,%t", got, gotOK, want, wantOK)
+	}
+}
+
+func TestASCIIOnlyPartitionEachWidth(t *testing.T) {
+	patterns := []string{"Sherlock Holmes"}
+	matcher := NewMatcher(patterns)
+	haystack := strings.Repeat("x", 5000) + "ſherlocK Holmeſ" +
+		strings.Repeat("x", 5000) + "SHERLOCK HOLMES" + strings.Repeat("x", 5000)
+	want := refEach(haystack, patterns)
+	var got []refEachResult
+	if complete := matcher.Each(haystack, func(match Match, width int) bool {
+		got = append(got, refEachResult{match: match, width: width})
+		return true
+	}); !complete {
+		t.Fatal("Each stopped early")
+	}
+	if len(got) != len(want) {
+		t.Fatalf("Each returned %d matches, want %d: got=%+v want=%+v", len(got), len(want), got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("Each match %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+	if len(got) != 2 || got[0].width != len("ſherlocK Holmeſ") || got[1].width != len("SHERLOCK HOLMES") {
+		t.Fatalf("unexpected source widths: %+v", got)
+	}
+}
+
+func TestASCIIOnlyPartitionRandomDifferential(t *testing.T) {
+	patterns := []string{"Sherlock Holmes"}
+	plan := newSearchPlan(patterns)
+	matcher := NewMatcher(patterns)
+	rng := rand.New(rand.NewPCG(20260829, 31))
+	units := []string{"x", "X", " ", "q", "€", "ſ", "K", "Ж", "\xff"}
+	for iteration := 0; iteration < 120; iteration++ {
+		var input strings.Builder
+		input.Grow(8192)
+		for input.Len() < 8192 {
+			if iteration%4 == 0 && input.Len() == 4096 {
+				input.WriteString("ſherlocK Holmes")
+				continue
+			}
+			input.WriteString(units[rng.IntN(len(units))])
+		}
+		haystack := input.String()
+		want, wantOK := decodedPlanFind(plan, haystack)
+		got, gotOK := matcher.Find(haystack)
+		if gotOK != wantOK || gotOK && got != want {
+			t.Fatalf("iteration %d Find = %+v,%t; decoded = %+v,%t", iteration, got, gotOK, want, wantOK)
+		}
+	}
+}
