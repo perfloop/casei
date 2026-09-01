@@ -138,9 +138,10 @@ func reportMultiDispatch(b *testing.B, s multiScenario, candidateBits int, rure 
 	b.ReportMetric(0, "go_ac_vector_bits")
 }
 
-// BenchmarkASCIIOnlyPartitionField pairs the clean ASCII-gap workload with
-// the field entrants that can answer the same single-query contract. It is a
-// focused mechanism probe and is intentionally outside the acceptance rows.
+// BenchmarkASCIIOnlyPartitionField pairs the sparse exception-cluster
+// workload with the field entrants that can answer the same single-query
+// contract. It is a focused mechanism probe and is intentionally outside the
+// acceptance rows.
 func BenchmarkASCIIOnlyPartitionField(b *testing.B) {
 	s := asciiPartitionScenario
 	candidate := func() { sink = runSingleScenario(casei.IndexFold, s) }

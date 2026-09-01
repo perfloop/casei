@@ -383,6 +383,7 @@ func TestASCIIOnlyPartitionDifferential(t *testing.T) {
 		strings.Repeat("x", 5000) + "€ſK" + strings.Repeat("x", 5000) + "sHERLOCK hOLMES",
 		strings.Repeat("x", 5000) + "€" + strings.Repeat("x", maxBytes) + "ſherlocK Holmeſ" + strings.Repeat("x", 5000),
 		strings.Repeat("x", 5000) + "€" + strings.Repeat("x", 2*maxBytes) + "K" + strings.Repeat("x", 5000),
+		strings.Repeat("x", 5000) + "€" + strings.Repeat("x", 5000) + "SHERLOCK HOLMES" + strings.Repeat("x", 5000) + "€",
 		strings.Repeat("x", 5000) + "€" + strings.Repeat("x", 5000) + "\xff" + strings.Repeat("x", 5000),
 		strings.Repeat("x", 5000) + "€" + strings.Repeat("x", 5000) + "\x00" + strings.Repeat("x", 5000),
 		strings.Repeat("x", 1023) + "€" + strings.Repeat("x", 5000),

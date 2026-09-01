@@ -3291,13 +3291,51 @@ func (p *searchPlan) findPartitionedASCIIWithStats(haystack string, firstHigh in
 
 		// Coalesce exceptional spans whose widened windows touch. This leaves
 		// one decoded transition for a cluster rather than restarting it at
-		// every high byte.
+		// every high byte. The N=1 route uses its candidate probe to discover
+		// the next high byte while it searches the intervening ASCII gap. The
+		// same pass therefore supplies both the next boundary and any exact
+		// ASCII match, instead of first walking the gap with rootSkipASCII and
+		// then walking it again with the candidate transition.
 		nextStart := -1
-		for at := spanEnd; at < len(haystack); {
-			at += rootSkipASCII(haystack, at, rootExact, 0)
-			if at == len(haystack) {
-				break
+		gapSearched := false
+		for scanAt := spanEnd; scanAt < len(haystack); {
+			at := scanAt
+			if p.asciiOnly {
+				// The N=1 candidate transition also reports the first byte that
+				// cannot belong to its all-ASCII region. One pass supplies both
+				// the next boundary and any exact ASCII match in this gap.
+				gapMatch, gapOK, high := p.findASCIIOnlyAnchorWithHigh(haystack[scanAt:], p.singlePayload)
+				gapSearched = true
+				if stats != nil {
+					scanned := len(haystack) - scanAt
+					if gapOK {
+						scanned = gapMatch.Start
+					} else if high >= 0 {
+						scanned = high
+					}
+					stats.asciiCandidateBytes += scanned
+				}
+				if gapOK {
+					gapMatch.Start += scanAt
+					if !pendingOK || gapMatch.Start < pendingMatch.Start ||
+						gapMatch.Start == pendingMatch.Start && gapMatch.Pattern < pendingMatch.Pattern {
+						pendingMatch, pendingOK = gapMatch, true
+					}
+					lastHighEnd = len(haystack)
+					break
+				}
+				if high < 0 {
+					lastHighEnd = len(haystack)
+					break
+				}
+				at += high
+			} else {
+				at += rootSkipASCII(haystack, at, rootExact, 0)
+				if at == len(haystack) {
+					break
+				}
 			}
+
 			nextSpanEnd := at
 			for nextSpanEnd < len(haystack) && (haystack[nextSpanEnd] >= utf8.RuneSelf || haystack[nextSpanEnd] == 0) {
 				nextSpanEnd++
@@ -3313,8 +3351,8 @@ func (p *searchPlan) findPartitionedASCIIWithStats(haystack string, firstHigh in
 			// Probe nearby next spans before spending the current group's window. A
 			// dense or malformed span must not make us partition work and then
 			// restart the legacy decoder from the same safe cursor. For a distant
-			// span, process this group first so a later fallback can resume after
-			// its widened window instead of rescanning this ASCII gap.
+			// span, process this group first. The N=1 fused scan has already searched
+			// the ASCII gap up to that span.
 			if nextWindowStart > windowEnd && at-spanStart > asciiPartitionLookaheadBytes {
 				nextStart = at
 				break
@@ -3339,7 +3377,7 @@ func (p *searchPlan) findPartitionedASCIIWithStats(haystack string, firstHigh in
 				windowEnd = nextWindowEnd
 			}
 			lastHighEnd = nextSpanEnd
-			at = nextSpanEnd
+			scanAt = nextSpanEnd
 		}
 
 		asciiMatch := pendingMatch
@@ -3391,7 +3429,7 @@ func (p *searchPlan) findPartitionedASCIIWithStats(haystack string, firstHigh in
 		if nextWindowStart < 0 {
 			nextWindowStart = 0
 		}
-		if lastHighEnd < nextStart {
+		if !gapSearched && lastHighEnd < nextStart {
 			if stats != nil {
 				stats.asciiCandidateBytes += nextStart - lastHighEnd
 			}
