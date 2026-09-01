@@ -128,6 +128,14 @@ func buildASCIIOnlyCorpus(size int) string {
 	return strings.Repeat("x", size)
 }
 
+func buildASCIIOnlyPartitionCorpus(size int) string {
+	data := []byte(strings.Repeat("x", size))
+	for at := 4096; at+len("ſK") < size-64; at += 16384 {
+		copy(data[at:], "ſK")
+	}
+	return string(data)
+}
+
 func buildCodeCorpus(size int) string {
 	rng := corpusRNG()
 	var b strings.Builder
@@ -221,13 +229,13 @@ var scenarios = func() []scenario {
 }()
 
 // asciiPartitionScenario is a focused field comparison for the partitioned
-// executor on a clean ASCII gap. It stays outside the acceptance matrix; the
-// sparse exception-cluster shape is covered by the package benchmark.
+// executor on sparse valid-UTF-8 exception clusters. It stays outside the
+// acceptance matrix because the row targets this mechanism's field gap.
 var asciiPartitionScenario = scenario{
-	name:     "ascii_partition_all_ascii_1mb",
-	haystack: buildASCIIOnlyCorpus(1 << 20),
+	name:     "ascii_partition_sparse_utf8_1mb",
+	haystack: buildASCIIOnlyPartitionCorpus(1 << 20),
 	needle:   "Sherlock Holmes",
-	utf8:     false,
+	utf8:     true,
 }
 
 var singleScenarios = append(append([]scenario(nil), scenarios...), asciiPartitionScenario)
