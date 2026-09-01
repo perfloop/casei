@@ -205,7 +205,13 @@ field, and sent survivors to an independent verifier.
 - [Shared interior-anchor Case](https://app.perfloop.ai/t/oss/case_jws72csfa9)
 - [Dispersed Unicode-probe Case](https://app.perfloop.ai/t/oss/case_b2m0dmh5wa)
 - [Raw-confirmation Case](https://app.perfloop.ai/t/oss/case_tgkp9bs0r6)
+- [Rebar streaming-enumerator receipt](audit/rebar/streaming-case.md)
 - [Complete Go SIMD backend, rejected](https://app.perfloop.ai/t/oss/case_37sjyc8f94)
+
+The remaining full-Rebar work is coordinated by the
+[Casei Rebar Initiative](https://app.perfloop.ai/t/oss/init_y6kff75c02). Cases
+test bounded constructions; the Initiative owns the 18/18 result and the
+requirement to preserve every arena win.
 
 The public Cases are the experiment log. [`NOVELTY.md`](NOVELTY.md) records
 the constructions that failed on paper or in measurements. Negative results
