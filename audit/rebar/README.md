@@ -11,6 +11,15 @@ The current receipts say:
 - across all 18 representable stress rows, including 13 ASCII-only contracts,
   `casei` wins 9/18 on each host.
 
+The
+[streaming-enumerator Case receipt](streaming-case.md)
+tested one complete construction for the remaining gap and did not close it.
+[`NOVELTY.md`](../../NOVELTY.md) records its measured result and the cells it
+ruled out. The broader 18/18 outcome belongs to the
+[Casei Rebar Initiative](https://app.perfloop.ai/t/oss/init_y6kff75c02), so a
+failed construction becomes input to the next Case rather than an open-ended
+rewrite of the same hypothesis.
+
 ## What is here
 
 - [`runner/main.go`](runner/main.go) compiles a `Matcher` once, validates full

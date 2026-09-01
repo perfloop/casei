@@ -281,12 +281,16 @@ func asciiPairSkipBytes(s string, at, candidates int, probe *asciiPairProbe) int
 	if vectorCandidates > candidates {
 		vectorCandidates = candidates &^ 63
 	}
-	if cpu.X86.HasAVX512F && cpu.X86.HasAVX512BW && vectorCandidates >= 64 {
+	vbmi := cpu.X86.HasAVX512VBMI && probe.vbmi.valid != 0
+	if cpu.X86.HasAVX512F && cpu.X86.HasAVX512BW && vectorCandidates >= 64 &&
+		(probe.secondAt == 8 || vbmi) {
 		ptr := (*byte)(unsafe.Add(unsafe.Pointer(unsafe.StringData(s)), at))
 		var skipped int
-		if vectorCandidates < 1024 {
+		// The short VALIGNQ schedule has the eight-byte displacement encoded
+		// in its lane alignment. Other compiled displacements use VBMI loads.
+		if vectorCandidates < 1024 && probe.secondAt == 8 {
 			skipped = asciiPairShortSkip64(ptr, vectorCandidates, probe)
-		} else if cpu.X86.HasAVX512VBMI && probe.vbmi.valid != 0 {
+		} else if vbmi {
 			skipped = asciiPairDirectVBMISkip64(ptr, vectorCandidates, &probe.vbmi)
 		} else {
 			skipped = asciiPairDirectSkip64(ptr, vectorCandidates, probe)

@@ -97,3 +97,43 @@ func TestASCIIPairShortSkip64TailPosition(t *testing.T) {
 		}
 	}
 }
+
+func TestASCIIPairSkipBytesNonEightDisplacement(t *testing.T) {
+	if !cpu.X86.HasAVX512F || !cpu.X86.HasAVX512BW {
+		t.Skip("AVX-512 BW pair path is disabled")
+	}
+
+	probe := asciiPairProbe{
+		first:      's',
+		second:     'k',
+		firstFold:  0x20,
+		secondFold: 0x20,
+		secondAt:   7,
+	}
+	makeASCIIPairVBMIProbe(&probe, "sherlock")
+	if probe.vbmi.valid == 0 || probe.vbmi.secondAt != uint8(probe.secondAt) {
+		t.Fatal("non-eight pair did not compile a matching VBMI probe")
+	}
+
+	check := func(t *testing.T) {
+		const candidates = 512
+		for _, want := range []int{0, 63, 64, 255, 400, 511} {
+			input := []byte(strings.Repeat("x", candidates+64))
+			input[want] = 'S'
+			input[want+probe.secondAt] = 'K'
+			haystack := string(input)
+
+			if got := asciiPairSkipBytes(haystack, 0, candidates, &probe); got != want {
+				t.Fatalf("candidate %d: pair skip = %d, want %d", want, got, want)
+			}
+		}
+	}
+
+	if cpu.X86.HasAVX512VBMI {
+		t.Run("VBMI", check)
+	}
+	t.Run("without compiled VBMI", func(t *testing.T) {
+		probe.vbmi.valid = 0
+		check(t)
+	})
+}
