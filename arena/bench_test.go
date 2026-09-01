@@ -124,10 +124,6 @@ func buildWordCorpus(words []string, size int) string {
 
 func buildProseCorpus(size int) string { return buildWordCorpus(proseWords, size) }
 
-func buildASCIIOnlyCorpus(size int) string {
-	return strings.Repeat("x", size)
-}
-
 func buildASCIIOnlyPartitionCorpus(size int) string {
 	data := []byte(strings.Repeat("x", size))
 	for at := 4096; at+len("ſK") < size-64; at += 16384 {

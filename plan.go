@@ -2479,10 +2479,10 @@ func (p *searchPlan) findWithWidth(haystack string) (Match, int, bool) {
 	return withZeroWidth(p.findUnfiltered(haystack))
 }
 
-// findWithWidthAfterASCIIOnly is the continuation of findWithWidth after the
-// N=1 ASCII-only probe. Keeping this suffix in one helper lets a rejected or
-// malformed partition retain the existing Unicode candidate routes instead of
-// falling directly to the slow decoded loop.
+// findWithWidthAfterASCIIOnly enters the post-ASCII decision tree when a
+// rejected or malformed partition resumes from a safe cursor. It mirrors the
+// tail of findWithWidth so ordinary searches keep their current inlined
+// dispatch while the rare fallback retains every Unicode candidate route.
 func (p *searchPlan) findWithWidthAfterASCIIOnly(haystack string) (Match, int, bool) {
 	// The tagged multi-anchor filter is one plan-owned raw transition scan for
 	// both Find and Each. Its exact replay decides the result, so Find can stop
