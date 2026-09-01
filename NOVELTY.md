@@ -1736,6 +1736,51 @@ field on all 36 arena rows and all five same-contract Rebar rows on both target
 microarchitectures. A published implementation with the same semantics and a
 better measured position would falsify that result claim.
 
+### Complete streaming enumerator: negative result
+
+The later
+[Rebar streaming Case receipt](audit/rebar/streaming-case.md)
+tested whether repeated `Matcher.Each` restarts were the remaining reason the
+engine lost nine of Rebar's eighteen representable literal rows. Its final
+candidate compiled at most eight ASCII-spellable literals into three tagged
+`VPERMB` prefix tables, classified 4096-byte regions into survivor masks, and
+kept ordered non-overlap state while exact confirmation and bounded decoded
+halos preserved Unicode simple folding.
+
+That construction combines known Teddy/Shufti techniques: byte-class table
+lookup, pattern tags, SIMD survivor masks, and exact confirmation. The proposed
+advance was therefore the complete measured result, not a new recognizer.
+Correctness, race, vet, pure-Go, AVX-512-disabled, 386 and arm64 compile, and
+baseline-isolation checks passed. The result did not. The complete Candidate
+receipt won only 9/18 Rebar rows and its worst Sapphire Rapids ratio was
+4.9320. A same-command field run measured one losing path at 111.78 us against
+Hyperscan at 32.95 us. Preserving the separate 36-row arena result did not
+satisfy the all-Rebar contract.
+
+Later qualifying Sapphire Rapids instrumentation also falsified the premise
+that generic restart or decoded-window replay explained the remaining losses.
+The five losing rows already selected the intended direct AVX-512/VBMI routes;
+the single-pattern rows had no decoded restarts, and the five-pattern row sent
+only about 14 KiB of an 899 KiB corpus through decoded windows. That row still
+lost by 6.62x. Removing replay could not supply the missing multiple.
+
+The experiment closed or narrowed these implementation cells:
+
+| Cell | Result | Decision |
+| --- | --- | --- |
+| Tagged 4096-byte streaming candidate | Correct, but only 9/18 field wins; worst ratio 4.9320 on Sapphire Rapids. | Refuted as the complete result. |
+| Generic 64-, 256-, and 4096-output mask batches | Regressed contested rows by roughly 2--4x and exposed mask-offset, relative-base, case-vector, and boundary bugs. | Removed; do not recreate this family without a different transition. |
+| Cap-32 output, dual-output, and short-spread variants | Kernel-only gains disappeared or reversed in the complete caller. | Refuted end to end. |
+| Irrelevant-high-byte bypass | Missed ordered matches around Unicode boundaries. | Refuted by correctness. |
+| Direct 512-byte pair/triple classifiers plus a fourth prefix table | Produced encouraging local boards, but was never submitted or independently accepted; later mutations exposed boundary and high-fold failures. | Unproven lead, not a result. Reconstruct one variable at a time if revisited. |
+
+This negative is useful at the level it actually proves. One generic streaming
+executor is not the complete answer, and its mask-batch variants should not be
+repeated. It does not prove that plan-owned enumeration, the direct 512-byte
+kernels, or an independently justified tagged transition cannot contribute to
+a later combination. A clean implementation that passes the complete pinned
+field on both qualifying hosts would falsify that broader inference.
+
 ### Complete experimental Go SIMD backend: negative result
 
 The complete amd64 vector backend was independently re-expressed with Go's
