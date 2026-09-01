@@ -203,6 +203,19 @@ func TestRawByteTokenPlanPreservesFallbackOffsetsAndTies(t *testing.T) {
 	}
 }
 
+func TestRawByteOriginDoesNotEnterASCIIOnlyPartition(t *testing.T) {
+	plan := newSearchPlan(rawByteCyrillicPatterns)
+	if plan.patternCount != len(rawByteCyrillicPatterns) || plan.asciiOnly {
+		t.Fatalf("raw transition plan changed ASCII-only admission: patterns=%d asciiOnly=%t", plan.patternCount, plan.asciiOnly)
+	}
+	if plan.asciiOnlyPartitionUsable() {
+		t.Fatal("raw transition plan entered the N=1 ASCII-only partition route")
+	}
+	if !plan.rawByteMulti.usable() || !plan.rawByteOrigin.usable() {
+		t.Fatal("eligible plan did not compile the tagged filter and origin gate")
+	}
+}
+
 func TestRawByteOriginGatePreservesFind(t *testing.T) {
 	plan := newSearchPlan(rawByteCyrillicPatterns)
 	if !plan.rawByteMulti.usable() || !plan.rawByteOrigin.usable() {
