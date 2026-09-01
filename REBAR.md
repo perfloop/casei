@@ -1,7 +1,7 @@
 # Direct Rebar audit
 
-Rebar found the hole in the original `casei` benchmark. It also provides the
-external check that the hole is now closed.
+Rebar found the hole in the original `casei` benchmark. It closed the first
+Unicode gap and exposed the broader ASCII performance work that remains.
 
 ## The answer in 30 seconds
 
@@ -21,9 +21,27 @@ question as `casei`.
 Values below 1.0 are wins. The selected field is Hyperscan 5.4.2, PCRE2 10.47
 JIT, and rust/regex 1.12.4.
 
-The remaining 13 rows request ASCII-only case matching. `casei` keeps its
-Unicode relation and does more work. Across all 18 stress rows it wins 9/18 on
-each host. All rows and losses appear below.
+The full target is all 18 rows. Thirteen request ASCII-only case matching;
+`casei` wins four and loses nine. Across the complete board it is 9/18 on each
+host. All rows and losses appear below.
+
+## The current Initiative
+
+The [Casei Rebar Initiative](https://app.perfloop.ai/t/oss/init_y6kff75c02)
+owns the 18/18 result. Its first verified Case traced one English loss to the
+whole-input Unicode route used by long ASCII literals with width-changing fold
+mates. The accepted executor keeps the 512-bit ASCII probe on clean gaps and
+decodes bounded halos around sparse Unicode clusters.
+
+On its focused Sapphire Rapids field workload, `x_vs_best` moved from 1.266 to
+0.924 with four competitors and five entrants. Three repeated samples stayed
+between 0.9240 and 0.9396. The verifier also ran the full 36-row arena and found
+no losing sample. The [Case record](https://app.perfloop.ai/t/oss/case_gc5hfnthag)
+contains the code, measurements, and checks.
+
+The table below remains the latest complete two-host Rebar record. Moving it
+from 9/18 requires a new three-pass run on Ice Lake and Sapphire Rapids, with
+every row below 1.0.
 
 ## Before and after
 
@@ -142,9 +160,10 @@ the fastest by its three-pass median. Bold values are wins.
 | `opt/prefilter/literal-casei-russian` | Unicode | **0.64×** (PCRE2-JIT) | **0.67×** (PCRE2-JIT) |
 
 `*` Rebar disables Unicode-aware folding. `casei` would match Unicode fold
-mates that these definitions exclude. The recorded corpora happen to produce
-the expected outputs, so their timings are useful stress data. Their semantic
-contract stays outside the 5/5 result.
+mates that these definitions exclude. The recorded corpora produce the
+expected outputs, so every timing is comparable on that input. These rows stay
+outside the historical 5/5 Unicode claim and inside the current 18/18 target.
+ASCII is a subset users will search often, so a loss here remains a loss.
 
 ## Correctness and inventory closure
 
@@ -195,6 +214,7 @@ code is unchanged.
 
 The gaps were explored in public Perfloop Cases:
 
+- [Sparse Unicode exception partitioning](https://app.perfloop.ai/t/oss/case_gc5hfnthag)
 - [Shared interior UTF-8 anchors](https://app.perfloop.ai/t/oss/case_jws72csfa9)
 - [Dispersed width-stable probes](https://app.perfloop.ai/t/oss/case_b2m0dmh5wa)
 - [Raw byte confirmation](https://app.perfloop.ai/t/oss/case_tgkp9bs0r6)

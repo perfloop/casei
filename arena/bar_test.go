@@ -138,6 +138,52 @@ func reportMultiDispatch(b *testing.B, s multiScenario, candidateBits int, rure 
 	b.ReportMetric(0, "go_ac_vector_bits")
 }
 
+// BenchmarkASCIIOnlyPartitionField pairs the sparse exception-cluster
+// workload with the field entrants that can answer the same single-query
+// contract. It is a focused mechanism probe and is intentionally outside the
+// acceptance rows.
+func BenchmarkASCIIOnlyPartitionField(b *testing.B) {
+	s := asciiPartitionScenario
+	candidate := func() { sink = runSingleScenario(casei.IndexFold, s) }
+	best := pairedRatio(candidate, func() { sink = runSingleScenario(indexRegexp, s) })
+	competitors := 1
+	if ratio := pairedRatio(candidate, func() { sink = runSingleScenario(indexPCRE2, s) }); ratio > best {
+		best = ratio
+	}
+	competitors++
+	rure := rureSingles[s.needle]
+	rureRatio := pairedRatio(candidate, func() { sink = runSingleScenario(indexRure, s) })
+	if rure.VectorBits() == 256 {
+		if rureRatio > best {
+			best = rureRatio
+		}
+		competitors++
+	}
+	if ratio := pairedRatio(candidate, func() { sink = runSingleScenario(indexVectorscan, s) }); ratio > best {
+		best = ratio
+	}
+	competitors++
+	if stringZillaAvailable {
+		if ratio := pairedRatio(candidate, func() { sink = runSingleScenario(indexStringZilla, s) }); ratio > best {
+			best = ratio
+		}
+		competitors++
+	}
+	if !s.utf8 && velozVectorBits() == 256 {
+		if ratio := pairedRatio(candidate, func() { sink = runSingleScenario(veloz.IndexFold, s) }); ratio > best {
+			best = ratio
+		}
+		competitors++
+	}
+	for b.Loop() {
+		candidate()
+	}
+	b.ReportMetric(best, "x_vs_best")
+	b.ReportMetric(float64(competitors), "competitors")
+	b.ReportMetric(float64(competitors+1), "entrants")
+	reportSingleDispatch(b, s)
+}
+
 // BenchmarkBar reports x_vs_best per scenario: candidate time relative to the
 // fastest other implementation that can answer the same query correctly. The
 // Go Aho-Corasick baseline remains visible as a supplemental scalar entrant,

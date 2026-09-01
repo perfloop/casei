@@ -30,7 +30,7 @@ func mustRureLiteral(pattern string) *rureRegex {
 
 var rureSingles = func() map[string]*rureRegex {
 	out := make(map[string]*rureRegex)
-	for _, s := range scenarios {
+	for _, s := range singleScenarios {
 		if _, ok := out[s.needle]; !ok {
 			out[s.needle] = mustRureLiteral(s.needle)
 		}

@@ -212,3 +212,34 @@ func BenchmarkTriplePlan(b *testing.B) {
 		_, _ = plan.find(haystack)
 	}
 }
+
+var asciiOnlyPartitionSink int
+
+// asciiOnlyPartitionCorpus is mostly ASCII source text with sparse valid UTF-8
+// exception clusters. The final 64 bytes stay clean so a partitioned scan can
+// finish its last ASCII region instead of taking the dense-tail fallback.
+func asciiOnlyPartitionCorpus(size int) string {
+	data := []byte(strings.Repeat("x", size))
+	for at := 4096; at+len("ſK") < size-64; at += 16384 {
+		copy(data[at:], "ſK")
+	}
+	return string(data)
+}
+
+// BenchmarkASCIIOnlyPartition measures one long ASCII literal on a sparse
+// valid-UTF-8 stream. The literal's simple-fold orbit includes long s and
+// Kelvin spellings, so an ASCII candidate transition must hand only bounded
+// source-width halos around the exception clusters to the decoded plan.
+func BenchmarkASCIIOnlyPartition(b *testing.B) {
+	const size = 1 << 20
+	haystack := asciiOnlyPartitionCorpus(size)
+	const needle = "Sherlock Holmes"
+	if got := IndexFold(haystack, needle); got != -1 {
+		b.Fatalf("partition corpus unexpectedly matched at %d", got)
+	}
+	b.SetBytes(int64(len(haystack)))
+	b.ReportAllocs()
+	for b.Loop() {
+		asciiOnlyPartitionSink = IndexFold(haystack, needle)
+	}
+}

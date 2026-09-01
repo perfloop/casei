@@ -124,6 +124,14 @@ func buildWordCorpus(words []string, size int) string {
 
 func buildProseCorpus(size int) string { return buildWordCorpus(proseWords, size) }
 
+func buildASCIIOnlyPartitionCorpus(size int) string {
+	data := []byte(strings.Repeat("x", size))
+	for at := 4096; at+len("ſK") < size-64; at += 16384 {
+		copy(data[at:], "ſK")
+	}
+	return string(data)
+}
+
 func buildCodeCorpus(size int) string {
 	rng := corpusRNG()
 	var b strings.Builder
@@ -216,6 +224,18 @@ var scenarios = func() []scenario {
 	}
 }()
 
+// asciiPartitionScenario is a focused field comparison for the partitioned
+// executor on sparse valid-UTF-8 exception clusters. It stays outside the
+// acceptance matrix because the row targets this mechanism's field gap.
+var asciiPartitionScenario = scenario{
+	name:     "ascii_partition_sparse_utf8_1mb",
+	haystack: buildASCIIOnlyPartitionCorpus(1 << 20),
+	needle:   "Sherlock Holmes",
+	utf8:     true,
+}
+
+var singleScenarios = append(append([]scenario(nil), scenarios...), asciiPartitionScenario)
+
 // ---- implementations under test ----------------------------------------------
 
 func indexToLower(h, n string) int {
@@ -223,8 +243,8 @@ func indexToLower(h, n string) int {
 }
 
 var regexpCache = func() map[string]*regexp.Regexp {
-	m := make(map[string]*regexp.Regexp, len(scenarios))
-	for _, s := range scenarios {
+	m := make(map[string]*regexp.Regexp, len(singleScenarios))
+	for _, s := range singleScenarios {
 		if _, ok := m[s.needle]; !ok {
 			m[s.needle] = regexp.MustCompile(`(?i)` + regexp.QuoteMeta(s.needle))
 		}
@@ -325,7 +345,7 @@ func TestRunSingleScenarioHonorsCount(t *testing.T) {
 // scenario matrix, so a benchmark win can never come from semantic drift.
 // On the UTF-8 tier only fold-exact implementations are held to it.
 func TestBaselinesAgree(t *testing.T) {
-	for _, s := range scenarios {
+	for _, s := range singleScenarios {
 		want := reference(s.haystack, s.needle)
 		wantCount := 0
 		if s.count {

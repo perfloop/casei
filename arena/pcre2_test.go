@@ -29,7 +29,7 @@ func mustPCRE2Regex(pattern string, captures int) *pcre2Regex {
 
 var pcre2Singles = func() map[string]*pcre2Regex {
 	out := make(map[string]*pcre2Regex)
-	for _, s := range scenarios {
+	for _, s := range singleScenarios {
 		if _, ok := out[s.needle]; !ok {
 			out[s.needle] = mustPCRE2Regex(pcre2QuoteMeta(s.needle), 0)
 		}

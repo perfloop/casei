@@ -20,6 +20,14 @@ ruled out. The broader 18/18 outcome belongs to the
 failed construction becomes input to the next Case rather than an open-ended
 rewrite of the same hypothesis.
 
+The Initiative's first verified
+[sparse-exception Case](https://app.perfloop.ai/t/oss/case_gc5hfnthag)
+keeps the AVX-512 ASCII probe running across clean gaps and decodes only bounded
+halos around Unicode clusters. Its focused Sapphire Rapids field ratio moved
+from 1.266 to 0.924 with four competitors. This is a verified mechanism result;
+the checked-in Rebar board remains 9/18 until the complete two-host run closes
+the remaining rows.
+
 ## What is here
 
 - [`runner/main.go`](runner/main.go) compiles a `Matcher` once, validates full

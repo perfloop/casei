@@ -1,9 +1,11 @@
 # casei
 
-Fast case-insensitive UTF-8 substring search for one literal or a whole set.
+`casei` searches UTF-8 text for one literal or a compiled set under Unicode
+simple folding. It is built for hot paths such as log filters, deny lists,
+header checks, and keyword sets.
 
 `IndexFold` returns the byte offset of one literal. A compiled `Matcher`
-returns the leftmost match from many literals in one scan. Both use Unicode
+returns the leftmost match from a whole set in one scan. Both use Unicode
 simple folding, the same case relation as Go's `regexp (?i)` on valid UTF-8.
 
 ## The result
@@ -32,10 +34,33 @@ five Rebar rows that request the same Unicode folding relation on both CPUs.
 | same Unicode contract | 5/5 wins, worst 0.8794 | 5/5 wins, worst 0.8999 |
 | all 18 representable stress rows | 9/18 wins | 9/18 wins |
 
-The other 13 Rebar rows request ASCII-only case matching. `casei` keeps Unicode
-simple-fold semantics on them, so those timings are published as stress data
-rather than folded into the product claim. The complete table and raw receipts
-are in [REBAR.md](REBAR.md).
+Five rows use the same Unicode contract as `casei`. The other 13 request
+ASCII-only case matching. `casei` wins four of those and loses nine. Those nine
+losses count: ASCII is a common subset of UTF-8, and the current publication
+target is 18/18. The checked-in table and raw receipts are in
+[REBAR.md](REBAR.md).
+
+### First Initiative result
+
+The [Casei Rebar Initiative](https://app.perfloop.ai/t/oss/init_y6kff75c02)
+started with one cause behind the English losses. A long ASCII literal such as
+`Sherlock Holmes` has width-changing Unicode fold mates, so a sparse `ſ` or
+`K` in the haystack could send the remaining input through the Unicode path.
+
+The accepted route keeps the existing 512-bit ASCII probe on clean gaps. It
+gives a narrow source-width halo around each Unicode cluster to the exact
+decoder, then resumes the probe. On Sapphire Rapids, the first verified Case
+moved its focused 1 MiB field workload from a loss to a win:
+
+| focused field result | before, loss | after, win |
+|---|---:|---:|
+| `x_vs_best` | 1.266 | 0.924 |
+
+Four competitors and five entrants ran. Three repeated samples were between
+0.9240 and 0.9396. The full 36-row arena countercheck had no losing sample. The
+[Case, measurements, and checks](https://app.perfloop.ai/t/oss/case_gc5hfnthag)
+are public. The checked-in 18-row Rebar score stays 9/18 because this Case
+measured one focused workload.
 
 The speed claim is for the AVX-512 implementation. The portable implementation
 is correct and scalar. There is no NEON kernel yet.
@@ -81,6 +106,19 @@ That is where the advantage comes from:
    arithmetic in mask registers. The hand-written schedule matters: a complete
    port to Go's experimental SIMD package stayed correct and lost the required
    field row it was tested on.
+
+Mostly ASCII text with occasional Unicode takes the same route at a larger
+scale:
+
+```text
+input       [ clean ASCII gap ][ ſK ][ clean ASCII gap ]
+work          512-bit probe     exact     512-bit probe
+                                 halo
+```
+
+The block probe resumes after each Unicode cluster. The exact plan owns the
+small boundary halo, including byte widths and fold mates, while the proven
+ASCII regions stay on the 512-bit path.
 
 The [one-page explanation](HOW_IT_WORKS.md) follows this model into the actual
 filters, assembly, competitor implementations, and measurements.
@@ -212,6 +250,12 @@ The remaining full-Rebar work is coordinated by the
 [Casei Rebar Initiative](https://app.perfloop.ai/t/oss/init_y6kff75c02). Cases
 test bounded constructions; the Initiative owns the 18/18 result and the
 requirement to preserve every arena win.
+
+Its first verified Case is
+[sparse Unicode exception partitioning](https://app.perfloop.ai/t/oss/case_gc5hfnthag).
+The Initiative research found the whole-input fallback. The bounded Case built
+a route around it, with the independent verifier reproducing the field win.
+Nine Rebar rows remain.
 
 The public Cases are the experiment log. [`NOVELTY.md`](NOVELTY.md) records
 the constructions that failed on paper or in measurements. Negative results

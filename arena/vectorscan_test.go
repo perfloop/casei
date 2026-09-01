@@ -27,7 +27,7 @@ func mustVectorscanLiteral(pattern string) *vectorscanMatcher {
 
 var vectorscanSingles = func() map[string]*vectorscanMatcher {
 	out := make(map[string]*vectorscanMatcher)
-	for _, s := range scenarios {
+	for _, s := range singleScenarios {
 		if _, ok := out[s.needle]; !ok {
 			out[s.needle] = mustVectorscanLiteral(s.needle)
 		}

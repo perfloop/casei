@@ -36,7 +36,7 @@ var stringZillaSingles = func() map[string]*stringZillaLiteral {
 	if !stringZillaAvailable {
 		return out
 	}
-	for _, s := range scenarios {
+	for _, s := range singleScenarios {
 		if _, ok := out[s.needle]; !ok {
 			out[s.needle] = mustStringZillaLiteral(s.needle)
 		}
