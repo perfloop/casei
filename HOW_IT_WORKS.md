@@ -69,7 +69,7 @@ match can start at any of 64 positions. Multi-pattern filters also return an
 eight-bit pattern tag, so the exact replay checks only the literals named by
 the surviving lane.
 
-The current focused paths add two more pieces:
+The focused paths add more ways to avoid unnecessary replay:
 
 - A single Unicode literal can compile its one-, two-, and three-byte fold
   spellings into a bounded raw confirmation. The confirmer advances by the
@@ -79,7 +79,18 @@ The current focused paths add two more pieces:
   could begin. A dedicated kernel scans eight 64-byte blocks before it tests
   the ordered masks.
 
-Both are gates into the same plan. Neither is a second matcher.
+Long ASCII literals with width-changing fold mates use the same split on
+mostly ASCII input. The block probe searches each clean gap. A narrow decoded
+halo owns a sparse Unicode cluster and the starts that can cross its boundary.
+The probe then resumes on the next clean gap.
+
+```text
+source      [ clean ASCII ][ Unicode cluster ][ clean ASCII ]
+executor      block probe      exact halo        block probe
+```
+
+These are gates into the same plan. Search order, byte offsets, and source
+widths remain with the exact owner.
 
 The [two-host ablations](audit/acceptance/ablations/README.md) remove the origin
 gate, variable confirmation, and returned pattern tags one at a time. Each
@@ -251,8 +262,10 @@ Removed experiments and their falsifiers live in [`NOVELTY.md`](NOVELTY.md).
    dispatch before timing.
 6. Three complete paired passes require all 36 arena rows below 1.0 on Ice Lake
    and Sapphire Rapids.
-7. Three Rebar passes require all five same-contract external rows below 1.0 on
-   both CPUs.
+7. The checked-in Rebar receipt requires all five same-contract external rows
+   below 1.0 on both CPUs.
+8. The active publication target extends that gate to all 18 representable
+   Rebar rows. The current checked-in result is 9/18 on each host.
 
 The current evidence is in [`audit/acceptance/`](audit/acceptance/README.md)
 and [`audit/rebar/`](audit/rebar/README.md).
