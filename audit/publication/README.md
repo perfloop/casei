@@ -1,9 +1,10 @@
 # Historical 33-row publication verification
 
 This directory preserves the first August 2026 publication review. It covers
-the 33-row board before the three Rebar-derived rows were added. The current
-36-row claim and its raw transcripts live in
-[`audit/acceptance/`](../acceptance/README.md).
+the 33-row board before the three Rebar-derived rows were added. The later
+36-row historical snapshot and its raw transcripts live in
+[`audit/acceptance/`](../acceptance/README.md). The current publication gate is
+38 rows; no checked-in 38-row acceptance receipt exists yet.
 
 Perfloop's original public Case co-measured the pre-engine and final source in
 ten pairs with random source-arm order, using the worst `x_vs_best` across all
