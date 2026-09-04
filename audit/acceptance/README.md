@@ -1,7 +1,8 @@
-# Current two-host acceptance record
+# Historical two-host acceptance record
 
-This directory holds the raw `BenchmarkBar` transcripts used by the current
-README claim.
+This directory holds the raw `BenchmarkBar` transcripts for the prior 36-row
+board. The current board has 38 rows, so these receipts remain evidence for the
+published snapshot rather than evidence for the new complete-triple rows.
 
 | host | rows | worst median | worst sample | median speedup | entrants |
 |---|---:|---:|---:|---:|---:|
@@ -18,14 +19,15 @@ checks every other active entrant against its declared width.
 (cd audit/acceptance && sha256sum -c SHA256SUMS)
 sha256sum -c audit/acceptance/SOURCE_SHA256SUMS
 python3 audit/acceptance/summarize.py
-python3 scripts/verify_benchmarkbar.py \
+python3 scripts/verify_benchmarkbar.py --historical-36 \
   audit/acceptance/results/ice/benchmarkbar.txt
-python3 scripts/verify_benchmarkbar.py \
+python3 scripts/verify_benchmarkbar.py --historical-36 \
   audit/acceptance/results/spr/benchmarkbar.txt
 ```
 
-The verifier requires the exact 36-row inventory, three samples per row,
-at least two entrants, all dispatch metrics, and every `x_vs_best` below 1.0.
+The historical verifier requires the exact 36-row inventory, three samples per
+row, at least two entrants, all dispatch metrics, and every `x_vs_best` below
+1.0. Its normal mode requires the current 38-row inventory.
 
 [`ablations/`](ablations/README.md) removes the origin gate, variable raw
 confirmation, and returned pattern tags one at a time. Each removal breaks its
@@ -66,9 +68,12 @@ The command file is [`native-reachability.gdb`](native-reachability.gdb). The
 captured outputs are [`results/ice/gdb-native.txt`](results/ice/gdb-native.txt)
 and [`results/spr/gdb-native.txt`](results/spr/gdb-native.txt). Each receipt
 must contain `HIT 1`, `HIT 2`, `HIT 3`, and a final `PASS`.
-[`SOURCE_SHA256SUMS`](SOURCE_SHA256SUMS) pins the source, direct tests, and GDB
-command file used to build both binaries. Both hosts reported the same checksum
-stream, `043dd919faa1d34cb26f2993f5f756e7f3265a10291e5889eecab67530cb27e9`.
+[`SOURCE_SHA256SUMS.historical`](SOURCE_SHA256SUMS.historical) pins the source,
+direct tests, and GDB command file used to build both historical binaries. Both
+hosts reported the same checksum stream,
+`043dd919faa1d34cb26f2993f5f756e7f3265a10291e5889eecab67530cb27e9`.
+[`SOURCE_SHA256SUMS`](SOURCE_SHA256SUMS) separately pins the current checkout;
+it is not substituted into the historical receipts.
 
 ## Why failed runs are kept
 

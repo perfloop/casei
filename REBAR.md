@@ -110,14 +110,15 @@ Two gaps remained:
    transition shape from Rebar.
 
 Perfloop optimized the board it was given. Rebar exposed the omitted shapes.
-The arena now has three focused rows:
+The acceptance board added three focused rows:
 
 - `multi/multi_N1_unicode_pair_miss_1_5mb`
 - `multi/multi_N5_raw_transition_miss_5mb`
 - `multi/multi_N5_raw_transition_late_hit_5mb`
 
-Those rows bring the board to 36. All 36 remain below 1.0 `x_vs_best` on both
-hosts after the Rebar work.
+Those rows brought the checked-in acceptance board to 36. All 36 remain below
+1.0 `x_vs_best` on both hosts after the Rebar work. The current board adds two
+complete-triple rows, bringing the next publication gate to 38.
 
 ## The benchmark contracts
 

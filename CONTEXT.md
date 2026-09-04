@@ -74,8 +74,10 @@ worst ratios are 0.8794 on Ice Lake and 0.8999 on Sapphire Rapids. Thirteen
 additional rows request ASCII-only matching; they remain visible as
 different-contract stress data, with `casei` winning 9 of all 18 rows on each
 host. [`REBAR.md`](REBAR.md) records the before/after mechanisms, complete
-table, incompatible `s`/`ſ` behavior check, and raw receipts. The arena now
-contains three focused rows derived from the gap and has 36 rows in total.
+table, incompatible `s`/`ſ` behavior check, and raw receipts. The acceptance
+snapshot contains three focused rows derived from the gap and has 36 rows in
+total. The current arena adds two complete-triple field rows so the next route
+selection cannot escape native competition.
 
 **Correction (v2, after a three-way prior-art sweep):** dedicated engines
 DO exist, with different contracts:

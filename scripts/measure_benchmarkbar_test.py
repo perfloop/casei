@@ -13,6 +13,7 @@ def transcript(ratio=0.5, **override):
     return "".join(
         row(name, ratio=ratio, **override)
         for name in sorted(verify.REQUIRED_ROWS)
+        for _ in range(3)
     )
 
 
@@ -28,10 +29,23 @@ class MeasureBenchmarkBarTest(unittest.TestCase):
         self.assertEqual(metrics["benchmarkbar_all_rows_winning"], 1)
         self.assertEqual(metrics["benchmarkbar_rows_below_one"], len(verify.REQUIRED_ROWS))
 
-    def test_strict_verifier_marks_any_losing_row(self):
+    def test_strict_verifier_marks_any_losing_sample(self):
         metrics = self.summarize_text(transcript(ratio=2.0))
         self.assertEqual(metrics["benchmarkbar_all_rows_winning"], 0)
         self.assertEqual(metrics["benchmarkbar_rows_below_one"], 0)
+
+    def test_rows_below_one_requires_all_three_samples(self):
+        lines = []
+        for index, name in enumerate(sorted(verify.REQUIRED_ROWS)):
+            for sample in range(3):
+                ratio = 2.0 if index == 0 and sample == 0 else 0.5
+                lines.append(row(name, ratio=ratio))
+        metrics = self.summarize_text("".join(lines))
+        self.assertEqual(metrics["benchmarkbar_all_rows_winning"], 0)
+        self.assertEqual(
+            metrics["benchmarkbar_rows_below_one"], len(verify.REQUIRED_ROWS) - 1
+        )
+        self.assertEqual(metrics["benchmarkbar_worst_x_vs_best"], 2.0)
 
     def test_non_win_contract_failure_remains_an_error(self):
         with self.assertRaisesRegex(verify.VerificationError, "vectorscan_vector_bits"):

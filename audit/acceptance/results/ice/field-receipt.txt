@@ -1,6 +1,6 @@
 receipt_format: casei-native-field-v1
 source_commit: 5ab3cc8c1501a701bbd023a16d9d7da317a634ca
-source_manifest: audit/acceptance/SOURCE_SHA256SUMS
+source_manifest: audit/acceptance/SOURCE_SHA256SUMS.historical
 source_manifest_sha256: 043dd919faa1d34cb26f2993f5f756e7f3265a10291e5889eecab67530cb27e9
 vendor_id: GenuineIntel
 cpu_family: 6
