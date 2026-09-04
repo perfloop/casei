@@ -608,6 +608,44 @@ func TestTripleShuftiSkip(t *testing.T) {
 	}
 }
 
+func TestCompleteTripleShufti(t *testing.T) {
+	plan := newSearchPlan([]string{"kelvin", "zygomorphic", "ſecret", "Zq9xW", "grofse", "watchdog"})
+	filter := &plan.triples
+	if !plan.triplesComplete || !filter.shufti.usable() {
+		t.Fatalf("complete triple table was not compiled: complete=%t filter=%+v", plan.triplesComplete, filter)
+	}
+
+	for i := range filter.n {
+		triple := filter.values[i]
+		for form := 0; form < 8; form++ {
+			bytes := [3]byte{triple.first, triple.second, triple.third}
+			for at := range bytes {
+				if triple.fold&(1<<at) != 0 && form&(1<<at) != 0 {
+					bytes[at] ^= 0x20
+				}
+			}
+			if !tripleShuftiAt(bytes[0], bytes[1], bytes[2], &filter.shufti) {
+				t.Fatalf("triple %d form %x was lost", i, bytes)
+			}
+		}
+	}
+
+	state := uint32(7)
+	for i := 0; i < 100000; i++ {
+		state = state*1664525 + 1013904223
+		first := byte(state >> 24)
+		state = state*1664525 + 1013904223
+		second := byte(state >> 24)
+		state = state*1664525 + 1013904223
+		third := byte(state >> 24)
+		got := tripleShuftiAt(first, second, third, &filter.shufti)
+		want := tripleGenericAt(first, second, third, filter)
+		if got != want {
+			t.Fatalf("predicate mismatch for %02x %02x %02x: shufti=%t generic=%t", first, second, third, got, want)
+		}
+	}
+}
+
 func TestPairShuftiTrailingOne(t *testing.T) {
 	plan := newSearchPlan([]string{"Ab", "Cd", "Ef", "Gh", "Ij", "Kl", "Mn", "Op", "Qr", "x"})
 	if !plan.filter.shufti.usable() || plan.filter.shufti.oneN == 0 {

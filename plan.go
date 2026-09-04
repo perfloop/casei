@@ -1604,6 +1604,7 @@ func (p *searchPlan) finish(nextToken uint32) {
 		arrangeTripleMixed(&p.triples)
 		arrangeTripleASCIIUTF8(&p.triples)
 		arrangeTripleSharedPrefix(&p.triples)
+		p.triples.shufti = makeTripleShuftiFilter(p.triples)
 		p.filter = p.makeRootFilter(p.tripleRoots)
 	} else {
 		// A partial triple set cannot screen a root that it does not cover on a
