@@ -62,10 +62,19 @@ RAW_TRANSITION_ROWS = frozenset(
         "multi/multi_N5_raw_transition_late_hit_5mb",
     }
 )
-REQUIRED_ROWS = EXPECTED_ROWS | TARGETED_ROWS | RAW_TRANSITION_ROWS
+COMPLETE_TRIPLE_ROWS = frozenset(
+    {
+        "multi/multi_forms4_complete_triple_miss_1mb",
+        "multi/multi_forms8_complete_triple_near_miss_64kb",
+    }
+)
+HISTORICAL_REQUIRED_ROWS = EXPECTED_ROWS | TARGETED_ROWS | RAW_TRANSITION_ROWS
+REQUIRED_ROWS = HISTORICAL_REQUIRED_ROWS | COMPLETE_TRIPLE_ROWS
 UTF8_ROWS = frozenset(
     {
         "multi/multi_N1_unicode_pair_miss_1_5mb",
+        "multi/multi_forms4_complete_triple_miss_1mb",
+        "multi/multi_forms8_complete_triple_near_miss_64kb",
         "multi/multi_N5_raw_transition_miss_5mb",
         "multi/multi_N5_raw_transition_late_hit_5mb",
         "multi/multi_N512_miss_hazard_64kb",
@@ -155,14 +164,14 @@ def parse(path):
     return rows
 
 
-def verify(path, expected_samples=3, require_wins=True):
+def verify(path, expected_samples=3, require_wins=True, required_rows=REQUIRED_ROWS):
     rows = parse(path)
     found = set(rows)
-    if found != REQUIRED_ROWS:
+    if found != required_rows:
         raise VerificationError(
             f"{path}: row inventory differs; "
-            f"missing={sorted(REQUIRED_ROWS - found)}, "
-            f"unexpected={sorted(found - REQUIRED_ROWS)}"
+            f"missing={sorted(required_rows - found)}, "
+            f"unexpected={sorted(found - required_rows)}"
         )
 
     wrong_counts = {
@@ -271,7 +280,7 @@ def verify(path, expected_samples=3, require_wins=True):
     worst_row = max(medians, key=medians.get)
     worst_sample = max(
         sample["x_vs_best"]
-        for name in REQUIRED_ROWS
+        for name in required_rows
         for sample in rows[name]
     )
     median_speedup = median(1 / ratio for ratio in medians.values())
@@ -281,7 +290,7 @@ def verify(path, expected_samples=3, require_wins=True):
         for sample in samples
     ]
     return (
-        f"PASS: {len(REQUIRED_ROWS)}/{len(REQUIRED_ROWS)} rows; "
+        f"PASS: {len(required_rows)}/{len(required_rows)} rows; "
         f"worst median {worst_row}={medians[worst_row]:.4f}; "
         f"worst sample={worst_sample:.4f}; median speedup={median_speedup:.2f}x; "
         f"entrants={min(entrant_counts)}-{max(entrant_counts)}; "
@@ -293,11 +302,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("transcript", type=Path)
     parser.add_argument("--samples", type=int, default=3)
+    parser.add_argument(
+        "--historical-36", action="store_true", help="verify the prior 36-row board"
+    )
     args = parser.parse_args()
     if args.samples < 1:
         parser.error("--samples must be positive")
+    required_rows = HISTORICAL_REQUIRED_ROWS if args.historical_36 else REQUIRED_ROWS
     try:
-        print(verify(args.transcript, args.samples))
+        print(verify(args.transcript, args.samples, required_rows=required_rows))
     except (OSError, VerificationError) as err:
         print(f"FAIL: {err}", file=sys.stderr)
         raise SystemExit(1)

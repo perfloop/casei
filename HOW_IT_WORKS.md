@@ -260,7 +260,7 @@ Removed experiments and their falsifiers live in [`NOVELTY.md`](NOVELTY.md).
    reached by their direct tests.
 5. Every field entrant is rebuilt from pinned source and checked for actual
    dispatch before timing.
-6. Three complete paired passes require all 36 arena rows below 1.0 on Ice Lake
+6. Three complete paired passes require all 38 arena rows below 1.0 on Ice Lake
    and Sapphire Rapids.
 7. The checked-in Rebar receipt requires all five same-contract external rows
    below 1.0 on both CPUs.

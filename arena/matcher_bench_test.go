@@ -52,6 +52,19 @@ func genNeedles(n int, format string) []string {
 	return out
 }
 
+// These pattern sets compile to complete root-triple unions of four and eight
+// fold forms. They keep the dormant bounded Shufti route in the field bar
+// whether that route is selected or rejected by a later implementation change.
+var completeTripleFieldN4 = []string{
+	"kelvin", "kelp", "kelter", "kelly",
+	"ſecret", "ſecrecy", "ſecure", "ſection",
+}
+
+var completeTripleFieldN8 = []string{
+	"kelvin", "zygomorphic", "ſecret",
+	"Zq9xW", "grofse", "watchdog",
+}
+
 // unicodePairConfirmMissCorpus repeats a near-full-width false match at the
 // pair-pair anchor density measured on the Russian corpus. It exercises the
 // N=1 Matcher path without giving any engine a true-match early exit.
@@ -117,6 +130,8 @@ var multiScenarios = func() []multiScenario {
 	}
 	return []multiScenario{
 		{"multi_N2_miss_log_1mb", logs1m, []string{"fatal panic", "segfault detected"}, false},
+		{"multi_forms4_complete_triple_miss_1mb", prose1m, completeTripleFieldN4, true},
+		{"multi_forms8_complete_triple_near_miss_64kb", prose1m[:64<<10], completeTripleFieldN8, true},
 		{"multi_N8_miss_log_1mb", logs1m, genNeedles(8, "Zq%03dxW vK"), false},
 		{"multi_N64_miss_log_64kb", logs1m[:64<<10], genNeedles(64, "Zq%03dxW"), false},
 		{"multi_N512_miss_log_64kb", logs1m[:64<<10], genNeedles(512, "Zq%03dxW"), false},

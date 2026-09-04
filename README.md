@@ -10,10 +10,14 @@ simple folding, the same case relation as Go's `regexp (?i)` on valid UTF-8.
 
 ## The result
 
-On Intel Ice Lake and Sapphire Rapids with AVX-512F, BW, and VBMI, `casei`
-finished first on every row of its 36-row arena. Each row includes the fastest
-eligible result from Go regexp, PCRE2-JIT, rust/regex, Vectorscan, StringZilla,
-veloz, and Rust Aho-Corasick where their contracts apply.
+The checked-in two-host acceptance snapshot covers the prior 36-row arena,
+measured on Intel Ice Lake and Sapphire Rapids with AVX-512F, BW, and VBMI.
+The current arena adds two complete-triple rows, bringing the publication gate
+to 38.
+
+`casei` finished first on every row in that snapshot. Each row includes the
+fastest eligible result from Go regexp, PCRE2-JIT, rust/regex, Vectorscan,
+StringZilla, veloz, and Rust Aho-Corasick where their contracts apply.
 
 | host | rows won | worst median `x_vs_best` | worst sample | median speedup |
 |---|---:|---:|---:|---:|
@@ -21,9 +25,9 @@ veloz, and Rust Aho-Corasick where their contracts apply.
 | Sapphire Rapids | 36/36 | 0.9716 | 0.9799 | 1.56× |
 
 `x_vs_best` is casei time divided by the fastest other implementation on the
-same workload. Lower is better. Every one of the 216 measured row samples was
-below 1.0. Every row had 5 to 7 entrants. `casei` reported 512-bit dispatch,
-and Vectorscan reported a 512-bit VBMI database.
+same workload. Lower is better. Every one of the snapshot's 216 measured row
+samples was below 1.0. Every row had 5 to 7 entrants. `casei` reported 512-bit
+dispatch, and Vectorscan reported a 512-bit VBMI database.
 
 Rebar provides a useful independent check. It asks engines to enumerate every
 non-overlapping match instead of returning the first one. `casei` now wins all
@@ -192,7 +196,7 @@ paired ratio is computed for each competitor, and the largest ratio names the
 fastest field result. The checked-in acceptance run repeats the complete board
 three times on each host, pinned to one core.
 
-The current raw transcripts are here:
+The historical raw transcripts for that snapshot are here:
 
 - [Ice Lake BenchmarkBar](audit/acceptance/results/ice/benchmarkbar.txt)
 - [Sapphire Rapids BenchmarkBar](audit/acceptance/results/spr/benchmarkbar.txt)
@@ -202,7 +206,7 @@ The repository also keeps the earlier sequential-window runs that exposed
 measurement drift near parity. They failed the publication bar and are part of
 the methodology record.
 
-To rebuild the field and rerun all 36 rows on a qualifying Linux host:
+To rebuild the field and rerun all 38 rows on a qualifying Linux host:
 
 ```sh
 ./scripts/reproduce.sh
@@ -228,9 +232,10 @@ external gate. The surviving construction combines:
 - an exact common-byte origin gate for eligible multi-pattern plans; and
 - wider assembly schedules that scan several cache lines before testing masks.
 
-The result closes all five same-contract Rebar rows while preserving all 36
-arena wins. [REBAR.md](REBAR.md) contains the before/after account and every
-external row.
+The prior result closes all five same-contract Rebar rows while preserving all
+36 rows in its acceptance snapshot. The current field adds complete-triple rows
+to prevent the next route choice from escaping native competition.
+[REBAR.md](REBAR.md) contains the before/after account and every external row.
 
 ## Perfloop record
 
@@ -270,9 +275,9 @@ stay in the repo so the next attempt starts from evidence.
 - Folding is Unicode simple folding. Full-fold expansions such as `ß -> ss`
   are outside the contract.
 - Plan compilation has a cost. Cache a matcher for repeated searches.
-- The 36-row arena belongs to this repository. Its sources, field, dispatch,
-  failed measurements, and verifier are open and pinned. Rebar is the external
-  cross-check.
+- The current arena has 38 rows. Its sources, field, dispatch, failed
+  measurements, and verifier are open and pinned. The checked-in acceptance
+  snapshot covers the prior 36-row inventory. Rebar is the external cross-check.
 
 ## Read next
 

@@ -64,16 +64,25 @@ def transcript(**override):
 
 
 class VerifyBenchmarkBarTest(unittest.TestCase):
-    def verify_text(self, text):
+    def verify_text(self, text, required_rows=verify.REQUIRED_ROWS):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "bar.txt"
             path.write_text(text)
-            return verify.verify(path)
+            return verify.verify(path, required_rows=required_rows)
 
     def test_accepts_complete_winning_full_width_board(self):
         summary = self.verify_text(transcript())
-        self.assertIn("PASS: 36/36 rows", summary)
+        self.assertIn("PASS: 38/38 rows", summary)
         self.assertIn("casei=512-bit", summary)
+
+    def test_accepts_historical_36_row_board(self):
+        text = "".join(
+            row(name)
+            for name in sorted(verify.HISTORICAL_REQUIRED_ROWS)
+            for _ in range(3)
+        )
+        summary = self.verify_text(text, verify.HISTORICAL_REQUIRED_ROWS)
+        self.assertIn("PASS: 36/36 rows", summary)
 
     def test_rejects_losing_sample(self):
         with self.assertRaisesRegex(verify.VerificationError, "loses"):
@@ -106,6 +115,16 @@ class VerifyBenchmarkBarTest(unittest.TestCase):
 
     def test_rejects_missing_unicode_confirmation_row(self):
         row_name = "multi/multi_N1_unicode_pair_miss_1_5mb"
+        text = "".join(
+            line
+            for line in transcript().splitlines(keepends=True)
+            if f"/{row_name.split('/', 1)[1]}-" not in line
+        )
+        with self.assertRaisesRegex(verify.VerificationError, "row inventory differs"):
+            self.verify_text(text)
+
+    def test_rejects_missing_complete_triple_row(self):
+        row_name = "multi/multi_forms4_complete_triple_miss_1mb"
         text = "".join(
             line
             for line in transcript().splitlines(keepends=True)

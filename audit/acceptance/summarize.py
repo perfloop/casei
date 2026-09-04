@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify and summarize the current two-host acceptance receipts."""
+"""Verify and summarize the historical two-host acceptance receipts."""
 
 import hashlib
 from pathlib import Path
@@ -14,7 +14,7 @@ import verify_benchmarkbar  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parent / "results"
-SOURCE_MANIFEST = Path(__file__).resolve().parent / "SOURCE_SHA256SUMS"
+SOURCE_MANIFEST = Path(__file__).resolve().parent / "SOURCE_SHA256SUMS.historical"
 HOSTS = {"ice": "Ice Lake", "spr": "Sapphire Rapids"}
 
 
@@ -23,7 +23,11 @@ def main():
     for host, title in HOSTS.items():
         path = ROOT / host / "benchmarkbar.txt"
         try:
-            verify_benchmarkbar.verify(path, expected_samples=3)
+            verify_benchmarkbar.verify(
+                path,
+                expected_samples=3,
+                required_rows=verify_benchmarkbar.HISTORICAL_REQUIRED_ROWS,
+            )
         except verify_benchmarkbar.VerificationError as err:
             raise SystemExit(err) from err
         rows = verify_benchmarkbar.parse(path)
