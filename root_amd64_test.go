@@ -28,7 +28,7 @@ func TestTripleShuftiExactRouteAndStops(t *testing.T) {
 			patterns[i] = base[(i+rotation)%len(base)]
 		}
 		for _, mode := range []string{"generic", "normalized", "explicit"} {
-			matcher, _ := tripleShuftiProofMatcher(patterns, mode)
+			matcher := tripleShuftiProofMatcher(patterns, mode)
 			var got []result
 			if !matcher.Each(haystack, func(match Match, width int) bool {
 				got = append(got, result{match: match, width: width})

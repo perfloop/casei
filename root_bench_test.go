@@ -261,7 +261,7 @@ func BenchmarkTripleShuftiEach(b *testing.B) {
 		wantPattern := (len(base) - rotation) % len(base)
 		for _, mode := range routeOrders[rotation] {
 			mode := mode
-			matcher, _ := tripleShuftiProofMatcher(patterns, mode)
+			matcher := tripleShuftiProofMatcher(patterns, mode)
 			if !matcher.Each(haystack, tripleShuftiEachYield) ||
 				tripleShuftiEachSink.Start != len(haystack)-3 ||
 				tripleShuftiEachSink.Pattern != wantPattern ||

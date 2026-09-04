@@ -39,13 +39,12 @@ type tripleShuftiProofCounters struct {
 	stops  uint64
 }
 
-func tripleShuftiProofMatcher(patterns []string, mode string) (*Matcher, *tripleShuftiProofCounters) {
+func tripleShuftiProofMatcher(patterns []string, mode string) *Matcher {
 	base := NewMatcher(patterns)
 	plan := *base.plan
 	if plan.asciiPairAnchors.usable() || plan.rawByteMulti.usable() || !plan.asciiTriplesComplete || !plan.asciiTriples.shufti.usable() {
 		panic("ordinary triple-Shufti fixture selected another route")
 	}
-	counters := &tripleShuftiProofCounters{}
 	switch mode {
 	case "normalized":
 		plan.asciiTriples.shufti = makeNormalizedTripleShuftiForProof(plan.asciiTriples)
@@ -59,7 +58,7 @@ func tripleShuftiProofMatcher(patterns []string, mode string) (*Matcher, *triple
 	default:
 		panic("unknown triple Shufti proof mode: " + mode)
 	}
-	return &Matcher{patterns: base.patterns, plan: &plan}, counters
+	return &Matcher{patterns: base.patterns, plan: &plan}
 }
 
 // tripleShuftiProofCount drives the actual bounded route once and counts the
